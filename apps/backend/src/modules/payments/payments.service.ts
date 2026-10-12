@@ -61,9 +61,12 @@ export class PaymentsService {
     private readonly settings?: SettingsService,
   ) {}
 
-  private async enabledCashierPaymentMethods(tenantId: string) {
+  private async enabledCashierPaymentMethods(
+    tenantId: string,
+    client?: Prisma.TransactionClient,
+  ) {
     const configured = this.settings
-      ? await this.settings.getCsv("cashier_payment_methods", tenantId)
+      ? await this.settings.getCsv("cashier_payment_methods", tenantId, client)
       : ["CASH"];
     return new Set<string>(configured.filter(isCashierPaymentMethodCode));
   }
@@ -246,8 +249,6 @@ export class PaymentsService {
       employeeId,
     );
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
-    const enabledPaymentMethods =
-      await this.enabledCashierPaymentMethods(tenantId);
 
     try {
       const execute = async (tx: Prisma.TransactionClient) => {
@@ -274,6 +275,11 @@ export class PaymentsService {
             requestHash,
           );
         }
+
+        const enabledPaymentMethods = await this.enabledCashierPaymentMethods(
+          tenantId,
+          tx,
+        );
 
         const operation = await tx.paymentOperation.create({
           data: {
@@ -580,175 +586,187 @@ export class PaymentsService {
     const employeeId = user.employeeId;
     const reason = dto.reason.trim();
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
-    const executeRefund = () => this.prisma.$transaction(
-      async (tx) => {
-        const scopedPayment = await tx.payment.findFirst({
-          where: { id: paymentId, order: { branch: { tenantId } } },
-          include: { order: true, method: true },
-        });
-        if (!scopedPayment) throw new NotFoundException("Payment not found");
-        resolveBranchScope(user, scopedPayment.order.branchId);
-        await this.assertEmployeeInBranch(
-          tx,
-          employeeId,
-          scopedPayment.order.branchId,
-        );
+    const executeRefund = () =>
+      this.prisma.$transaction(
+        async (tx) => {
+          const scopedPayment = await tx.payment.findFirst({
+            where: { id: paymentId, order: { branch: { tenantId } } },
+            include: { order: true, method: true },
+          });
+          if (!scopedPayment) throw new NotFoundException("Payment not found");
+          resolveBranchScope(user, scopedPayment.order.branchId);
+          await this.assertEmployeeInBranch(
+            tx,
+            employeeId,
+            scopedPayment.order.branchId,
+          );
 
-        const replay = await tx.paymentRefund.findUnique({
-          where: { idempotencyKey: dto.idempotencyKey },
-          include: { payment: true },
-        });
-        if (replay) {
-          if (replay.paymentId !== paymentId) {
+          const replay = await tx.paymentRefund.findUnique({
+            where: { idempotencyKey: dto.idempotencyKey },
+            include: { payment: true },
+          });
+          if (replay) {
+            if (replay.paymentId !== paymentId) {
+              throw new BadRequestException(
+                "Idempotency key belongs to another refund",
+              );
+            }
+            const replayAmountMatches =
+              dto.amount === undefined ||
+              new Prisma.Decimal(dto.amount).equals(replay.amount);
+            if (
+              replay.shiftId !== dto.shiftId ||
+              replay.reason !== reason ||
+              !replayAmountMatches
+            ) {
+              throw new BadRequestException(
+                "Idempotency key was already used with a different refund request",
+              );
+            }
+            const replayShift = await tx.shift.findFirst({
+              where: {
+                id: replay.shiftId,
+                branchId: scopedPayment.order.branchId,
+              },
+              select: { employeeId: true },
+            });
+            if (!replayShift)
+              throw new NotFoundException("Refund shift not found");
+            this.assertRefundShiftAccess(
+              user,
+              employeeId,
+              replayShift.employeeId,
+            );
+            return replay;
+          }
+          const shift = await tx.shift.findFirst({
+            where: {
+              id: dto.shiftId,
+              branchId: scopedPayment.order.branchId,
+              status: "OPEN",
+            },
+            select: { id: true, employeeId: true },
+          });
+          if (!shift)
             throw new BadRequestException(
-              "Idempotency key belongs to another refund",
+              "Refund requires an open branch shift",
+            );
+          this.assertRefundShiftAccess(user, employeeId, shift.employeeId);
+          await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${scopedPayment.orderId} FOR UPDATE`;
+          const shiftLock = await tx.shift.updateMany({
+            where: {
+              id: shift.id,
+              branchId: scopedPayment.order.branchId,
+              status: "OPEN",
+            },
+            data: { updatedAt: new Date() },
+          });
+          if (shiftLock.count !== 1) {
+            throw new BadRequestException(
+              "Refund requires an open branch shift",
             );
           }
-          const replayAmountMatches =
-            dto.amount === undefined ||
-            new Prisma.Decimal(dto.amount).equals(replay.amount);
+          const lockedShift = await tx.shift.findUnique({
+            where: { id: shift.id },
+            select: { id: true, employeeId: true },
+          });
+          if (!lockedShift)
+            throw new BadRequestException(
+              "Refund requires an open branch shift",
+            );
+          this.assertRefundShiftAccess(
+            user,
+            employeeId,
+            lockedShift.employeeId,
+          );
+          await tx.$queryRaw`SELECT id FROM "payments" WHERE id = ${paymentId} FOR UPDATE`;
+
+          const payment = await tx.payment.findFirst({
+            where: { id: paymentId, order: { branch: { tenantId } } },
+            include: { order: true, method: true, refunds: true },
+          });
+          if (!payment) throw new NotFoundException("Payment not found");
+          if (payment.method.code !== "CASH") {
+            throw new BadRequestException(
+              `${payment.method.code} refund provider is not enabled`,
+            );
+          }
           if (
-            replay.shiftId !== dto.shiftId ||
-            replay.reason !== reason ||
-            !replayAmountMatches
+            !this.isSuccessfulPayment(payment.status) &&
+            payment.status !== PaymentStatus.PARTIALLY_REFUNDED
           ) {
             throw new BadRequestException(
-              "Idempotency key was already used with a different refund request",
+              "Only successful payments can be refunded",
             );
           }
-          const replayShift = await tx.shift.findFirst({
-            where: {
-              id: replay.shiftId,
-              branchId: scopedPayment.order.branchId,
-            },
-            select: { employeeId: true },
+          const refundedSoFar = payment.refunds.reduce(
+            (total, item) => total.add(item.amount),
+            new Prisma.Decimal(0),
+          );
+          const refundable = payment.amount.sub(refundedSoFar);
+          if (refundable.lessThanOrEqualTo(0)) {
+            throw new BadRequestException("Payment is already fully refunded");
+          }
+          const amount =
+            dto.amount === undefined
+              ? refundable
+              : new Prisma.Decimal(dto.amount);
+          if (amount.lessThanOrEqualTo(0) || amount.greaterThan(refundable)) {
+            throw new BadRequestException(
+              "Qaytarish summasi to'lov qoldig'idan oshib ketdi",
+            );
+          }
+          const refund = await recordCashRefund(tx, {
+            payment: payment as RefundablePayment,
+            branchId: payment.order.branchId,
+            shiftId: lockedShift.id,
+            employeeId: lockedShift.employeeId,
+            createdById: user.id,
+            tenantId,
+            amount,
+            reason,
+            idempotencyKey: dto.idempotencyKey,
           });
-          if (!replayShift) throw new NotFoundException("Refund shift not found");
-          this.assertRefundShiftAccess(user, employeeId, replayShift.employeeId);
-          return replay;
-        }
-        const shift = await tx.shift.findFirst({
-          where: {
-            id: dto.shiftId,
-            branchId: scopedPayment.order.branchId,
-            status: "OPEN",
-          },
-          select: { id: true, employeeId: true },
-        });
-        if (!shift)
-          throw new BadRequestException("Refund requires an open branch shift");
-        this.assertRefundShiftAccess(user, employeeId, shift.employeeId);
-        await tx.$queryRaw`SELECT id FROM "orders" WHERE id = ${scopedPayment.orderId} FOR UPDATE`;
-        const shiftLock = await tx.shift.updateMany({
-          where: {
-            id: shift.id,
-            branchId: scopedPayment.order.branchId,
-            status: "OPEN",
-          },
-          data: { updatedAt: new Date() },
-        });
-        if (shiftLock.count !== 1) {
-          throw new BadRequestException("Refund requires an open branch shift");
-        }
-        const lockedShift = await tx.shift.findUnique({
-          where: { id: shift.id },
-          select: { id: true, employeeId: true },
-        });
-        if (!lockedShift)
-          throw new BadRequestException("Refund requires an open branch shift");
-        this.assertRefundShiftAccess(
-          user,
-          employeeId,
-          lockedShift.employeeId,
-        );
-        await tx.$queryRaw`SELECT id FROM "payments" WHERE id = ${paymentId} FOR UPDATE`;
 
-        const payment = await tx.payment.findFirst({
-          where: { id: paymentId, order: { branch: { tenantId } } },
-          include: { order: true, method: true, refunds: true },
-        });
-        if (!payment) throw new NotFoundException("Payment not found");
-        if (payment.method.code !== "CASH") {
-          throw new BadRequestException(
-            `${payment.method.code} refund provider is not enabled`,
+          const currentPayments = await tx.payment.findMany({
+            where: { orderId: payment.orderId },
+            include: { refunds: true },
+          });
+          const successfulPayments = currentPayments.filter(
+            (row) =>
+              this.isSuccessfulPayment(row.status) ||
+              row.status === PaymentStatus.PARTIALLY_REFUNDED,
           );
-        }
-        if (
-          !this.isSuccessfulPayment(payment.status) &&
-          payment.status !== PaymentStatus.PARTIALLY_REFUNDED
-        ) {
-          throw new BadRequestException(
-            "Only successful payments can be refunded",
-          );
-        }
-        const refundedSoFar = payment.refunds.reduce(
-          (total, item) => total.add(item.amount),
-          new Prisma.Decimal(0),
-        );
-        const refundable = payment.amount.sub(refundedSoFar);
-        if (refundable.lessThanOrEqualTo(0)) {
-          throw new BadRequestException("Payment is already fully refunded");
-        }
-        const amount =
-          dto.amount === undefined
-            ? refundable
-            : new Prisma.Decimal(dto.amount);
-        if (amount.lessThanOrEqualTo(0) || amount.greaterThan(refundable)) {
-          throw new BadRequestException(
-            "Qaytarish summasi to'lov qoldig'idan oshib ketdi",
-          );
-        }
-        const refund = await recordCashRefund(tx, {
-          payment: payment as RefundablePayment,
-          branchId: payment.order.branchId,
-          shiftId: lockedShift.id,
-          employeeId: lockedShift.employeeId,
-          createdById: user.id,
-          tenantId,
-          amount,
-          reason,
-          idempotencyKey: dto.idempotencyKey,
-        });
-
-        const currentPayments = await tx.payment.findMany({
-          where: { orderId: payment.orderId },
-          include: { refunds: true },
-        });
-        const successfulPayments = currentPayments.filter(
-          (row) =>
-            this.isSuccessfulPayment(row.status) ||
-            row.status === PaymentStatus.PARTIALLY_REFUNDED,
-        );
-        const remainingPaid = successfulPayments.reduce(
-          (total, row) =>
-            total
-              .add(row.amount)
-              .sub(
-                row.refunds.reduce(
-                  (refundTotal, item) => refundTotal.add(item.amount),
-                  new Prisma.Decimal(0),
+          const remainingPaid = successfulPayments.reduce(
+            (total, row) =>
+              total
+                .add(row.amount)
+                .sub(
+                  row.refunds.reduce(
+                    (refundTotal, item) => refundTotal.add(item.amount),
+                    new Prisma.Decimal(0),
+                  ),
                 ),
-              ),
-          new Prisma.Decimal(0),
-        );
-        const hasRefunds = currentPayments.some(
-          (row) => row.refunds.length > 0,
-        );
-        await tx.order.update({
-          where: { id: payment.orderId },
-          data: {
-            paymentStatus:
-              hasRefunds && remainingPaid.isZero()
-                ? PaymentStatus.REFUNDED
-                : remainingPaid.greaterThanOrEqualTo(payment.order.total)
-                  ? PaymentStatus.PAID
-                  : PaymentStatus.PENDING,
-          },
-        });
-        return refund;
-      },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
-    );
+            new Prisma.Decimal(0),
+          );
+          const hasRefunds = currentPayments.some(
+            (row) => row.refunds.length > 0,
+          );
+          await tx.order.update({
+            where: { id: payment.orderId },
+            data: {
+              paymentStatus:
+                hasRefunds && remainingPaid.isZero()
+                  ? PaymentStatus.REFUNDED
+                  : remainingPaid.greaterThanOrEqualTo(payment.order.total)
+                    ? PaymentStatus.PAID
+                    : PaymentStatus.PENDING,
+            },
+          });
+          return refund;
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      );
 
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {

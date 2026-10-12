@@ -28,6 +28,8 @@ function createHarness(
     paymentAmount?: number;
     previousRefundAmount?: number;
     shiftOpen?: boolean;
+    noPayments?: boolean;
+    emptyAfterCancellation?: boolean;
   } = {},
 ) {
   const events: Record<string, unknown>[] = [];
@@ -73,7 +75,9 @@ function createHarness(
     unitPrice: new Prisma.Decimal(7000),
     totalPrice: new Prisma.Decimal(7000),
     modifierSnapshot: null,
-    status: OrderItemStatus.ACTIVE as OrderItemStatus,
+    status: (options.emptyAfterCancellation
+      ? OrderItemStatus.CANCELLED
+      : OrderItemStatus.ACTIVE) as OrderItemStatus,
     stockDeductedAt: null,
     notes: null,
   };
@@ -84,15 +88,15 @@ function createHarness(
     status: OrderStatus.SERVED,
     orderState: OrderState.ACCEPTED,
     version: 1,
-    total: new Prisma.Decimal(10000),
-    subtotal: new Prisma.Decimal(10000),
+    total: new Prisma.Decimal(options.emptyAfterCancellation ? 3000 : 10000),
+    subtotal: new Prisma.Decimal(options.emptyAfterCancellation ? 3000 : 10000),
     discountTotal: new Prisma.Decimal(0),
     serviceFeeTotal: new Prisma.Decimal(0),
     deliveryFeeTotal: new Prisma.Decimal(0),
     paymentStatus: (options.previousRefundAmount
       ? PaymentStatus.PARTIALLY_REFUNDED
       : PaymentStatus.PENDING) as PaymentStatus,
-    payments: [payment],
+    payments: options.noPayments ? [] : [payment],
     items: [item, remainingItem],
   };
   const tx = {
@@ -158,7 +162,7 @@ function createHarness(
       },
     },
     payment: {
-      findMany: async () => [payment],
+      findMany: async () => (options.noPayments ? [] : [payment]),
       findUnique: async () => ({
         ...payment,
         order: {
@@ -336,6 +340,21 @@ test("exactly paid remaining balance stays paid after item cancellation", async 
   assert.equal(result.total.toFixed(2), "7000.00");
   assert.equal(result.paymentStatus, PaymentStatus.PAID);
   assert.equal(state.refunds.length, 0);
+  assert.equal(state.cashTransactions.length, 0);
+});
+
+test("zero-balance cancellation is settled without a cash ledger entry", async () => {
+  const state = createHarness({
+    noPayments: true,
+    emptyAfterCancellation: true,
+  });
+
+  const result = await cancelItem(state.service);
+
+  assert.equal(result.total.toFixed(2), "0.00");
+  assert.equal(result.paymentStatus, PaymentStatus.PAID);
+  assert.equal(state.refunds.length, 0);
+  assert.equal(state.revenues.length, 0);
   assert.equal(state.cashTransactions.length, 0);
 });
 

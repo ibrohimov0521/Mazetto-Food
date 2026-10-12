@@ -1,5 +1,5 @@
 export type PrintRoute = "RECEIPT" | "KITCHEN" | "CANCELLATION" | "REFUND";
-export type PrinterMode = "stdout" | "file" | "tcp";
+type PrinterMode = "stdout" | "file" | "tcp";
 
 export type ReceiptSummary = {
   id: string;
@@ -7,7 +7,11 @@ export type ReceiptSummary = {
   printed: boolean;
   createdAt: string;
   branch?: { id: string; name: string; code: string };
-  order?: { orderNumber: string; displayOrderNumber: string | null; status: string };
+  order?: {
+    orderNumber: string;
+    displayOrderNumber: string | null;
+    status: string;
+  };
 };
 
 export type ReceiptDetail = ReceiptSummary & {
@@ -123,18 +127,15 @@ export async function pollPrintJob(
         ? "AMBIGUOUS"
         : "FAILED";
     let outcomeSaved = true;
-    await request(
-      `/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          leaseToken: job.leaseToken,
-          error: message,
-          outcome,
-        }),
-      },
-    ).catch(() => {
+    await request(`/receipts/print-jobs/${encodeURIComponent(job.id)}/fail`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        leaseToken: job.leaseToken,
+        error: message,
+        outcome,
+      }),
+    }).catch(() => {
       outcomeSaved = false;
     });
     state.failedCount += 1;

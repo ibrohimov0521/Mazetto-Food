@@ -1,6 +1,7 @@
 import { apiFetch } from "./api";
 import type { CartItem } from "./cart";
 import type { Product } from "./types";
+import { restoreReorderModifiers } from "./reorder-modifiers.mjs";
 
 /*
  * QAYTA BUYURTMA.
@@ -26,7 +27,13 @@ export type ReorderSourceItem = {
   productName: string;
   quantity: string | number;
   notes?: string | null;
-  modifierSnapshot?: { id?: string | null; name: string }[] | null;
+  modifierSnapshot?:
+    | {
+        id?: string | null;
+        name: string;
+        quantity?: string | number | null;
+      }[]
+    | null;
 };
 
 export type ReorderResult = {
@@ -69,16 +76,15 @@ export async function buildReorderItems(
       continue;
     }
 
-    const snapshotModifierIds = (item.modifierSnapshot ?? [])
-      .map((modifier) => modifier.id)
-      .filter((id): id is string => Boolean(id));
-    const modifiers = product.modifiers
-      .filter((link) => snapshotModifierIds.includes(link.modifier.id))
-      .map((link) => ({
-        modifierId: link.modifier.id,
-        name: link.modifier.name,
-        price: link.modifier.price,
-      }));
+    const snapshotModifiers = item.modifierSnapshot ?? [];
+    const modifiers = restoreReorderModifiers(
+      snapshotModifiers,
+      product.modifiers,
+    );
+    if (modifiers === null) {
+      skipped.push(item.productName);
+      continue;
+    }
 
     restored.push({
       productId: product.id,

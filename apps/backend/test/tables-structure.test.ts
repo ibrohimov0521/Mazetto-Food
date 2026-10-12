@@ -30,6 +30,7 @@ function createService(
 ): TablesService {
   const database: Record<string, unknown> = {
     restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+    hall: { findFirst: async () => ({ id: "hall-1", isActive: true }) },
     branch: {
       findUnique: async () => ({ id: "branch-1", tenantId: "tenant-a" }),
       findFirst: async () => ({ id: "branch-1" }),
@@ -102,6 +103,61 @@ test("bir zalda faol stol raqami takrorlanmaydi", async () => {
       ),
     ConflictException,
   );
+});
+
+test("zal va stol nomlari bosh joylardan iborat bo'lsa qabul qilinmaydi", async () => {
+  const service = createService({});
+  await assert.rejects(
+    () =>
+      service.createHall(
+        { branchId: "branch-1", name: "   ", sortOrder: 0 },
+        branchManager,
+      ),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () =>
+      service.createTable(
+        {
+          branchId: "branch-1",
+          hallId: "hall-1",
+          name: "   ",
+          number: 1,
+          capacity: 4,
+        },
+        branchManager,
+      ),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () => service.updateHall("hall-1", { name: "   " }, branchManager),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () => service.updateTable("table-1", { name: "   " }, branchManager),
+    BadRequestException,
+  );
+});
+
+test("bir vaqtda yaratilgan zallar uchun kodlar bir-biridan farq qiladi", async (context) => {
+  context.mock.method(Date, "now", () => 123456);
+  const created: Array<Record<string, unknown>> = [];
+  const service = createService({
+    hall: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        created.push(data);
+        return data;
+      },
+    },
+  });
+  const dto = { branchId: "branch-1", name: "  Asosiy zal  ", sortOrder: 0 };
+
+  await service.createHall(dto, branchManager);
+  await service.createHall(dto, branchManager);
+
+  assert.match(String(created[0]?.code), /^ASOSIY_ZAL_[A-F0-9]{12}$/);
+  assert.equal(created[0]?.name, "Asosiy zal");
+  assert.notEqual(created[0]?.code, created[1]?.code);
 });
 
 test("stol yaratilganda zal, filial va ko'rsatilgan tartib saqlanadi", async () => {
@@ -240,6 +296,113 @@ test("bo'sh zalni o'chirish stol yaratilishini serializatsiya qiladi", async () 
 
   await service.permanentlyDeleteHalls(["hall-1"], branchManager);
   assert.deepEqual(calls, ["candidate", "lock", "table-count", "delete"]);
+});
+
+test("stol raqami band bo'lsa arxivlangan stolni qayta faollashtirib bo'lmaydi", async () => {
+  let duplicateWhere: Record<string, unknown> | undefined;
+  let updated = false;
+  const service = createService({
+    restaurantTable: {
+      findFirst: async ({ where }: { where: Record<string, unknown> }) => {
+        if ("hallId" in where) {
+          duplicateWhere = where;
+          return { id: "table-active" };
+        }
+        return {
+          id: "table-archived",
+          branchId: "branch-1",
+          hallId: "hall-1",
+          number: 4,
+          isActive: false,
+        };
+      },
+      update: async () => {
+        updated = true;
+      },
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      service.updateTable("table-archived", { isActive: true }, branchManager),
+    ConflictException,
+  );
+  assert.deepEqual(duplicateWhere, {
+    hallId: "hall-1",
+    number: 4,
+    isActive: true,
+    id: { not: "table-archived" },
+  });
+  assert.equal(updated, false);
+});
+
+test("band bo'lmagan raqamli arxivlangan stol qayta faollashadi", async () => {
+  let updatedData: Record<string, unknown> | undefined;
+  const service = createService({
+    restaurantTable: {
+      findFirst: async ({ where }: { where: Record<string, unknown> }) =>
+        "hallId" in where
+          ? null
+          : {
+              id: "table-archived",
+              branchId: "branch-1",
+              hallId: "hall-1",
+              number: 4,
+              isActive: false,
+            },
+      update: async ({ data }: { data: Record<string, unknown> }) => {
+        updatedData = data;
+        return { id: "table-archived", ...data };
+      },
+    },
+  });
+
+  await service.updateTable(
+    "table-archived",
+    { isActive: true },
+    branchManager,
+  );
+  assert.deepEqual(updatedData, { isActive: true });
+});
+
+test("arxivlangan zal ostidagi stol zal faollashmaguncha qayta faollashmaydi", async () => {
+  let updated = false;
+  let hallWhere: Record<string, unknown> | undefined;
+  const service = createService({
+    hall: {
+      findFirst: async ({ where }: { where: Record<string, unknown> }) => {
+        hallWhere = where;
+        return null;
+      },
+    },
+    restaurantTable: {
+      findFirst: async ({ where }: { where: Record<string, unknown> }) =>
+        "hallId" in where
+          ? null
+          : {
+              id: "table-archived",
+              branchId: "branch-1",
+              hallId: "hall-1",
+              number: 4,
+              isActive: false,
+            },
+      update: async () => {
+        updated = true;
+      },
+    },
+  });
+
+  await assert.rejects(
+    () =>
+      service.updateTable("table-archived", { isActive: true }, branchManager),
+    BadRequestException,
+  );
+  assert.deepEqual(hallWhere, {
+    id: "hall-1",
+    branchId: "branch-1",
+    isActive: true,
+  });
+  assert.equal(updated, false);
 });
 
 test("ochiq buyurtmali stol arxivlanmaydi", async () => {

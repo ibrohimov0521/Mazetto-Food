@@ -527,11 +527,11 @@ test("gateway queues POS sales offline and flushes them after reconnect", async 
     const localReceipt = JSON.parse(localReceiptJob.payloadJson) as {
       branchName: string;
       orderType: string;
-      items: Array<{ totalPrice?: string }>;
+      items: Array<{ total?: string }>;
     };
     assert.equal(localReceipt.branchName, "Sergeli filiali");
     assert.equal(localReceipt.orderType, "Zal");
-    assert.equal(localReceipt.items[0]?.totalPrice, "25000.00");
+    assert.equal(localReceipt.items[0]?.total, "25000.00");
     const attemptId = store.markLocalPrintJobPrinting(localReceiptJob.id);
     assert.ok(attemptId);
     store.completeLocalPrintJob(localReceiptJob.id, attemptId);
@@ -878,6 +878,52 @@ test("gateway queues only cash payments while offline", async () => {
   const authorization = desktopJwt("cashier-offline-payment", "branch-1", {
     employeeId: "employee-offline-payment",
   });
+  const cacheScope = DesktopStore.authScope(authorization);
+  const cachedAt = new Date().toISOString();
+  const cache = (url: string, data: unknown) => {
+    store.putCachedResponse({
+      cacheKey: DesktopStore.cacheKey(url, cacheScope),
+      requestUrl: url,
+      authScope: cacheScope,
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ success: true, data }),
+      cachedAt,
+    });
+  };
+  cache("https://api.example.test/api/v1/cash-register/shift", {
+    id: "shift-1",
+    branchId: "branch-1",
+    employeeId: "employee-offline-payment",
+    status: "OPEN",
+  });
+  cache("https://api.example.test/api/v1/orders/order-1", {
+    id: "order-1",
+    branchId: "branch-1",
+    status: "NEW",
+    type: "TAKEAWAY",
+    paymentStatus: "PENDING",
+    customerName: "Javohir",
+    customerPhone: "+998901234567",
+    deliveryAddress: "Sergeli",
+    orderNumber: "ORDER-1",
+    displayOrderNumber: "M-101",
+    notes: "Eshik oldida qoldiring",
+    total: "47000.00",
+    items: [
+      {
+        id: "item-1",
+        productName: "Lavash",
+        variantName: "Katta",
+        quantity: "1.000",
+        totalPrice: "47000.00",
+        status: "ACTIVE",
+        notes: null,
+        modifierSnapshot: [],
+      },
+    ],
+    payments: [{ amount: "5000.00", status: "SUCCESS", methodCode: "CARD" }],
+  });
   const gateway = new DesktopGateway({
     host: "127.0.0.1",
     port: 0,
@@ -918,9 +964,29 @@ test("gateway queues only cash payments while offline", async () => {
         payments: [{ paymentMethodCode: "CASH", amount: 42_000 }],
       }),
     });
-    assert.equal(queued.status, 409);
-    assert.match((await queued.json()).error.message, /smena|keshlanmagan/i);
-    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(queued.status, 202);
+    assert.equal(store.summary().pendingCommands, 1);
+    const printJob = store.claimLocalPrintJob(["RECEIPT"]);
+    assert.ok(printJob);
+    const receipt = JSON.parse(printJob.payloadJson) as Record<string, unknown>;
+    assert.deepEqual(receipt.payments, [
+      { method: "CARD", amount: "5000.00" },
+      { method: "CASH", amount: "42000.00" },
+    ]);
+    assert.equal(receipt.total, "47000.00");
+    assert.equal(receipt.customerName, "Javohir");
+    assert.equal(receipt.customerPhone, "+998901234567");
+    assert.equal(receipt.address, "Sergeli");
+    assert.deepEqual(receipt.items, [
+      {
+        name: "Lavash",
+        variant: "Katta",
+        quantity: "1",
+        total: "47000.00",
+        notes: null,
+        modifiers: [],
+      },
+    ]);
   } finally {
     await gateway.stop();
     store.close();
@@ -1312,16 +1378,18 @@ test("offline payment is projected as paid and blocks unsafe shift close", async
       orderSource: string;
       orderType: string;
       total: string;
-      items: Array<{ productName: string }>;
+      items: Array<{ name: string }>;
       payments: Array<{ method: string; amount: string }>;
     };
     assert.equal(receipt.orderId, "order-offline-1");
     assert.equal(receipt.orderNumber, "WEB101");
     assert.equal(receipt.orderSource, "WEB");
     assert.equal(receipt.orderType, "Olib ketish");
-    assert.equal(receipt.total, "42000");
-    assert.equal(receipt.items[0]?.productName, "Katta lavash");
-    assert.deepEqual(receipt.payments, [{ method: "CASH", amount: "42000" }]);
+    assert.equal(receipt.total, "42000.00");
+    assert.equal(receipt.items[0]?.name, "Katta lavash");
+    assert.deepEqual(receipt.payments, [
+      { method: "CASH", amount: "42000.00" },
+    ]);
     const receiptAttemptId = store.markLocalPrintJobPrinting(receiptJob.id);
     assert.ok(receiptAttemptId);
     store.completeLocalPrintJob(receiptJob.id, receiptAttemptId);
@@ -1725,7 +1793,10 @@ test("offline sale and print jobs survive restart before one-time replay", async
       },
     });
   let gateway = createGateway(store);
-  const printed: string[] = [];
+  const printed: Array<{
+    documentType: string;
+    content: Record<string, unknown>;
+  }> = [];
   const localQueue = {
     claim: (types: string[]) => store.claimLocalPrintJob(types),
     markPrinting: (id: string) => store.markLocalPrintJobPrinting(id),
@@ -1758,6 +1829,7 @@ test("offline sale and print jobs survive restart before one-time replay", async
         },
         body: JSON.stringify({
           idempotencyKey: "offline-e2e-sale",
+          type: "TAKEAWAY",
           items: [{ productId: "product-1", quantity: 1 }],
           payments: [{ paymentMethodCode: "CASH", amount: 25_000 }],
         }),
@@ -1785,12 +1857,25 @@ test("offline sale and print jobs survive restart before one-time replay", async
         { name: "Kitchen", displayName: "Kitchen", roles: ["KITCHEN"] },
       ],
       printSystem: async (_name, receipt) => {
-        printed.push(receipt.documentType ?? "unknown");
+        printed.push({
+          documentType: receipt.documentType ?? "unknown",
+          content: receipt.content ?? {},
+        });
       },
       localQueue,
     });
     await offlinePrinter.tick();
-    assert.deepEqual(printed.sort(), ["KITCHEN", "RECEIPT"]);
+    assert.deepEqual(printed.map((entry) => entry.documentType).sort(), [
+      "KITCHEN",
+      "RECEIPT",
+    ]);
+    const salesReceipt = printed.find(
+      (entry) => entry.documentType === "RECEIPT",
+    )?.content;
+    assert.equal(salesReceipt?.total, "25000.00");
+    assert.deepEqual(salesReceipt?.payments, [
+      { method: "CASH", amount: "25000.00" },
+    ]);
     online = true;
     await waitFor(() => gateway.status().mode === "online", 2_500);
     const reconnectedRead = await fetch(
@@ -1820,7 +1905,10 @@ test("offline sale and print jobs survive restart before one-time replay", async
         { name: "Receipt", displayName: "Receipt", roles: ["RECEIPT"] },
       ],
       printSystem: async (_name, receipt) => {
-        printed.push(receipt.documentType ?? "unknown");
+        printed.push({
+          documentType: receipt.documentType ?? "unknown",
+          content: receipt.content ?? {},
+        });
       },
       localQueue,
       fetchImpl: async (input) => {
@@ -1855,8 +1943,14 @@ test("offline sale and print jobs survive restart before one-time replay", async
     reconnectedPrinter.setAuthorization(authorization);
     await reconnectedPrinter.tick();
     assert.equal(completed, 1);
-    assert.equal(printed.filter((type) => type === "RECEIPT").length, 1);
-    assert.equal(printed.filter((type) => type === "KITCHEN").length, 1);
+    assert.equal(
+      printed.filter((entry) => entry.documentType === "RECEIPT").length,
+      1,
+    );
+    assert.equal(
+      printed.filter((entry) => entry.documentType === "KITCHEN").length,
+      1,
+    );
   } finally {
     await gateway.stop();
     store.close();
@@ -2418,6 +2512,99 @@ test("gateway sends server version conflicts to the conflict inbox", async () =>
     await waitFor(() => store.summary().conflictCommands === 1);
     assert.equal(store.summary().pendingCommands, 0);
     assert.match(store.listOutbox()[0]?.lastError ?? "", /CONFLICT/);
+  } finally {
+    await gateway.stop();
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+test("offline payment setting errors stay readable and can be retried", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-gateway-payment-conflict-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const authorization = desktopJwt("cashier-disabled-method", "branch-1", {
+    employeeId: "employee-disabled-method",
+  });
+  const authScope = DesktopStore.mutationScope(authorization);
+  const queued = store.enqueueMutation({
+    idempotencyKey: "cash-method-disabled-retry",
+    commandType: "payment.process",
+    aggregateType: "orders",
+    aggregateId: "order-1",
+    actorId: "cashier-disabled-method",
+    branchId: "branch-1",
+    authScope,
+    payload: {
+      commandType: "payment.process",
+      queuedEmployeeId: "employee-disabled-method",
+      method: "POST",
+      pathname: "/api/v1/payments/process",
+      targetUrl: "https://api.example.test/api/v1/payments/process",
+      headers: { "idempotency-key": "cash-method-disabled-retry" },
+      body: JSON.stringify({
+        orderId: "order-1",
+        shiftId: "shift-1",
+        idempotencyKey: "cash-method-disabled-retry",
+        payments: [{ paymentMethodCode: "CASH", amount: 1_000 }],
+      }),
+    },
+  });
+  let cashMethodEnabled = false;
+  let paymentAttempts = 0;
+  const gateway = new DesktopGateway({
+    host: "127.0.0.1",
+    port: 0,
+    upstreamApiUrl: "https://api.example.test/api/v1",
+    store,
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/health")) return jsonResponse({ ok: true });
+      if (url.endsWith("/payments/process")) {
+        paymentAttempts++;
+        if (!cashMethodEnabled) {
+          return new Response(
+            JSON.stringify({
+              success: false,
+              message: ["Naqd to'lov sozlamalarda o'chirilgan."],
+              error: "Bad Request",
+              statusCode: 400,
+            }),
+            { status: 400, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return jsonResponse({ success: true, data: { id: "payment-1" } });
+      }
+      return jsonResponse({ success: true, data: [] });
+    },
+  });
+
+  try {
+    const gatewayPort = await gateway.start();
+    const baseUrl = `http://127.0.0.1:${gatewayPort}`;
+    const refresh = await fetch(`${baseUrl}/api/v1/branches`, {
+      headers: { Authorization: authorization },
+    });
+    assert.equal(refresh.status, 200);
+    await waitFor(() => store.summary().conflictCommands === 1);
+    const conflict = store.listOutbox(10, authScope)[0];
+    assert.equal(conflict?.id, queued.id);
+    assert.equal(conflict?.lastError, "Naqd to'lov sozlamalarda o'chirilgan.");
+
+    cashMethodEnabled = true;
+    const retry = await fetch(`${baseUrl}/desktop/outbox/${queued.id}/retry`, {
+      method: "POST",
+      headers: { Authorization: authorization },
+    });
+    assert.equal(retry.status, 200);
+    await waitFor(
+      () =>
+        store.summary().pendingCommands === 0 &&
+        store.summary().conflictCommands === 0,
+    );
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(store.summary().conflictCommands, 0);
+    assert.equal(paymentAttempts, 2);
   } finally {
     await gateway.stop();
     store.close();

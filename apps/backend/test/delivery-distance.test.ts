@@ -56,8 +56,25 @@ test("qarama-qarshi nuqtalarda NaN qaytmaydi", () => {
 });
 
 test("yaroqsiz koordinata null beradi", () => {
-  assert.equal(haversineKm({ latitude: Number.NaN, longitude: 0 }, TASHKENT_CENTER), null);
-  assert.equal(haversineKm(TASHKENT_CENTER, { latitude: 0, longitude: Number.POSITIVE_INFINITY }), null);
+  assert.equal(
+    haversineKm({ latitude: Number.NaN, longitude: 0 }, TASHKENT_CENTER),
+    null,
+  );
+  assert.equal(
+    haversineKm(TASHKENT_CENTER, {
+      latitude: 0,
+      longitude: Number.POSITIVE_INFINITY,
+    }),
+    null,
+  );
+  assert.equal(
+    haversineKm({ latitude: 91, longitude: 0 }, TASHKENT_CENTER),
+    null,
+  );
+  assert.equal(
+    haversineKm(TASHKENT_CENTER, { latitude: 0, longitude: 181 }),
+    null,
+  );
 });
 
 test("JSON ustunidan koordinata o'qiladi va buzuq qiymat null beradi", () => {
@@ -70,6 +87,13 @@ test("JSON ustunidan koordinata o'qiladi va buzuq qiymat null beradi", () => {
   assert.equal(coordinateFromJson(null), null);
   assert.equal(coordinateFromJson("salom"), null);
   assert.equal(coordinateFromJson({ latitude: "a", longitude: "b" }), null);
+  assert.equal(coordinateFromJson({ latitude: null, longitude: null }), null);
+  assert.equal(coordinateFromJson({ latitude: "", longitude: "69.2" }), null);
+  assert.equal(coordinateFromJson({ latitude: 91, longitude: 69.2 }), null);
+  assert.deepEqual(
+    coordinateFromJson({ latitude: "41.3", longitude: "69.2" }),
+    { latitude: 41.3, longitude: 69.2 },
+  );
 });
 
 test("filial koordinatasi yo'q bo'lsa masofa null, xato emas", () => {
@@ -96,7 +120,10 @@ test("masofa bitta kasrgacha yaxlitlanadi", () => {
       latitude: new Prisma.Decimal(TASHKENT_CENTER.latitude),
       longitude: new Prisma.Decimal(TASHKENT_CENTER.longitude),
     },
-    { latitude: TASHKENT_CENTER.latitude + 0.02, longitude: TASHKENT_CENTER.longitude },
+    {
+      latitude: TASHKENT_CENTER.latitude + 0.02,
+      longitude: TASHKENT_CENTER.longitude,
+    },
   );
   assert.ok(km !== null);
   assert.equal(km, Math.round(km * 10) / 10);

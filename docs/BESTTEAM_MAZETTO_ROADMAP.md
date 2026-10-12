@@ -1,20 +1,19 @@
 # BestTeam va Mazetto mahsulotlari: umumiy yo'l xaritasi
 
-
 ## 1. Mahsulot chegaralari
 
-Bu repoda uchta mahsulot bor. Ularning vazifasi, foydalanuvchisi, hosti, ruxsati va dizayni alohida saqlanadi.
+Bu repoda ikkita mustaqil mahsulot bor. Ularning vazifasi, foydalanuvchisi, hosti, ruxsati va dizayni alohida saqlanadi.
 
-| Mahsulot | Vazifasi | Foydalanuvchi | Brend |
-| --- | --- | --- | --- |
-| `admin.mazetto.uz` | BestTeam egasining ko'p restoranli boshqaruv markazi | Platforma egasi va BestTeam operatorlari | BestTeam logosi, fon rasmi, och moviy va oq |
-| `mazetto.uz` | Login va doimiy saqlashsiz mahsulot demosi | Bo'lajak mijozlar | Demo uchun alohida |
-| `mazettofood.uz` va restoran ilovalari | Mazetto Food nomli bitta mijoz restoranining real savdo tizimi | Restoran egasi, kassir, oshxona, ofitsiant, kuryer, mijoz | Hozirgi Mazetto Food dizayni/logosi o'zgarishsiz |
+| Mahsulot                                             | Vazifasi                                                       | Foydalanuvchi                                             | Brend                                            |
+| ---------------------------------------------------- | -------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------ |
+| `mazetto.uz` (`admin.mazetto.uz` hozirgi host/alias) | BestTeam egasining ko'p restoranli boshqaruv markazi           | Platforma egasi va BestTeam operatorlari                  | BestTeam logosi, fon rasmi, och moviy va oq      |
+| `mazettofood.uz` va restoran ilovalari               | Mazetto Food nomli bitta mijoz restoranining real savdo tizimi | Restoran egasi, kassir, oshxona, ofitsiant, kuryer, mijoz | Hozirgi Mazetto Food dizayni/logosi o'zgarishsiz |
 
 ### Qat'iy chegaralar
+
 - BestTeam ko'rinishi yoki aktivlari Mazetto Food ilovalariga ko'chirilmaydi.
 - Mazetto Food logosi, ranglari, tipografiyasi va ekranlari qayta brend qilinmaydi; faqat funksiyalar va xatolar yaxshilanadi.
-- Demo va owner console boshqa-boshqa host, API ruxsati va ma'lumot oqimiga ega bo'ladi.
+- BestTeam owner console va Mazetto Food bitta dizayn, auth yoki business-data oqimiga birlashtirilmaydi; `mazetto.uz` domain cutover alohida va bosqichli bajariladi.
 - Umumiy backend/baza tenantlararo ruxsat bermaydi. Har bir HTTP, real-time, job, bot va fayl amali tenantni tekshiradi.
 - Izolyatsiya sinovdan o'tmaguncha ikkinchi restoran yoki domenni faollashtirish yo'q.
 - Aniq deploy ruxsatisiz production, Dokploy, DNS/Cloudflare, push yoki jonli bazaga tegilmaydi.
@@ -26,6 +25,7 @@ Rasmiy naqshlarni rasmiy manbalardan solishtirish: Toast bir panelda menyu versi
 ## 3. Funksiyalar katalogi
 
 ### A. BestTeam owner console
+
 1. **Umumiy ko'rinish:** restoran/filial soni, active/paused/setup/error; web/API/agent health, oxirgi heartbeat, latency; ustuvor alertlar, tasdiqlash tarixi va filtrlanuvchi KPI.
 2. **Restoran onboarding:** tashkilot, tenant kodi, filiallar, egasi/rollar, domen, app, bot va integratsiya wizard'i; DNS/SSL/domain verification; checklist, xatolar va audit. Yaratish faqat security gate'dan keyin.
 3. **Tenant/filial lifecycle:** holat va xizmatlar; pause/resume/deactivate uchun sabab, oqibat preview, tasdiq va audit; platform monitoring yozuvlari haqiqiy tenant deb ko'rsatilmaydi.
@@ -36,6 +36,7 @@ Rasmiy naqshlarni rasmiy manbalardan solishtirish: Toast bir panelda menyu versi
 8. **Versiya/release:** BestTeam owner console, Mazetto backend/API, customer-web, POS web (admin/kassa/KDS/ofitsiant/kuryer), Telegram bot, desktop klient va print-agent build/SHA/minimum supported version/changelog; staging, health gate, canary, rollback. Versiya yangilash Mazetto Food brendini o'zgartirmaydi.
 
 ### B. Mazetto Food restoran panellari
+
 - **Restoran admini:** xodim/rollar, filial va ish vaqti, menyu/narx/modifier, buyurtma kanallari, yetkazish zonalari, chegirma/soliq, sozlama va audit.
 - **Kassa/POS:** tez qidiruv va qayta buyurtma, order/payment statusi, chek qayta chiqarish, smena/cash movement, offline indikator va idempotent sync.
 - **Oshxona/KDS:** navbat/stansiya, taymer/kechikish, item-level tayyorlash, eslatma/allergen, ticket oqimi, printer fallback, uzilgan real-time aloqani tiklash.
@@ -46,52 +47,63 @@ Rasmiy naqshlarni rasmiy manbalardan solishtirish: Toast bir panelda menyu versi
 - **Hisob xavfsizligi:** har bir rol profil menyusidan o'z parolini almashtiradi; joriy parol tasdiqlanadi, refresh sessiyalar bekor qilinadi, credential version eski access tokenni ham rad etadi va amal auditga yoziladi.
 - Yangi UX mavjud Mazetto Food tipografiya, spacing, rang va logo qoidalariga amal qiladi. Screenshot baseline vizual regressiyani ushlaydi.
 
-### C. `mazetto.uz` demo
-- Login yo'q; sintetik data; real restoran/mijoz ma'lumoti yo'q.
-- Write endpointsiz demo API yoki qat'iy read-only fixture; order/payment/bot/email/push side-effect yo'q.
-- Browser/serverda shaxsiy ma'lumotni doimiy saqlamaslik; reset, rate limit va abuse himoyasi.
-- Tugmalar natijani simulyatsiya qiladi; real operatsiya deb ko'rsatilmaydi.
-- Haqiqiy ishlamaydigan ekran soxta “real” interfeys sifatida taqdim etilmaydi.
+### C. Owner-panel domeni va release yo'nalishi
+
+- `mazetto.uz` BestTeam ko'p-restoran super-admin paneli bo'ladi; BestTeam logosi, foni va ranglari shu mahsulotda qoladi.
+- Hozir ishlayotgan `admin.mazetto.uz` route `mazetto.uz` cutover tasdiqlanmaguncha ochiq va ishlaydigan holatda saqlanadi.
+- DNS/TLS, platform-web API proxy, owner login va monitoring smoke-testlari stagingda va cutoverdan keyin tekshiriladi.
+- Domen almashtirishda rollback va oldingi hostni qayta tiklash sinovi bo'ladi; Mazetto Food domenlari va brendi o'zgarmaydi.
+- Ikkinchi restoranni faollashtirish faqat staging A/B tenant izolyatsiyasi, backfill va backup/restore darvozalari o'tgach mumkin.
 
 ## 4. Bosqichma-bosqich bajarish
 
 ### 0. Holatni mustahkamlash
+
 Dirty worktree, branch va test/build holatini qayd etish; deployable app/API/worker/bot/schema/mobile ro'yxati; foydalanuvchi o'zgarishlarini asrash.
 **Chiqish:** servis xaritasi va takrorlanadigan test buyruqlari.
 
 ### 1. Owner panel bazasi
+
 BestTeam branding faqat owner console; tenant registry va monitoring registry aniq ajralishi; umumiy health/alert/KPI; role, responsive va accessibility test.
 **Chiqish:** owner-only API contract, UI state testlari.
 
 ### 2. Tenant xavfsizlik inventari
+
 Schema/migration, branchsiz yozuv, global unique, PII, upload/cache/job/realtime/bot ro'yxati; controller/service auth-scope xaritasi; threat model va tiklanadigan staging backup.
 **Chiqish:** har data guruhining egasi va ruxsat qoidasi yozilgan.
 
 ### 3. Tenant authorization
+
 Server hostname/domain va membershipdan trusted tenant kontekstini topadi; mijoz yuborgan tenantId/headerga ishonmaydi. HTTP, WebSocket, queue/scheduler, bot, upload, cache, idempotency, export/audit hammasi scope oladi. Branchsiz record egasi explicit belgilanadi.
 **Chiqish:** tenant A/B adversarial testlar, fail-closed, mavjud Mazetto regressiyasi o'tgan.
 
 ### 4. Mazetto Food compatibility
+
 Order/POS/KDS/waiter/courier staging oqimlari, parallel order, retry/idempotency, WS uzilishi/reconnect va worker retry sinovlari. Brend screenshot baseline.
 **Chiqish:** role E2E, load, payment/order reconciliation, rollback drill.
 
 ### 5. Tenant onboarding/lifecycle
+
 Preview -> provision -> domain verify -> integration health -> activate; sababli pause/resume/deactivate; secret manager; sintetik tenant B.
 **Chiqish:** tenant A/B testlaridan oldin production activation boshqaruvi yopiq.
 
 ### 6. Monitoring, support va hisobot
+
 SLO/alert/log qidiruv, tenant va filial filtrlari, CSV audit, backup/restore statusi; destructive repair/cleanup dry-run.
 **Chiqish:** privacy/performance/audit/reconciliation review.
 
 ### 7. Mazetto Food funksiyalarini boyitish
+
 Admin/POS/KDS/waiter/courier/ombor/report/mobil backlogni workflow bo'yicha bajarish; role E2E, concurrency, API contract, backward-compatible app version va release notes.
 **Chiqish:** vizual brend o'zgarmagan, app'lar mos va rollback bor.
 
 ### 8. Public demo
+
 Alohida synthetic fixture/runtime; real backend write va tashqi side-effect yo'qligini network/API testi bilan isbotlash; abuse/reset/device test.
 **Chiqish:** demo real tenantni o'qimaydi ham, yozmaydi ham.
 
 ### 9. Release va ko'lamlash
+
 Restorable backup, staging migration, canary, health/error budget/rollback; avval alohida tasdiqli Mazetto Food release, keyin pilot tenant; DNS/Dokploy alohida tasdiqli change.
 **Chiqish:** versiyalar qayd etilgan, health barqaror, isolation test o'tgan.
 
@@ -136,13 +148,9 @@ Birinchi controller-service-data delegate xaritasi security inventoryga kiritild
 - Keyingi qadam: hostname + membership resolver threat modelini yakunlash, auth/session/public menu/checkout/websocket/job/bot scope'ini A/B adversarial testlar bilan qurish. So‘ng MazettoFood POS/KDS/ofitsiant/kuryer oqimlarini faqat funksional regressiya testlari bilan yaxshilash; MazettoFood logosi va UI mavzusi o‘zgarishsiz qoladi.
 - Tekshiruv: backend suite 321/321; backend va BestTeam TypeScript, tegishli ESLint, Prisma schema validation va BestTeam production build o'tdi.
 
-
-
 Owner monitoring build inventory: backend version uses the MAZETTO_BUILD_VERSION override or backend package metadata fallback, with an optional bounded MAZETTO_BUILD_ID. BestTeam detail aggregates reported device software versions per branch/type and shows unknown versions and online/offline counts. Browser frontend bundle versions are not yet reported; old agents must send a new heartbeat before the additional fields appear.
 
-
 Tenant registry now adds read-only open-order and online/offline device counts, aggregated only from each tenant's branch IDs. PlatformSite has an optional FK to RestaurantTenant; owners can link monitoring records to existing tenants and see website/API/agent health in the registry. The additive migration is not applied to any database. Tenant registry deliberately omits heartbeat business totals because the agent payload is not tenant-scoped. Backend suite 311/311, backend/platform TypeScript checks and the BestTeam production build pass. Tenant provisioning, status changes, business-data scoping, push and deploy remain blocked.
-
 
 ## 9. Role scope chegarasi (2026-09-27)
 
@@ -157,6 +165,7 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - POS checkout idempotency replay branch-tenant tekshiruvidan oldin operation qidirmaydi. Order detail/timeline va forced status tenant filterli DB lookup ishlatadi; bulk delete tenantni preflight va transaction ichida tekshiradi.
 - Tekshiruvlar: backend suite 356/356, backend TypeScript va tegishli ESLint o'tdi. Mazetto Food UI/logo/CSS, schema va migration o'zgarmadi; push, deploy, production DB, DNS va Dokployga tegilmadi.
 - Keyingi bosqich: orders subroute/payment/receipt va cash/inventory/report/printer/device/realtime/customer ownership auditini shu A/B negative-test yondashuvida davom ettirish. Server-trusted hostname + membership contexti va barcha sync/async ownership tekshirilmaguncha ikkinchi restoran yoqilmaydi.
+
 ## 11. Customer access va asynchronous tenant guard (2026-09-27)
 
 - Hozirgi bosqich customer auth/session, websocket, checkout attempt, Telegram webhook/notification va media upload yo'llaridagi A/B tenant ambiguity chegaralarini fail-closed qildi; unit/service negative testlar qo'shildi.
@@ -191,6 +200,7 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Tekshiruv: backend 444/444; backend typecheck, lint, build, dead-letter static validator va isolated API/web QA o'tdi.
 - Yangi uploadlar tenants/{tenantId}/... MinIO prefiksiga yoziladi va notification dead-letter Redis/fallback ro'yxatlari tenant bo'yicha bo'lingan. Avvalgi MinIO root obyektlari joyida qoladi; eski global notify:dead yozuvlari tenantga tegishliligi isbotlanmaguncha import qilinmaydi va ularni stagingda order branch-tenant join orqali tasniflash/backfill qilish kerak. Hali customer session/token/cart/order ownership, customer realtime, durable queue/worker, restoranlarga alohida Telegram token/chat/webhook mapping, cache/device/export A/B testlari; haqiqiy staging migration/backfill, domen smoke-test va backup restore/rollback mashqi qolgan. Faol xodimga invite/account yaratish yo'q; Employee modeli hanuz bitta userga bitta employee yozuvini cheklaydi.
 - Ikkinchi restoran hanuz PROVISIONING holatida qoladi. Production migration, push, deploy, DNS/Dokploy va tenant activation bajarilmadi; staging release gate to'liq o'tmaguncha bular bajarilmaydi.
+
 ## 15. Customer tenant identity va admin doirasi (2026-09-29)
 
 - Customer va OTP verification yozuvlariga tenant owner qo'shildi; global phone/email/Telegram identity unique cheklovlari tenant-scoped cheklovlarga almashtirildi. Backfill migration bir nechta ACTIVE tenant, tenantlararo aralash order tarixi yoki mos kelmaydigan challenge topilsa avvaldan to'xtaydi.
@@ -222,6 +232,7 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Telegram customer bot tekshirildi. Staff bot webhook'ning oxirgi saqlangan xatosi 2026-09-22 22:20 UTC dagi HTTP 500, pending_update_count=0; webhook o'zgartirilmadi. Staff Telegram UX uchun real foydalanuvchi bilan qo'lda tasdiq hali kerak.
 - Production tag e6cfa40'ga ko'chirildi; PR #104 merge qilingan.
 - Hali alohida staging app/API/DB stack yo'q. Keyingi bosqich: ajratilgan staging muhitini tayyorlash, tenant A/B queue/worker, bot mapping, media/realtime, device/export oqimlarini tekshirish va rollback mashqi. Shu dalillarsiz ikkinchi restoran faollashtirilmaydi.
+
 ## 18. Ajratilgan staging muhiti (2026-09-29)
 
 - Yuqoridagi 17-bo'limdagi “staging yo'q” holati bu bo'lim bilan yangilandi. Dokploy'da production'dan alohida `Mazetto Staging / staging` loyiha-muhiti yaratildi. Alohida PostgreSQL, Redis, backend API va S3-compatible media ombori ishlayapti.
@@ -266,7 +277,6 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Cleanup removed only the two recorded fixture objects and verified absence; database cleanup returned to 1 ACTIVE baseline tenant and zero fixture rows. Production media and Mazetto Food services remain unchanged.
 - Remaining next gate: customer/staff realtime cross-tenant event and reconnect tests, followed by cache/device/export/report and end-to-end restaurant workflow regression. The broader media/realtime release gate stays open until all its remaining areas pass.
 
-
 ## 22. Customer/staff realtime va membership cache A/B proof (2026-09-30)
 
 - PR #126 staging harnessiga customer logout revocation, real staff order.created delivery va reconnect catch-up, hamda shared account A/B membership role ajratilishini qo'shdi; PR #127 sinov permissionini haqiqiy ORDER_CREATE kodiga tuzatdi.
@@ -290,7 +300,6 @@ Tenant registry now adds read-only open-order and online/offline device counts, 
 - Printer worker yangi ticklarni to'xtatadi, ammo boshlangan chekni/print jobni yakunlashini kutadi; shunda yopilish vaqtida lokal navbat yoki outbox yozuvlari SQLite yopilgandan keyin ishlatilmaydi.
 - Regression testlar: gateway yopilishi durable mutation sync tugashini kutadi; print worker faol printer ishini kutib, keyingi ishni boshlamaydi.
 - Release tekshiruvlari: desktop test suite 62/62, TypeScript typecheck, ESLint va compile/preload build o'tdi. Bu xavfsiz shutdown dalili, internet uzilganda barcha amallar ishlashining kafolati emas.
-
 
 - Desktop updater package 0.1.48 Windows release successfully published; Dokploy backend was not redeployed.
 

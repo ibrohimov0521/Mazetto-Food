@@ -15,27 +15,27 @@ Production baseline during the original audit was `d3ba37de2e458a473af73d543049f
 
 The MAZETTO FOOD repository contains a working production MVP with a NestJS backend, customer web, POS web, media nginx service, Prisma/PostgreSQL schema, production migrations, seed structure, customer Telegram auth/order code in the backend, and validation scripts.
 
-The highest release blockers found during the first pass were a customer-facing delivery-fee mismatch and public online payment options that were visible before real provider settlement existed. Step 11 remediated both locally: backend checkout quote/order creation now share the same customer pricing policy, and customer checkout exposes only operational `CASH` payment for now.
+The first-pass release blockers were a customer-facing delivery-fee mismatch and public online payment options shown before real provider settlement existed. Both were fixed and production-smoke-verified: checkout quote/order creation share the backend pricing policy, and customer checkout exposes only `CASH` until provider settlement is integrated. Current audit-branch changes are separate and remain unreleased.
 
 No committed secrets were found in the repository by the current scan. Customer ownership checks for customer order history/detail are scoped by `customerId`. The proven order engine uses server-side product, variant, and modifier pricing, not client-supplied item totals.
 
 ## Repository Inventory
 
-| Area | Classification | Evidence |
-| --- | --- | --- |
-| `apps/backend` | ACTIVE | NestJS modules, Prisma 7 adapter, production Dockerfile, migrations, seed, validation scripts. |
-| `apps/customer-web` | ACTIVE | Next.js customer app with menu, cart, checkout, profile, orders, media resolver. |
-| `apps/pos-web` | PARTIAL | Real routes and API client exist, but offline/print/production POS completeness is not proven. |
-| `apps/media` | ACTIVE INFRA | nginx static service exists; production 404 is caused by empty media volume, not nginx code. |
-| `apps/print-agent` | PLACEHOLDER | Startup log only. |
-| `apps/telegram-bot` | PLACEHOLDER | Startup log only; current customer Telegram bot lives inside backend. |
-| `packages/api-client` | PARTIAL | Shared API client package exists, limited usage. |
-| `packages/config` | PLACEHOLDER/PARTIAL | Minimal shared config package. |
-| `packages/types` | PARTIAL | Shared type package exists. |
-| `packages/ui` | PLACEHOLDER/PARTIAL | Minimal UI export exists. |
-| `docs` | ACTIVE BUT DRIFTING | Work status is useful but contains stale top-level rows and production deployment notes. |
+| Area                  | Classification      | Evidence                                                                                                                  |
+| --------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `apps/backend`        | ACTIVE              | NestJS modules, Prisma 7 adapter, production Dockerfile, migrations, seed, validation scripts.                            |
+| `apps/customer-web`   | ACTIVE              | Next.js customer app with menu, cart, checkout, profile, orders, media resolver.                                          |
+| `apps/pos-web`        | PARTIAL             | Real routes and API client exist, but offline/print/production POS completeness is not proven.                            |
+| `apps/media`          | ACTIVE INFRA        | nginx static service exists; production media manifest was checked read-only, with one unused category URL returning 404. |
+| `apps/print-agent`    | PLACEHOLDER         | Startup log only.                                                                                                         |
+| `apps/telegram-bot`   | PLACEHOLDER         | Startup log only; current customer Telegram bot lives inside backend.                                                     |
+| `packages/api-client` | PARTIAL             | Shared API client package exists, limited usage.                                                                          |
+| `packages/config`     | PLACEHOLDER/PARTIAL | Minimal shared config package.                                                                                            |
+| `packages/types`      | PARTIAL             | Shared type package exists.                                                                                               |
+| `packages/ui`         | PLACEHOLDER/PARTIAL | Minimal UI export exists.                                                                                                 |
+| `docs`                | ACTIVE BUT DRIFTING | Work status is useful but contains stale top-level rows and production deployment notes.                                  |
 
-Reviewable files inventoried: 251.
+Tracked files inventoried: 1,259. This inventory is not evidence that every line in every file received manual review.
 
 ## Architecture Map
 
@@ -43,7 +43,7 @@ Customer web and Telegram both create customer orders through the backend custom
 
 `CustomerOrderEngineService` creates the operational `Order`, snapshots items with authoritative database prices, writes `OrderStatusHistory`, confirms the order for preparation through `OrdersService`, creates the customer-facing `CustomerOrder`, completes `CustomerOrderAttempt`, and creates a `KitchenTicket`.
 
-The media architecture is split: database rows store relative paths such as `/products/lavash-big.webp`; customer-web resolves those to `NEXT_PUBLIC_MEDIA_URL`, then falls back to local extracted source media, then branded fallback. Production direct media URLs still 404 because the `mazetto-media` volume is empty.
+The media architecture is split: database rows store relative paths such as `/products/lavash-big.webp`; customer-web resolves those to `NEXT_PUBLIC_MEDIA_URL`, then falls back to packaged authentic media, then branded fallback. Read-only production checks passed for 84 of 85 manifest URLs; the remaining 404 was `/categories/blyudalar.webp`, which the live category API does not reference. Media content completeness still requires an approved inventory and direct verification.
 
 ## P0 Findings
 
@@ -71,7 +71,7 @@ The amount seen by a delivery customer can differ from the stored order total us
 
 Step 11 fix:
 
-Backend `CustomerOrderEngineService` now exposes an authenticated customer checkout quote and uses the same pricing policy during final order creation. Since no trustworthy branch/settings delivery-fee value exists yet, the current authoritative delivery fee is `0.00` for both `DELIVERY` and `PICKUP`; this preserves the already verified production behavior and avoids inventing a new charge. `Order.deliveryFeeTotal` is persisted from the backend policy and `Order.total = subtotal + deliveryFeeTotal`.
+Backend `CustomerOrderEngineService` exposes an authenticated checkout quote and applies the same policy during final order creation. Current code reads the tenant's delivery fee and free-delivery radius settings; defaults are 20,000 so'm and 1,000 m, while pickup is always free. The actual saved production values were not inspected, so the restaurant must confirm its intended fee/radius before enabling delivery. `Order.deliveryFeeTotal` and `Order.total` are persisted from the backend calculation.
 
 Fixed: YES, deployed and smoke-verified in Step 14.
 
@@ -458,13 +458,13 @@ File: `apps/customer-web/next.config.ts`
 
 Evidence:
 
-`media.mazettofood.uz` is the configured remote image host. The runtime resolver can point elsewhere, but Next image optimization will only apply to the configured host.
+`NEXT_PUBLIC_MEDIA_URL` now determines the Next remote image pattern. It supports the configured HTTP(S) origin, optional port and path prefix, while rejecting credentials, query strings, fragments, and non-HTTP schemes. The existing production host remains the fallback.
 
 Production impact:
 
-Changing CDN/media domain later requires code/config update.
+Changing the media host no longer requires editing Next config.
 
-Fixed: NO.
+Fixed locally on the audit branch; unit tests and customer-web builds passed with both the production default and a local HTTP media URL.
 
 ## Backend Audit
 
@@ -478,27 +478,25 @@ Admin and POS routes use permission decorators and branch scope helpers. This au
 
 Customer web has active production routes for home, menu, product detail, cart, checkout, success, orders, order detail, and profile. It uses Uzbek UI, media fallback handling, local cart state, customer auth panel, and authenticated order history.
 
-The main customer-web blocker is visible delivery-fee calculation that is not mirrored by backend persisted totals. The second major UX risk is visible Click/Payme/Card choices without active provider settlement.
+Backend checkout quotes and persists the authoritative total using tenant-configured delivery fee/radius; source defaults are 20,000 so'm and 1,000 m, and pickup is free. The live saved values were not read. Customer checkout exposes CASH only. Customer order ownership, phone canonicalization, modifiers, reorder reconstruction, media URL handling, and realtime targeted refresh have regression coverage. Latest audit-branch changes are not yet released.
 
 ## Telegram Audit
 
 The active customer Telegram bot implementation is inside backend `TelegramModule`, not `apps/telegram-bot`.
 
-Step 10 implementation groups Lavash and Burger as Telegram-only virtual families, maps to product codes rather than DB IDs, hides unsupported combinations, uses callback toast on quick add, and prefers editing the same interactive message. Branch map links are generated from database latitude/longitude.
-
-Remaining risks are service-level cart merge behavior, product pagination, stale old helper code, and the need to complete production activation/deploy of the local Step 10 commit.
+Customer Telegram ordering groups supported virtual menu families, paginates categories, merges equivalent quick-add lines, and has a chat-bound product modifier configurator with server-side revalidation and duplicate-callback protection. Staff callbacks enforce chat binding and order lifecycle transitions in local code. Production webhook/provider verification was not completed because credentials were unavailable to the read-only audit shell; do not infer that latest local Telegram changes are active in production.
 
 ## Order Engine Audit
 
 The customer order engine is the correct central authority for web and Telegram customer orders. It snapshots item names, variants, modifiers, quantities, unit prices, and line totals from database state. It does not trust client-supplied item totals.
 
-Idempotency is customer-scoped with unique `(customerId, idempotencyKey)` and request hash comparison. Completed retries return the original order. Same key with different payload is rejected. The remaining issue is stale `PENDING` attempt recovery.
+Idempotency is customer-scoped with unique `(customerId, idempotencyKey)` and request-hash comparison. Completed retries return the original order; the same key with a different payload is rejected. Pending-attempt recovery uses each persisted expiry and tenant TTL, with regression and database-backed acceptance coverage.
 
 ## Prisma / Migration Audit
 
 The schema has appropriate core relations and indexes for the MVP. The final schema includes customer Telegram linkage, carts, checkout sessions, order attempts, kitchen tickets, payments, shifts, inventory, recipes, branches, and media path fields.
 
-Migration chain count: 16 migration folders. Historical migration `20260824233000_domain_model_consolidation` contains destructive drops of obsolete domain tables/columns. Do not edit historical migrations; ensure backups exist before production migration deploys.
+The original 2026-08-29 snapshot had 16 migration folders; later isolated acceptance applied the current chain of 59 migrations. Historical migration `20260824233000_domain_model_consolidation` contains destructive drops of obsolete domain tables/columns. Do not edit historical migrations; ensure backups exist before production migration deploys.
 
 ## Seed Audit
 
@@ -512,19 +510,15 @@ Cashier payment flow uses transaction boundaries, active payment methods, idempo
 
 ## Cash Register Audit
 
-Shift and cash transaction modules exist and are permission-protected. Shift number generation has a concurrency risk under simultaneous opens. Treat this as a hardening item before heavy cashier use.
+Shift and cash transaction modules are permission-protected. The original shift-number concurrency risk was addressed with branch-level serialization; disposable PostgreSQL acceptance covers simultaneous opens by different cashiers and duplicate opens by one cashier. This does not replace production-load monitoring.
 
 ## POS / Print Audit
 
-`apps/pos-web` is partial and should not be treated as final POS. It has auth shell, admin pages, waiter/kitchen/POS pages, payment/shift/receipt screens, and a real API client, but offline mode and print-agent integration are not production-proven.
-
-`apps/print-agent` is placeholder-only.
+POS and print-agent flows have automated coverage for offline replay, receipt parity, shift reports, and multi-printer routing. Physical acceptance on the restaurant workstation, including its installed drivers and actual receipt printer, remains required before calling hardware behavior verified.
 
 ## Media Audit
 
-Media nginx config is correct for static serving and caching. The missing production images are an operational content issue: the persistent volume is empty. Customer-web has a fallback chain for many local authentic assets, but direct media URLs remain 404.
-
-Current authenticity state must remain: product coverage is not 35/35 authentic in production media. Known unresolved/fallback assets are drinks, sauces, chicken strips, and kids set assets documented in the work status.
+Media nginx config serves static assets with caching. The local manifest contains 11 category and 74 product assets. Read-only production HEAD checks passed 84/85 URLs; the only failed path, /categories/blyudalar.webp, is not referenced by the live category API. Verify the approved manifest and fallback coverage before claiming complete production media acceptance.
 
 ## Deployment Audit
 
@@ -532,7 +526,7 @@ Dockerfiles use multi-stage builds and do not bake real database credentials. Ba
 
 Customer-web Dockerfile supports build-time public API/media arguments. POS-web supports public API argument.
 
-No production inspection or mutation was performed during this audit.
+Read-only production health smoke passed 27/27 in the audit sequence. No production database mutation, migration, source deployment, or media-volume change was performed for the current local audit branch. Production release remains gated by the checklist and explicit approval.
 
 ## Security Audit
 
@@ -540,7 +534,7 @@ No committed real secrets were found by the repository scan performed in this au
 
 Webhook secret checking exists for Telegram webhook route. Customer Telegram contact linking validates `contact.user_id` against `message.from.id`.
 
-Main hardening items: browser localStorage token storage, phone normalization consistency, and avoiding raw business/debug data in future logs.
+Customer auth tokens are no longer persisted in browser localStorage; customer phone identity paths share canonical Uzbek-number normalization. Tenant forwarding headers are overwritten from the direct request Host at both Next.js app boundaries for API paths. This is defense in depth; edge-proxy behavior still belongs in production acceptance. Avoid logging raw business/customer data.
 
 ## Testing Gaps
 
@@ -552,31 +546,32 @@ Covered by existing validators:
 - Customer order history
 - Isolated customer order E2E DB validation
 
-Remaining gaps:
+Remaining evidence gaps:
 
-- Delivery fee authoritative total.
-- Real Click/Payme provider flow.
-- POS cashier/payment E2E under concurrent submits.
-- Shift open concurrency.
-- Media volume content deployment verification.
-- Production activation of Step 10 local Telegram UX.
+- Real Click/Payme/NBU settlement and SMS-to-order reconciliation are not integrated or verified; CASH-only customer checkout remains intentional. Cashier-selected non-cash methods are manual acceptance, not provider confirmation.
+- Production tenant delivery-fee and free-radius values were not inspected; confirm them with the restaurant owner before enabling delivery. The source defaults are 20,000 so'm and 1,000 m.
+- Concurrent POS checkout/payment behavior has unit/idempotency and isolated database coverage, but no production-load acceptance.
+- Physical acceptance on the restaurant's intended receipt printer and installed driver is not independently evidenced by automated tests. The user reported a printer test as successful; the actual checkout receipt-printer model still needs explicit confirmation.
+- Telegram webhook status and live provider callbacks were not checked because production credentials were not available to the audit shell.
+- Production media URL coverage is 84/85; the failed category URL is unused by the live catalog, but manifest completeness remains an operational check.
+- Latest audit-branch code has not been merged/released. Production readiness must be re-evaluated after grouped CI and release preflight.
 
 ## Documentation Drift
 
-`docs/MAZETTO_WORK_STATUS.md` has useful detail but stale top summary rows around Customer Telegram Bot and staff Telegram state. This audit updates the status document with an evidence-based full-audit checkpoint.
+`docs/MAZETTO_WORK_STATUS.md` and this audit contained older summary rows that contradicted later verification (including delivery totals, phone normalization, payment-method settings, shift concurrency, and Telegram cart/pagination). Treat date-stamped follow-up entries as the evidence trail; keep the current summary synchronized before release.
 
 ## Production Risks
 
-1. Empty media volume continues to cause direct production media URL 404s.
-2. Step 10 and Step 11 changes are local-only until explicitly released.
-3. POS/print-agent should not be treated as final production desktop/POS stack.
+1. Current audit-branch code is unmerged and undeployed; production still runs its existing release.
+2. NBU/Click/Payme settlement has no automatic provider confirmation or SMS reconciliation; cashier confirmation remains manual.
+3. Real Telegram webhook/provider state and the intended receipt printer/driver require authorized operational acceptance.
+4. Production media URL coverage is 84/85; the failed category URL is unused by the live catalog, but manifest completeness remains an operational check.
 
 ## Recommended Fix Order
 
-1. Upload approved production media files to `mazetto-media`.
-2. Add Telegram category pagination and cart merge.
-3. Add number-collision retry for order/ticket/receipt/shift numbers.
-4. Clean docs drift and placeholder app warnings.
+1. Continue the code audit by subsystem and review automated dead-code flags against dynamic routes, validators, config, and seed usage before deleting anything.
+2. Resolve the documented external acceptance gaps: receipt printer/driver, bank/payment reconciliation, authorized Telegram webhook, and production media manifest.
+3. Group verified code fixes into a reviewed PR; run the complete release gate, fresh backup/restore evidence check, and read-only smoke before any approved production release.
 
 ## Verified Safe Areas
 
@@ -589,71 +584,51 @@ Remaining gaps:
 
 ## Unverified Areas
 
-- Full production POS cashier/payment operations.
-- Real receipt printing through a desktop/agent flow.
-- Real Click/Payme provider settlement.
-- Production media content upload.
-- Production deployment of local Step 10 Telegram UX.
+- Live POS payment/shift behavior under actual production traffic; isolated database and browser regression tests pass.
+- Actual restaurant checkout receipt printer and installed driver; the user reported a printer test as successful, but the checkout receipt-printer model is not documented.
+- Click/Payme/NBU provider confirmation and SMS-to-order reconciliation.
+- Authorized Telegram webhook and production callback status; latest local Telegram changes are not presumed active.
+- Production media asset inventory and live URL verification (84/85 manifest URLs passed).
 
 ## Validation Results
 
-Commands completed successfully:
-
-- Prisma format
-- Prisma validate
-- Prisma generate
-- Backend typecheck
-- Backend lint
-- Backend build
-- Customer-web typecheck
-- Customer-web lint
-- Customer-web build
-- Telegram catalog mapping validator
-- Telegram customer ordering validator
-- Telegram customer auth validator
-- Customer order history validator
-- Workspace typecheck
-- Workspace lint
-- `git diff --check`
-
-Workspace build result:
-
-- Turbo reported `9 successful, 9 total`.
-- After success, the Turbo runner did not exit within the follow-up wait window and had to be interrupted.
-- This matches the previously observed build-runner hang. The application build tasks themselves completed successfully, but the root build command exit behavior remains a tooling issue to investigate.
-
-Whitespace result:
-
-- `git diff --check` returned exit code 0.
-- Windows reported LF-to-CRLF warnings for modified markdown files.
+- The latest full workspace verification before the forwarded-host fix passed 14 typecheck/lint tasks, 7 builds, 33 operational validators, and 955 tests.
+- After that fix, customer web (32), POS (72), backend tenant/login (19), forwarded-host regression (4), and focused payment/settings tests (33) all passed; both Next production builds passed.
+- `git diff --check` passes for the current working tree.
+- Read-only production smoke previously passed 27/27; isolated acceptance applied all 59 migrations and restored the database into a disposable container.
+- Automated checks do not prove the external printer, payment-provider, Telegram webhook, or production-load acceptance listed above.
 
 ## Final Finding Table
 
-| ID | Severity | Area | File | Issue | Production Impact | Fixed? | Commit |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| AUD-001 | P1 | Customer checkout/order engine | `apps/customer-web/app/checkout/page.tsx`; `apps/backend/src/modules/customers/customer-order-engine.service.ts` | Delivery fee displayed but backend total excludes it | Customer/staff total mismatch | Yes, deployed | `6a19124`, released `568b6ac` |
-| AUD-002 | P1 | Customer checkout/payment | `apps/customer-web/app/checkout/page.tsx`; `apps/backend/src/modules/customers/dto/customer.dto.ts` | Click/Payme/Card visible without provider settlement | Payment expectation mismatch | Yes, deployed | `6a19124`, released `568b6ac` |
-| AUD-003 | P2 | Customer identity | `apps/backend/src/modules/customers/customers.service.ts` | Local phone formats can duplicate customers | Duplicate customer identity | Yes, deployed | `dd8a920`, released `568b6ac` |
-| AUD-004 | P2 | Idempotency | `apps/backend/src/modules/customers/customer-order-engine.service.ts` | Stale pending attempts block retry | Checkout retry friction | Yes, deployed | `dd8a920`, released `568b6ac` |
-| AUD-005 | P2 | Numbering | `apps/backend/src/modules/orders/orders.service.ts`; `apps/backend/src/modules/kitchen/kitchen.service.ts`; `apps/backend/src/modules/shifts/shifts.service.ts`; `apps/backend/src/modules/receipts/receipt-writer.ts` | Number collisions could fail valid creates | Rare failed valid operations | Yes, current safeguards verified | existing |
-| AUD-006 | P2 | Telegram menu | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Product list capped at 8 without pagination | Hidden products in Telegram | Yes, deployed | `568b6ac` |
-| AUD-007 | P2 | Telegram cart | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Identical Telegram items do not merge | Cart clutter and drift from web behavior | Yes, deployed | `568b6ac` |
-| AUD-008 | P2 | Customer web orders | `apps/customer-web/app/[locale]/orders/page.tsx`; `apps/customer-web/lib/use-order-updates.ts` | Realtime payload IDs were read from the wrong field and every event reloaded the full dashboard/history | Delayed status display and unnecessary requests | Yes, local only | pending |
-| AUD-009 | P2 | Media | `apps/media/nginx.conf`; media volume | Production volume had no image files | Direct media URLs 404 | Yes for approved assets, deployed | `568b6ac` |
-| AUD-010 | P2 | Deployment scripts | `apps/backend/package.json` | `prisma:migrate` uses `migrate dev` | Operator mistake risk | Yes, deployed | `568b6ac` |
-| AUD-011 | P2 | Inventory/order | `apps/backend/src/modules/inventory/inventory.service.ts`; `apps/backend/src/modules/orders/orders.service.ts` | Last active warehouse could be archived despite recipe-backed products | Future order failures when recipes enabled | Yes, local only | pending |
-| AUD-012 | P2 | Frontend auth | `apps/customer-web/lib/cart.tsx` | Tokens stored in localStorage | XSS token exposure risk | Yes, HttpOnly refresh cookie and token-free local profile | `f320fd3` |
-| AUD-013 | P3 | Docs | `docs/PRODUCTION_DEPLOYMENT.md` | CORS/WebSocket instructions contradicted current source | Operator confusion | Yes, local only | pending |
-| AUD-014 | P3 | Telegram | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts` | Old duplicate category/history/profile handlers remained | Maintenance drift and keyboard routing ambiguity | Yes, local only | pending |
-| AUD-015 | P3 | Git hygiene | repository | LF/CRLF warnings on Windows | Review noise | No | n/a |
-| AUD-016 | P3 | Operations apps | `apps/print-agent`; `apps/telegram-bot` | Earlier report mislabeled these executable printer/monitoring agents as placeholders | Deployment confusion | Closed after source re-review | n/a |
-| AUD-017 | P3 | Media config | `apps/customer-web/next.config.ts` | Media remote host hardcoded | Future CDN change friction | No | n/a |
-| AUD-018 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts` | Ordering callback errors can be reported as phone-linking failures | Misleading recovery path during checkout | Yes, deployed | `73d7407` |
-| AUD-019 | P2 | Telegram checkout | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts` | Post-success cart reuse can collide with previous idempotency key | Valid next Telegram checkout can fail | Yes, deployed | `b875f54` |
-| AUD-020 | P2 | Staff Telegram | `apps/backend/src/modules/telegram/telegram-order-notification.service.ts` | Staff callbacks were status-based, not staff-chat scoped, and could skip lifecycle sequencing | Kitchen/order lifecycle drift and staff chat noise | Yes, local only | pending |
-| AUD-021 | P2 | Operations health/backup | `scripts/ops-health.mjs`; `scripts/ops-backup-db.mjs` | Static Docker names did not match Dokploy task containers | False database/Redis-down status and backup lookup failure | Yes, local only | pending |
-| AUD-022 | P2 | Shift-close printing | `apps/pos-web/components/staff/shift-close-print-report.tsx`; `apps/pos-web/lib/offline-freshness.mjs` | Any cached resource in the cashier panel could mark a freshly fetched shift report as pending/offline | Misleading printed close report | Fixed locally | pending |
-| AUD-023 | P2 | Customer checkout idempotency | `apps/backend/src/modules/customers/customer-order-engine.service.ts` | A fixed two-minute age threshold could delete an attempt before its configured tenant TTL expired | Duplicate checkout risk under a slow in-flight request | Fixed locally | pending |
+| ID      | Severity | Area                           | File                                                                                                                                                                                                                   | Issue                                                                                                   | Production Impact                                          | Fixed?                                                    | Commit                        |
+| ------- | -------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------- | ----------------------------- |
+| AUD-001 | P1       | Customer checkout/order engine | `apps/customer-web/app/checkout/page.tsx`; `apps/backend/src/modules/customers/customer-order-engine.service.ts`                                                                                                       | Delivery fee displayed but backend total excludes it                                                    | Customer/staff total mismatch                              | Yes, deployed                                             | `6a19124`, released `568b6ac` |
+| AUD-002 | P1       | Customer checkout/payment      | `apps/customer-web/app/checkout/page.tsx`; `apps/backend/src/modules/customers/dto/customer.dto.ts`                                                                                                                    | Click/Payme/Card visible without provider settlement                                                    | Payment expectation mismatch                               | Yes, deployed                                             | `6a19124`, released `568b6ac` |
+| AUD-003 | P2       | Customer identity              | `apps/backend/src/modules/customers/customers.service.ts`                                                                                                                                                              | Local phone formats can duplicate customers                                                             | Duplicate customer identity                                | Yes, deployed                                             | `dd8a920`, released `568b6ac` |
+| AUD-004 | P2       | Idempotency                    | `apps/backend/src/modules/customers/customer-order-engine.service.ts`                                                                                                                                                  | Stale pending attempts block retry                                                                      | Checkout retry friction                                    | Yes, deployed                                             | `dd8a920`, released `568b6ac` |
+| AUD-005 | P2       | Numbering                      | `apps/backend/src/modules/orders/orders.service.ts`; `apps/backend/src/modules/kitchen/kitchen.service.ts`; `apps/backend/src/modules/shifts/shifts.service.ts`; `apps/backend/src/modules/receipts/receipt-writer.ts` | Number collisions could fail valid creates                                                              | Rare failed valid operations                               | Yes, current safeguards verified                          | existing                      |
+| AUD-006 | P2       | Telegram menu                  | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts`                                                                                                                                              | Product list capped at 8 without pagination                                                             | Hidden products in Telegram                                | Yes, deployed                                             | `568b6ac`                     |
+| AUD-007 | P2       | Telegram cart                  | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts`                                                                                                                                              | Identical Telegram items do not merge                                                                   | Cart clutter and drift from web behavior                   | Yes, deployed                                             | `568b6ac`                     |
+| AUD-008 | P2       | Customer web orders            | `apps/customer-web/app/[locale]/orders/page.tsx`; `apps/customer-web/lib/use-order-updates.ts`                                                                                                                         | Realtime payload IDs were read from the wrong field and every event reloaded the full dashboard/history | Delayed status display and unnecessary requests            | Yes, local only                                           | pending                       |
+| AUD-009 | P2       | Media                          | `apps/media/nginx.conf`; media volume                                                                                                                                                                                  | Production volume had no image files                                                                    | Direct media URLs 404                                      | Yes for approved assets, deployed                         | `568b6ac`                     |
+| AUD-010 | P2       | Deployment scripts             | `apps/backend/package.json`                                                                                                                                                                                            | `prisma:migrate` uses `migrate dev`                                                                     | Operator mistake risk                                      | Yes, deployed                                             | `568b6ac`                     |
+| AUD-011 | P2       | Inventory/order                | `apps/backend/src/modules/inventory/inventory.service.ts`; `apps/backend/src/modules/orders/orders.service.ts`                                                                                                         | Last active warehouse could be archived despite recipe-backed products                                  | Future order failures when recipes enabled                 | Yes, local only                                           | pending                       |
+| AUD-012 | P2       | Frontend auth                  | `apps/customer-web/lib/cart.tsx`                                                                                                                                                                                       | Tokens stored in localStorage                                                                           | XSS token exposure risk                                    | Yes, HttpOnly refresh cookie and token-free local profile | `f320fd3`                     |
+| AUD-013 | P3       | Docs                           | `docs/PRODUCTION_DEPLOYMENT.md`                                                                                                                                                                                        | CORS/WebSocket instructions contradicted current source                                                 | Operator confusion                                         | Yes, local only                                           | pending                       |
+| AUD-014 | P3       | Telegram                       | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts`                                                                                                                                                  | Old duplicate category/history/profile handlers remained                                                | Maintenance drift and keyboard routing ambiguity           | Yes, local only                                           | pending                       |
+| AUD-015 | P3       | Git hygiene                    | repository                                                                                                                                                                                                             | LF/CRLF warnings on Windows                                                                             | Review noise                                               | No                                                        | n/a                           |
+| AUD-016 | P3       | Operations apps                | `apps/print-agent`; `apps/telegram-bot`                                                                                                                                                                                | Earlier report mislabeled these executable printer/monitoring agents as placeholders                    | Deployment confusion                                       | Closed after source re-review                             | n/a                           |
+| AUD-017 | P3       | Media config                   | `apps/customer-web/next.config.ts`                                                                                                                                                                                     | Media remote host hardcoded                                                                             | Custom/local media URLs rejected by Next image optimizer   | Fixed locally                                             | pending                       |
+| AUD-018 | P2       | Telegram checkout              | `apps/backend/src/modules/telegram/telegram-customer-auth.service.ts`                                                                                                                                                  | Ordering callback errors can be reported as phone-linking failures                                      | Misleading recovery path during checkout                   | Yes, deployed                                             | `73d7407`                     |
+| AUD-019 | P2       | Telegram checkout              | `apps/backend/src/modules/telegram/telegram-customer-ordering.service.ts`                                                                                                                                              | Post-success cart reuse can collide with previous idempotency key                                       | Valid next Telegram checkout can fail                      | Yes, deployed                                             | `b875f54`                     |
+| AUD-020 | P2       | Staff Telegram                 | `apps/backend/src/modules/telegram/telegram-order-notification.service.ts`                                                                                                                                             | Staff callbacks were status-based, not staff-chat scoped, and could skip lifecycle sequencing           | Kitchen/order lifecycle drift and staff chat noise         | Yes, local only                                           | pending                       |
+| AUD-021 | P2       | Operations health/backup       | `scripts/ops-health.mjs`; `scripts/ops-backup-db.mjs`                                                                                                                                                                  | Static Docker names did not match Dokploy task containers                                               | False database/Redis-down status and backup lookup failure | Yes, local only                                           | pending                       |
+| AUD-022 | P2       | Shift-close printing           | `apps/pos-web/components/staff/shift-close-print-report.tsx`; `apps/pos-web/lib/offline-freshness.mjs`                                                                                                                 | Any cached resource in the cashier panel could mark a freshly fetched shift report as pending/offline   | Misleading printed close report                            | Fixed locally                                             | pending                       |
+| AUD-023 | P2       | Customer checkout idempotency  | `apps/backend/src/modules/customers/customer-order-engine.service.ts`                                                                                                                                                  | A fixed two-minute age threshold could delete an attempt before its configured tenant TTL expired       | Duplicate checkout risk under a slow in-flight request     | Fixed locally                                             | pending                       |
+| AUD-024 | P2       | Table lifecycle                | `apps/backend/src/modules/tables/tables.service.ts`                                                                                                                                                                    | Reactivating an archived table skipped active hall/number collision checks                              | Duplicate active table numbers                             | Fixed locally                                             | pending                       |
+| AUD-025 | P2       | Table/hall validation          | `apps/backend/src/modules/tables/tables.service.ts`                                                                                                                                                                    | Whitespace-only names passed DTO minimum length and were stored blank after trimming                    | Unusable hall/table labels                                 | Fixed locally                                             | pending                       |
+| AUD-026 | P3       | Hall code generation           | `apps/backend/src/modules/tables/tables.service.ts`                                                                                                                                                                    | Millisecond-based suffix could collide on concurrent same-name hall creation                            | Rare failed hall creation                                  | Fixed locally                                             | pending                       |
+| AUD-027 | P3       | Desktop offline outbox         | `apps/desktop/src/gateway.ts`; `apps/pos-web/components/auth/desktop-status.tsx`                                                                                                                                       | JSON replay errors were shown raw in the cashier conflict list                                          | Cashier cannot identify why offline sync was rejected      | Fixed locally                                             | pending                       |
 
 ## Audit Continuation (2026-10-11)
 
@@ -690,3 +665,15 @@ Whitespace result:
 - PR #296 commit `367bea0` passed the Windows desktop package, while CI verify found the DB-backed stale-checkout fixture had an old `createdAt` but a future `expiresAt`. The fixture now uses an expired `expiresAt`; the production TTL behavior was correct and unchanged.
 - After the fixture correction, full `pnpm release:acceptance` passed, including typecheck/lint/build, backend and Desktop tests, 33 operational validators, media validation, 59 PostgreSQL migrations, seed, and database-backed order-to-cash-to-stock-to-print E2E.
 - The E2E used a temporary PostgreSQL 18 container without a volume; it was stopped and removed. No production database or service was touched. The fixture correction and audit note await the next grouped PR push.
+
+## Audit continuation (2026-10-12): customer standalone routing
+
+- Reproduced and fixed a standalone Next.js/next-intl rewrite loop by anchoring locale rewrites to the configured server origin; added strict forwarded-protocol normalization and regression coverage.
+- Fixed the clipped mobile header logo and improved browser QA so HTTP, navigation, and stylesheet failures cannot be hidden by a superficially rendered page.
+- Browser checks passed 42/42 route/viewport combinations; the customer test suite passed 37/37.
+- Uncached workspace tests passed 950/950, root smoke tests 11/11, workspace lint/typecheck/build, operational validators 33/33, production read-only smoke 27/27, and role-matrix UI checks 14/14.
+- The local customer browser run had no backend connected; its offline banner is a test-environment limitation, not a production finding. Production API health is checked separately.
+- Full release acceptance passed, including migrations, seed, and the database-backed order-to-cash-to-stock-to-print E2E on a disposable volume-free database.
+- The release candidate is still unpushed and undeployed; printer, bank/provider, Telegram, and installed Windows Desktop checks remain open.
+- A non-blocking pg@8.23/Prisma adapter query-queue deprecation warning appeared in the disposable E2E; no test or migration failed.
+- Mocked staff UI flows passed across five viewport sizes, including Kitchen handoff, courier confirmation, POS payment/retry, shift closing, and view-only role restrictions.

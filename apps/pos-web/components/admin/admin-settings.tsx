@@ -120,7 +120,7 @@ const SETTING_LABELS: Record<
   },
   cashier_payment_methods: {
     title: "Kassada qabul qilinadigan to'lovlar",
-    hint: "Kassir to'lov kelganini tekshirib tasdiqlaydi; bu avtomatik bank yoki provayder ulanishi emas. Oflayn kassalar oxirgi yuklangan to'lov usullari ro'yxatidan foydalanadi.",
+    hint: "Kassir to'lov kelganini tekshirib tasdiqlaydi; bu avtomatik bank yoki provayder tasdig'i emas. Oflayn kassada faqat naqd pul ishlaydi; naqd usul o'chirilsa, oflayn savdo vaqtincha to'xtaydi.",
     group: "cashier-payments",
   },
   customer_delivery_enabled: {
@@ -265,7 +265,7 @@ export function AdminSettings() {
         before: describeValue(row.rule, row.value),
         after: describeValue(row.rule, value),
         impact: disablesOfflinePaymentMethod
-          ? `O'chiriladigan usullar: ${disabledCashierMethods.map(paymentMethodLabel).join(", ")}. Internetga ulanmagan Desktop kassa oxirgi yuklangan ro'yxatdan foydalanishda davom etishi mumkin. O'chirishdan oldin barcha kassalarni internetga ulang va kutayotgan amallar sinxronlanganini tekshiring. Aks holda eski usul bilan qilingan offline to'lovlar serverda qabul qilinmasligi mumkin. Nizo yuz bersa, usulni qayta yoqib, Desktop navbatini sinxronlang.`
+          ? `O'chiriladigan usullar: ${disabledCashierMethods.map(paymentMethodLabel).join(", ")}. Oflayn Desktop kassa faqat naqd pulni ko'rsatadi; naqd usul o'chirilsa, yangi oflayn savdo to'xtaydi. Saqlashdan oldin kutayotgan Desktop amallarini internet orqali sinxronlang. Oldin yaratilgan navbatdagi amal o'chirilgan usulga bog'liq bo'lsa, usulni qayta yoqib, navbatni sinxronlash kerak bo'ladi.`
           : (SETTING_LABELS[row.key]?.impact ??
             "Bu sozlama mijoz saytida darhol qo'llanadi."),
       });
@@ -334,7 +334,7 @@ export function AdminSettings() {
       />
 
       <SettingsGroup
-        description="Bu usullar kassir oynalarida ko'rinadi. Click/Payme va karta tushumini kassir alohida tekshiradi; avtomatik bank tasdig'i yo'q. To'lov usulini o'chirishdan oldin oflayn Desktop kassalaridagi kutayotgan amallarni sinxronlang."
+        description="Internet bor paytda kassir yoqilgan usullardan tanlaydi; Click/Payme va karta tushumini alohida tekshiradi, avtomatik bank tasdig'i yo'q. Oflayn kassa faqat naqd pulni ko'rsatadi. To'lov usulini o'chirishdan oldin Desktop navbatidagi kutayotgan amallarni sinxronlang."
         drafts={drafts}
         onDraftChange={(key, value) =>
           setDrafts((previous) => ({ ...previous, [key]: value }))

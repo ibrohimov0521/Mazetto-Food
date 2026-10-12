@@ -1,11 +1,11 @@
 # Mazetto Multi-Restaurant Platform
 
-Release status (2026-10-06): BestTeam owner UI/monitoring and customer-web localization remain deployed; MAZETTO Desktop 0.1.97 is published. The Desktop-only release made no backend, web or database changes. Trusted host identity, complete membership enforcement and the isolated no-persistence demo remain blockers. Keep second-restaurant activation disabled. See docs/audit/PRODUCTION_CHECKPOINT_2026-10-06.md.
+Release status (2026-10-12): BestTeam owner UI/monitoring remains deployed at `admin.mazetto.uz`; the requested primary owner-panel domain is `mazetto.uz`. Tenant host/membership authorization is in open PR #296 and has not been deployed. Staging A/B isolation, backup/restore evidence, and controlled domain routing remain gates; keep second-restaurant activation disabled. A public no-persistence demo is not part of the current product scope.
 
 ## Product Boundaries
 
-- `admin.mazetto.uz`: private owner console for the platform operator. It can monitor all tenants and, after provisioning is implemented, manage tenant lifecycle and configuration.
-- `mazetto.uz`: public demo with no account and no durable writes. Demo data must be isolated from real restaurant records and resettable.
+- `mazetto.uz`: intended private BestTeam owner console for the platform operator. It manages multiple restaurants and uses the separate `PLATFORM_OWNER` identity.
+- `admin.mazetto.uz`: currently deployed hostname for the same owner console; preserve it as a working alias until the root-domain route is staged, verified, and reversible.
 - `mazettofood.uz`: one restaurant's customer-facing domain, not the platform domain.
 - Every restaurant keeps its own branded public/admin web apps, domains, Telegram bot identity, and Telegram groups. These apps use one shared restaurant API and one shared PostgreSQL database.
 - Restaurant `SUPER_ADMIN` is scoped to its own tenant. `PLATFORM_OWNER` is a separate central role and must not inherit restaurant permissions by accident.
@@ -23,9 +23,9 @@ Release status (2026-10-06): BestTeam owner UI/monitoring and customer-web local
 - The owner frontend exists at `apps/platform-web`; owner monitoring routes are part of the regular Mazetto backend. The owner role is `PLATFORM_OWNER`, distinct from restaurant `SUPER_ADMIN`.
 - Monitoring registry, heartbeat, diagnostics, event acknowledgement, audit feed, operational summaries, and health checks pass isolated API and browser QA.
 - `RestaurantTenant` and `TenantDomain` are now separate from `PlatformSite`; an additive migration creates Mazetto Food as tenant one and assigns existing branches. The isolated QA checks tenant defaults and keeps new domains pending.
-- Host-to-tenant routing, verified-domain workflows, tenant memberships, business-data authorization, lifecycle controls, and demo isolation are still not implemented. The Mazetto tenant default is transitional, not multi-tenant authorization.
-- The public demo is not implemented as an isolated no-persistence experience.
-- No production migration, Dokploy project/service change, or DNS/Cloudflare change has been made. Do not add another restaurant or expose more domains to the shared API until the isolation gate is met.
+- The open audit branch contains trusted-host routing, verified-domain checks, tenant memberships, and service-level tenant authorization. It is not merged/deployed; staging A/B tests across HTTP, WebSocket, async jobs, media, bots, and reports remain required. Tenant creation remains `PROVISIONING` and no activation route is exposed.
+- The requested `mazetto.uz` root-domain route has not been cut over from the currently deployed owner-panel hostname. No separate public demo is planned in this scope.
+- PR #296 has no production deployment. Do not change Dokploy/DNS or activate another restaurant until staging isolation and restore/rollback gates pass; the live `admin.mazetto.uz` panel must remain usable during any later root-domain cutover.
 
 ## Backfill Risks
 
@@ -36,14 +36,13 @@ Release status (2026-10-06): BestTeam owner UI/monitoring and customer-web local
 - Customer addresses, sessions, carts, favorites, and verification challenges need tenant-aware access even when they do not carry a direct `branchId`.
 - Idempotency, realtime delivery, background work, and audit trails must also be tenant-scoped; adding `tenantId` only to `Branch` does not provide isolation.
 
-
 ## Ordered Delivery
 
 1. Confirm and test an off-site backup restore; inventory all tables, branchless records, global uniqueness, external integrations, and live API entry points.
-2. Tenant/domain schema and Mazetto-first branch assignment are now implemented in this branch. Next add tenant membership/auth context and domain verification; keep new tenant creation disabled until authorization is complete.
-3. Enforce tenant scope across every HTTP route, WebSocket, scheduled job, queue, bot, cache, upload, export, and nested relation. Add two-tenant adversarial tests before enabling a second tenant.
-4. Add owner lifecycle controls: create tenant, assign domains/apps/integration secrets, pause/resume safely, inspect status/log summaries, and audit every owner action. Monitoring registration alone must not be presented as full provisioning.
-5. Build the demo as a separate read-only/ephemeral experience using sanitized fixtures; verify no real API write, login, customer data, or durable browser/server storage can occur.
+2. Tenant/domain schema, verified-host resolution, membership authentication, and Mazetto-first assignment are in the audit branch. They are not released; verify backfill on restorable staging and keep tenant activation disabled.
+3. Tenant-scoped enforcement is implemented in the audit branch; complete adversarial two-tenant acceptance across HTTP, WebSocket, scheduled jobs, queues, bots, cache, uploads, exports, and nested relations before enabling a second tenant.
+4. Owner lifecycle remains partial: tenant creation records `PROVISIONING`, but activation/provisioning controls for apps and integrations are not exposed. Monitoring registration alone is not tenant provisioning.
+5. Stage the requested `mazetto.uz` root-domain route to the owner UI, retain `admin.mazetto.uz` during validation, and verify DNS/TLS, owner login, API proxy, health checks, and rollback without changing Mazetto Food branding or routing.
 6. Run migrations and full regression tests on a restorable staging copy. Backfill Mazetto as tenant one, verify existing orders/POS/customer flows, then test tenant two isolation.
 7. Only after explicit release approval, configure Dokploy and domains in stages with health checks and a tested rollback. DNS/Cloudflare work is a later, separate step.
 
@@ -51,6 +50,6 @@ Release status (2026-10-06): BestTeam owner UI/monitoring and customer-web local
 
 - Keep the existing Mazetto PostgreSQL and backend as the single canonical database/API. Never create one copy per restaurant.
 - Deploy `apps/platform-web` as the owner-only UI and proxy it to the same backend. Any separate Dokploy project must have an explicit private overlay-network path to that backend; otherwise keep the UI in the existing project.
-- Deploy `mazetto.uz` as a distinct demo app with isolated fixtures and no persistent writes.
+- Route `mazetto.uz` to the BestTeam owner-only UI through an approved staged change; keep `admin.mazetto.uz` as the fallback alias until live health and login checks pass.
 - Each tenant's branded web apps and Telegram credentials are separate deployments/configuration, but connect to the shared API after tenant routing and authorization are proven.
 - Dokploy API access is now stored on the server and read-only verified. Inventory found nine projects, including `MAZETTO FOOD`; its production environment and existing services were inspected, but no Dokploy object or production service was changed.

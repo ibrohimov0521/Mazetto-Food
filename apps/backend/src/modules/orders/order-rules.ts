@@ -109,7 +109,7 @@ export function assertPosCheckoutType(dto: CreatePosCheckoutDto): OrderType {
 }
 
 /** Kod bo'yicha qidirish uchun bir xil shaklga keltirish. */
-export function normalizePaymentMethodCode(code: string): string {
+function normalizePaymentMethodCode(code: string): string {
   return code.trim().toUpperCase();
 }
 

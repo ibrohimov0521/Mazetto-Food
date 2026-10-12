@@ -149,10 +149,17 @@ export class OrdersService {
     @Optional() private readonly settings?: SettingsService,
   ) {}
 
-  private async enabledCashierPaymentMethods(tenantId: string) {
+  private async enabledCashierPaymentMethods(
+    tenantId: string,
+    client?: Prisma.TransactionClient,
+  ) {
     return new Set(
       this.settings
-        ? await this.settings.getCsv("cashier_payment_methods", tenantId)
+        ? await this.settings.getCsv(
+            "cashier_payment_methods",
+            tenantId,
+            client,
+          )
         : ["CASH"],
     );
   }
@@ -363,7 +370,7 @@ export class OrdersService {
 
             if (!dto.payLater) {
               const enabledPaymentMethods =
-                await this.enabledCashierPaymentMethods(tenantId);
+                await this.enabledCashierPaymentMethods(tenantId, tx);
               const methodCodes = requestedTenders?.map(
                 (tender) => tender.paymentMethodCode,
               ) ?? ["CASH"];
@@ -1399,9 +1406,7 @@ export class OrdersService {
           order.payments.some((payment) => payment.refunds.length > 0);
         // The order status tracks balance due; payment rows retain refund history.
         const paymentStatus = isCancelling
-          ? totalAfterCancellation.isZero() &&
-            hasRefunds &&
-            netPaid.isZero()
+          ? totalAfterCancellation.isZero() && hasRefunds && netPaid.isZero()
             ? PaymentStatus.REFUNDED
             : netPaid.greaterThanOrEqualTo(totalAfterCancellation)
               ? PaymentStatus.PAID

@@ -1388,7 +1388,7 @@ export class DesktopGateway {
         return;
       }
 
-      const errorText = responseText;
+      const errorText = readableOutboxError(responseText, response.status);
       if (response.status === 409) {
         this.store.markMutationConflict(
           command.id,
@@ -3615,6 +3615,34 @@ function parseJsonObject(source: string): Record<string, unknown> | null {
   }
 }
 
+function readableOutboxError(responseText: string, status: number): string {
+  const payload = parseJsonObject(responseText);
+  const nestedError = payload?.error;
+  const nestedMessage =
+    nestedError &&
+    typeof nestedError === "object" &&
+    !Array.isArray(nestedError)
+      ? (nestedError as Record<string, unknown>).message
+      : undefined;
+  const rawMessage =
+    nestedMessage ??
+    payload?.message ??
+    (typeof nestedError === "string" ? nestedError : undefined);
+  const message = Array.isArray(rawMessage)
+    ? rawMessage
+        .filter(
+          (value): value is string =>
+            typeof value === "string" && Boolean(value.trim()),
+        )
+        .join("; ")
+    : rawMessage;
+  const readable =
+    typeof message === "string" && message.trim()
+      ? message.trim()
+      : responseText.trim() || `HTTP ${status}`;
+  return readable.slice(0, 500);
+}
+
 function canonicalizeJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(canonicalizeJson);
   if (!value || typeof value !== "object") return value;
@@ -4615,11 +4643,34 @@ function buildOfflinePrintDocument(
     ? body.payments.map((value) => {
         const payment = isRecord(value) ? value : {};
         return {
-          method: stringField(payment, "paymentMethodCode") ?? "CASH",
-          amount: String(finiteAmount(payment.amount) ?? 0),
+          method:
+            stringField(payment, "paymentMethodCode") ??
+            stringField(payment, "methodCode") ??
+            stringField(payment, "method") ??
+            "CASH",
+          amount: receiptMoney(payment.amount) ?? "0.00",
         };
       })
     : [];
+  const items = Array.isArray(order.items)
+    ? order.items.map((value) => {
+        const item = isRecord(value) ? value : {};
+        const total = receiptMoney(item.totalPrice ?? item.total);
+        return {
+          name:
+            stringField(item, "productName") ??
+            stringField(item, "name") ??
+            "Mahsulot",
+          variant:
+            stringField(item, "variantName") ?? stringField(item, "variant"),
+          quantity: receiptQuantity(item.quantity),
+          ...(total !== null ? { total } : {}),
+          notes: stringField(item, "notes"),
+          modifiers: item.modifierSnapshot ?? item.modifiers,
+        };
+      })
+    : [];
+  const total = receiptMoney(order.total);
   return {
     title: "MAZETTO FOOD",
     documentType,
@@ -4632,16 +4683,32 @@ function buildOfflinePrintDocument(
     displayOrderNumber: order.displayOrderNumber,
     orderType: offlineOrderTypeLabel(stringField(order, "type")),
     orderSource: stringField(order, "source") ?? "POS",
+    customerName: stringField(order, "customerName"),
+    customerPhone: stringField(order, "customerPhone"),
+    address:
+      stringField(order, "deliveryAddress") ?? stringField(order, "address"),
     orderNotes:
       typeof order.notes === "string" ? order.notes.trim() || null : null,
-    items: order.items,
+    items,
     payments,
-    total: order.total,
+    ...(total !== null ? { total } : {}),
     dateTime: formatTashkentDateTime(
       new Date(stringField(order, "createdAt") ?? new Date().toISOString()),
     ),
     offline: true,
   };
+}
+
+function receiptMoney(value: unknown): string | null {
+  const amount = finiteAmount(value);
+  return amount === null ? null : amount.toFixed(2);
+}
+
+function receiptQuantity(value: unknown): string {
+  const quantity = finiteAmount(value);
+  if (quantity === null) return String(value ?? "1");
+  if (Number.isInteger(quantity)) return String(quantity);
+  return quantity.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function offlineWaiterInternalOrderNumber(localOrderId: string): string {

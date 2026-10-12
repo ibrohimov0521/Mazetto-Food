@@ -335,7 +335,7 @@ test("legacy default receipt branding migrates once without changing other docum
   documents.RECEIPT.businessNameEnabled = true;
 
   const migrated = migrateStoredReceiptPrintProfile(legacy);
-  assert.equal(migrated.schemaVersion, 3);
+  assert.equal(migrated.schemaVersion, 4);
   assert.equal(migrated.documents.RECEIPT.logoEnabled, false);
   assert.equal(migrated.documents.RECEIPT.businessNameEnabled, false);
   assert.equal(migrated.documents.KITCHEN.logoEnabled, true);
@@ -351,6 +351,32 @@ test("legacy default receipt branding migrates once without changing other docum
       .businessNameEnabled,
     true,
   );
+});
+
+test("versioned default customer branding migrates once", () => {
+  for (const schemaVersion of [2, 3]) {
+    const value = {
+      schemaVersion,
+      businessName: "MAZETTO FOOD",
+      documents: {
+        RECEIPT: {
+          businessName: "MAZETTO FOOD",
+          logoEnabled: true,
+          businessNameEnabled: true,
+        },
+      },
+    };
+    const migrated = migrateStoredReceiptPrintProfile(value);
+    assert.equal(migrated.schemaVersion, 4);
+    assert.equal(migrated.documents.RECEIPT.logoEnabled, false);
+    assert.equal(migrated.documents.RECEIPT.businessNameEnabled, false);
+    migrated.documents.RECEIPT.logoEnabled = true;
+    migrated.documents.RECEIPT.businessNameEnabled = true;
+    assert.equal(
+      migrateStoredReceiptPrintProfile(migrated).documents.RECEIPT.logoEnabled,
+      true,
+    );
+  }
 });
 
 test("legacy custom branding and explicit hide choices are preserved", () => {
@@ -515,6 +541,6 @@ test("version-two receipt settings migrate with default footer enabled", () => {
     schemaVersion: 2,
     documents: { RECEIPT: { title: "MIJOZ CHEKI" } },
   });
-  assert.equal(migrated.schemaVersion, 3);
+  assert.equal(migrated.schemaVersion, 4);
   assert.equal(migrated.documents.RECEIPT.defaultFooterEnabled, true);
 });

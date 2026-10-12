@@ -23,6 +23,7 @@ test("online checkout scopes shared product lookup to the selected branch catego
 
   await internals.createItemSnapshot(
     {
+      productModifier: { findMany: async () => [] },
       product: {
         findFirst: async (args: { where: Record<string, unknown> }) => {
           where = args.where;

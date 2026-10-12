@@ -48,10 +48,17 @@ function ProductDetails({
       initialProduct.variants.find((variant) => variant.isDefault)?.id ??
       initialProduct.variants[0]?.id,
   );
-  const [modifierIds, setModifierIds] = useState<string[]>(() =>
-    initialProduct.modifiers
-      .filter((link) => link.isRequired)
-      .map((link) => link.modifier.id),
+  const [modifierQuantities, setModifierQuantities] = useState<
+    Record<string, number>
+  >(() =>
+    Object.fromEntries(
+      initialProduct.modifiers
+        .map((link) => [
+          link.modifier.id,
+          Math.max(link.minSelect ?? 0, link.isRequired ? 1 : 0),
+        ])
+        .filter(([, quantity]) => Number(quantity) > 0),
+    ),
   );
   const [quantity, setQuantity] = useState(1);
   const [notes, setNotes] = useState("");
@@ -71,10 +78,15 @@ function ProductDetails({
           data.variants.find((variant) => variant.isDefault)?.id ??
             data.variants[0]?.id,
         );
-        setModifierIds(
-          data.modifiers
-            .filter((link) => link.isRequired)
-            .map((link) => link.modifier.id),
+        setModifierQuantities(
+          Object.fromEntries(
+            data.modifiers
+              .map((link) => [
+                link.modifier.id,
+                Math.max(link.minSelect ?? 0, link.isRequired ? 1 : 0),
+              ])
+              .filter(([, value]) => Number(value) > 0),
+          ),
         );
       })
       .catch((caught: unknown) => {
@@ -93,13 +105,16 @@ function ProductDetails({
     [product, variantId],
   );
   const selectedModifiers =
-    product?.modifiers.filter((link) =>
-      modifierIds.includes(link.modifier.id),
+    product?.modifiers.filter(
+      (link) => (modifierQuantities[link.modifier.id] ?? 0) > 0,
     ) ?? [];
   const unitTotal =
     Number(variant?.sellingPrice ?? product?.sellingPrice ?? 0) +
     selectedModifiers.reduce(
-      (sum, link) => sum + Number(link.modifier.price),
+      (sum, link) =>
+        sum +
+        Number(link.modifier.price) *
+          (modifierQuantities[link.modifier.id] ?? 0),
       0,
     );
   const total = unitTotal * quantity;
@@ -108,16 +123,20 @@ function ProductDetails({
     return (
       <section className="mx-auto max-w-3xl px-4 py-6">
         <div className="mf-card p-6 text-center" role="alert">
-          <h1 className="text-2xl font-black">{t("mahsulot_ochilmadi_6468bdee")}</h1>
+          <h1 className="text-2xl font-black">
+            {t("mahsulot_ochilmadi_6468bdee")}
+          </h1>
           <p className="mt-3 text-sm">{localizeCustomerCopy(error, locale)}</p>
           <button
             className="mf-button-primary mt-5 px-5 py-3 font-bold"
             onClick={() => setAttempt((value) => value + 1)}
             type="button"
           >
-            {t("qayta_urinish_422d2790")}</button>
+            {t("qayta_urinish_422d2790")}
+          </button>
           <Link className="mt-4 block font-bold" href="/menu">
-            {t("menyuga_qaytish_1bc4a9f0")}</Link>
+            {t("menyuga_qaytish_1bc4a9f0")}
+          </Link>
         </div>
       </section>
     );
@@ -209,14 +228,17 @@ function ProductDetails({
               </p>
               {product.preparationTime != null ? (
                 <p className="mt-2 text-xs font-semibold text-[#07373a]/70">
-                  {product.preparationTime} {t("daq_0ff9d687")}</p>
+                  {product.preparationTime} {t("daq_0ff9d687")}
+                </p>
               ) : null}
             </div>
           </div>
           <div className={styles.options}>
             {product.variants.length ? (
               <fieldset>
-                <legend className="text-sm font-bold">{t("turini_tanlang_93395dc9")}</legend>
+                <legend className="text-sm font-bold">
+                  {t("turini_tanlang_93395dc9")}
+                </legend>
                 <div className="mf-product-variants mt-2">
                   {product.variants.map((item) => (
                     <label
@@ -243,43 +265,84 @@ function ProductDetails({
             ) : null}
             {product.modifiers.length ? (
               <fieldset>
-                <legend className="text-sm font-bold">{t("qo_shimchalar_1fe8c7f3")}</legend>
+                <legend className="text-sm font-bold">
+                  {t("qo_shimchalar_1fe8c7f3")}
+                </legend>
                 <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-                  {product.modifiers.map(({ modifier, isRequired }) => (
-                    <label
-                      className="mf-option-row flex min-w-0 items-center gap-3 px-3 py-3 text-sm"
-                      key={modifier.id}
-                    >
-                      <input
-                        checked={modifierIds.includes(modifier.id)}
-                        disabled={isRequired}
-                        onChange={(event) =>
-                          setModifierIds((current) =>
-                            event.target.checked
-                              ? [...current, modifier.id]
-                              : current.filter(
-                                  (value) => value !== modifier.id,
+                  {product.modifiers.map((link) => {
+                    const { modifier } = link;
+                    const minimum = Math.max(
+                      link.minSelect ?? 0,
+                      link.isRequired ? 1 : 0,
+                    );
+                    const maximum = link.maxSelect ?? Number.POSITIVE_INFINITY;
+                    const selected = modifierQuantities[modifier.id] ?? 0;
+
+                    return (
+                      <div
+                        className="mf-option-row flex min-w-0 items-center justify-between gap-3 px-3 py-3 text-sm"
+                        key={modifier.id}
+                      >
+                        <span className="min-w-0">
+                          <span className="block break-words font-semibold">
+                            {modifier.name}
+                            {link.isRequired ? t("majburiy_bb39de69") : ""}
+                          </span>
+                          <span className="mt-1 block text-xs text-[#087d78]">
+                            +{formatMoney(modifier.price, locale)} / dona
+                          </span>
+                        </span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          <button
+                            aria-label={`${modifier.name} kamaytirish`}
+                            className="mf-quantity-button"
+                            disabled={selected <= minimum}
+                            onClick={() =>
+                              setModifierQuantities((current) => ({
+                                ...current,
+                                [modifier.id]: Math.max(
+                                  minimum,
+                                  (current[modifier.id] ?? 0) - 1,
                                 ),
-                          )
-                        }
-                        type="checkbox"
-                      />
-                      <span className="min-w-0">
-                        <span className="block break-words font-semibold">
-                          {modifier.name}
-                          {isRequired ? t("majburiy_bb39de69") : ""}
+                              }))
+                            }
+                            type="button"
+                          >
+                            -
+                          </button>
+                          <output
+                            aria-live="polite"
+                            className="w-5 text-center"
+                          >
+                            {selected}
+                          </output>
+                          <button
+                            aria-label={`${modifier.name} oshirish`}
+                            className="mf-quantity-button"
+                            disabled={selected >= maximum}
+                            onClick={() =>
+                              setModifierQuantities((current) => ({
+                                ...current,
+                                [modifier.id]: Math.min(
+                                  maximum,
+                                  (current[modifier.id] ?? 0) + 1,
+                                ),
+                              }))
+                            }
+                            type="button"
+                          >
+                            +
+                          </button>
                         </span>
-                        <span className="mt-1 block text-xs text-[#087d78]">
-                          +{formatMoney(modifier.price, locale)}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
+                      </div>
+                    );
+                  })}
                 </div>
               </fieldset>
             ) : null}
             <label className="grid gap-2 text-sm font-bold">
-              {t("izoh_ixtiyoriy_18cf5a79")}<textarea
+              {t("izoh_ixtiyoriy_18cf5a79")}
+              <textarea
                 className="mf-input min-h-20 resize-y px-3 py-3 font-normal"
                 placeholder={t("oshxonaga_izoh_36b0eaf6")}
                 value={notes}
@@ -287,7 +350,10 @@ function ProductDetails({
               />
             </label>
             <div className="mf-product-action">
-              <div aria-label={t("mahsulot_miqdori_40e73cc3")} className="mf-detail-quantity">
+              <div
+                aria-label={t("mahsulot_miqdori_40e73cc3")}
+                className="mf-detail-quantity"
+              >
                 <button
                   aria-label={t("miqdorni_kamaytirish_41a2d3d1")}
                   className="mf-quantity-button"
@@ -325,6 +391,7 @@ function ProductDetails({
                       modifierId: modifier.id,
                       name: modifier.name,
                       price: modifier.price,
+                      quantity: modifierQuantities[modifier.id] ?? 1,
                     })),
                   });
                   if (added && rect) triggerCartFlight(product.imageUrl, rect);

@@ -78,6 +78,7 @@ test("disabled payment method cannot be collected against an existing order", as
   let orderReads = 0;
   let paymentWrites = 0;
   let revenueWrites = 0;
+  let settingsReadClient: unknown;
   const order = {
     id: "order-a",
     branchId: "branch-a",
@@ -118,7 +119,12 @@ test("disabled payment method cannot be collected against an existing order", as
   };
   const service = new PaymentsService(
     { ...tenantLookup } as never,
-    { getCsv: async () => ["CASH"] } as never,
+    {
+      getCsv: async (_key: string, _tenantId: string, client?: unknown) => {
+        settingsReadClient = client;
+        return ["CASH"];
+      },
+    } as never,
   );
 
   await assert.rejects(
@@ -138,6 +144,7 @@ test("disabled payment method cannot be collected against an existing order", as
   );
   assert.equal(paymentWrites, 0);
   assert.equal(revenueWrites, 0);
+  assert.equal(settingsReadClient, transaction);
 });
 
 test("disabled payment method does not block replay of a completed payment", async () => {
@@ -146,9 +153,15 @@ test("disabled payment method does not block replay of a completed payment", asy
     idempotencyKey: "completed-click-payment",
     payments: [{ paymentMethodCode: "CLICK", amount: 10000 }],
   };
+  let settingsReads = 0;
   const service = new PaymentsService(
     { ...tenantLookup } as never,
-    { getCsv: async () => ["CASH"] } as never,
+    {
+      getCsv: async () => {
+        settingsReads += 1;
+        return ["CASH"];
+      },
+    } as never,
   );
   const requestHash = (
     service as unknown as {
@@ -205,6 +218,7 @@ test("disabled payment method does not block replay of a completed payment", asy
   assert.equal(result.order?.id, dto.orderId);
   assert.equal(paymentWrites, 0);
   assert.equal(methodReads, 0);
+  assert.equal(settingsReads, 0);
 });
 
 test("foreign order is rejected before an idempotency replay lookup", async () => {

@@ -240,39 +240,65 @@ export async function createModifierSnapshot(
   productId: string,
   modifiers: OrderItemModifierDto[],
 ): Promise<ModifierSnapshot[]> {
-  if (modifiers.length === 0) {
-    return [];
+  const selectedById = new Map<string, OrderItemModifierDto>();
+  for (const selected of modifiers) {
+    if (selectedById.has(selected.modifierId)) {
+      throw new BadRequestException(
+        "A modifier can only be selected once per product",
+      );
+    }
+    selectedById.set(selected.modifierId, selected);
   }
 
-  const modifierIds = [
-    ...new Set(modifiers.map((modifier) => modifier.modifierId)),
-  ];
   const productModifiers = await tx.productModifier.findMany({
     where: {
       productId,
-      modifierId: { in: modifierIds },
       modifier: { isActive: true },
     },
     include: { modifier: true },
   });
+  const productModifierById = new Map(
+    productModifiers.map((link) => [link.modifierId, link]),
+  );
 
-  if (productModifiers.length !== modifierIds.length) {
-    throw new BadRequestException(
-      "One or more modifiers are not available for this product",
+  for (const selected of modifiers) {
+    if (!productModifierById.has(selected.modifierId)) {
+      throw new BadRequestException(
+        "One or more modifiers are not available for this product",
+      );
+    }
+  }
+
+  for (const productModifier of productModifiers) {
+    const selected = selectedById.get(productModifier.modifierId);
+    const quantity = new Prisma.Decimal(selected?.quantity ?? 0);
+    if (!quantity.isInteger()) {
+      throw new BadRequestException("Modifier quantity must be a whole number");
+    }
+    const minimum = Math.max(
+      productModifier.minSelect,
+      productModifier.isRequired ? 1 : 0,
     );
+    if (quantity.lessThan(minimum)) {
+      throw new BadRequestException(
+        "A required modifier is missing or below its minimum quantity",
+      );
+    }
+    if (
+      productModifier.maxSelect !== null &&
+      quantity.greaterThan(productModifier.maxSelect)
+    ) {
+      throw new BadRequestException("A modifier exceeds its maximum quantity");
+    }
   }
 
   return modifiers.map((selected) => {
-    const productModifier = productModifiers.find(
-      (candidate) => candidate.modifierId === selected.modifierId,
-    );
-
+    const productModifier = productModifierById.get(selected.modifierId);
     if (!productModifier) {
       throw new BadRequestException(
         "Modifier is not available for this product",
       );
     }
-
     const quantity = new Prisma.Decimal(selected.quantity ?? 1);
     const totalPrice = productModifier.modifier.price.mul(quantity);
 

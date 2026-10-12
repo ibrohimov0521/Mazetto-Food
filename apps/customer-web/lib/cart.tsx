@@ -10,6 +10,7 @@ import {
 } from "react";
 import { apiFetch, getApiBaseUrl } from "./api";
 import { customerProfileForStorage } from "./customer-session-storage.mjs";
+import { cartItemTotal } from "./cart-item-total.mjs";
 import { guestApiFetch } from "./guest-addresses";
 import {
   isDeliveryLocation,
@@ -37,11 +38,13 @@ export type CustomerSession = {
 export type CustomerProfileSession = Omit<
   CustomerSession,
   "accessToken" | "refreshToken" | "tokenType"
-> & Partial<Pick<CustomerSession, "accessToken" | "refreshToken" | "tokenType">>;
+> &
+  Partial<Pick<CustomerSession, "accessToken" | "refreshToken" | "tokenType">>;
 export type CartModifier = {
   modifierId: string;
   name: string;
   price: string;
+  quantity?: number;
 };
 export type CartItem = {
   key: string;
@@ -194,7 +197,9 @@ const sourceMenuMediaPaths = new Set([
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
   const [items, setItems] = useState<CartItem[]>([]);
-  const [customer, setCustomerState] = useState<CustomerProfileSession | null>(null);
+  const [customer, setCustomerState] = useState<CustomerProfileSession | null>(
+    null,
+  );
   const [customerReady, setCustomerReady] = useState(false);
   const [favoriteIds, setFavoriteIds] = useState<string[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -212,35 +217,38 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     const request = customer?.accessToken ? apiFetch : guestApiFetch;
     // Restoring the saved address is only needed once the visitor reaches the
     // cart, so it waits for an idle frame instead of competing with hydration.
-    const restore = () => void Promise.all([
-      request<SavedAddress[]>("/customer/me/addresses", {
-        ...(customer?.accessToken ? { accessToken: customer.accessToken } : {}),
-      }),
-      apiFetch<Branch[]>("/customer/branches"),
-    ])
-      .then(([addresses, branches]) => {
-        if (cancelled) return;
-        const valid = addresses.filter((entry) =>
-          isDeliveryLocation(entry.location),
-        );
-        const address =
-          valid.find((entry) => entry.id === readLastAddressId(owner)) ??
-          valid[0];
-        const branch = branches.find(
-          (entry) => entry.deliveryEnabled !== false,
-        );
-        if (address && branch)
-          selectFulfillment({
-            type: "DELIVERY",
-            branchId: branch.id,
-            branchName: branch.name,
-            branchAddress: branch.address ?? "",
-            location: address.location,
-          });
-      })
-      .catch(() => {
-        // The address dialog provides retry and manual selection if restoration fails.
-      });
+    const restore = () =>
+      void Promise.all([
+        request<SavedAddress[]>("/customer/me/addresses", {
+          ...(customer?.accessToken
+            ? { accessToken: customer.accessToken }
+            : {}),
+        }),
+        apiFetch<Branch[]>("/customer/branches"),
+      ])
+        .then(([addresses, branches]) => {
+          if (cancelled) return;
+          const valid = addresses.filter((entry) =>
+            isDeliveryLocation(entry.location),
+          );
+          const address =
+            valid.find((entry) => entry.id === readLastAddressId(owner)) ??
+            valid[0];
+          const branch = branches.find(
+            (entry) => entry.deliveryEnabled !== false,
+          );
+          if (address && branch)
+            selectFulfillment({
+              type: "DELIVERY",
+              branchId: branch.id,
+              branchName: branch.name,
+              branchAddress: branch.address ?? "",
+              location: address.location,
+            });
+        })
+        .catch(() => {
+          // The address dialog provides retry and manual selection if restoration fails.
+        });
 
     const idle = typeof window.requestIdleCallback === "function";
     const handle = idle
@@ -262,9 +270,12 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     setItems(readStoredValue<CartItem[]>(storageKey, []));
-    const legacyCustomer = readStoredValue<CustomerProfileSession | null>(customerKey, null);
+    const legacyCustomer = readStoredValue<CustomerProfileSession | null>(
+      customerKey,
+      null,
+    );
     const browserCustomer = legacyCustomer
-      ? customerProfileForStorage(legacyCustomer) as CustomerProfileSession
+      ? (customerProfileForStorage(legacyCustomer) as CustomerProfileSession)
       : null;
     // Access and refresh tokens stay out of localStorage; the refresh cookie
     // restores an in-memory access token before authenticated pages render.
@@ -273,34 +284,49 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       window.localStorage.setItem(customerKey, JSON.stringify(browserCustomer));
     }
     void fetch(`${getCustomerApiBaseUrl()}/customer/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(
-          legacyCustomer?.refreshToken
-            ? { refreshToken: legacyCustomer.refreshToken }
-            : {},
-        ),
-        signal: AbortSignal.timeout(15_000),
-        credentials: "include",
-      })
-        .then(async (response) => {
-          if (!response.ok) {
-            if (response.status === 401 && browserCustomer) {
-              setCustomerState(null);
-              window.localStorage.removeItem(customerKey);
-            }
-            return;
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(
+        legacyCustomer?.refreshToken
+          ? { refreshToken: legacyCustomer.refreshToken }
+          : {},
+      ),
+      signal: AbortSignal.timeout(15_000),
+      credentials: "include",
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          if (response.status === 401 && browserCustomer) {
+            setCustomerState(null);
+            window.localStorage.removeItem(customerKey);
           }
-          const payload = (await response.json()) as {
-            data?: { customer: Omit<CustomerSession, "accessToken" | "refreshToken" | "tokenType">; tokens: Pick<CustomerSession, "accessToken" | "refreshToken" | "tokenType"> };
+          return;
+        }
+        const payload = (await response.json()) as {
+          data?: {
+            customer: Omit<
+              CustomerSession,
+              "accessToken" | "refreshToken" | "tokenType"
+            >;
+            tokens: Pick<
+              CustomerSession,
+              "accessToken" | "refreshToken" | "tokenType"
+            >;
           };
-          if (!payload.data) return;
-          const migrated = withoutCustomerRefreshToken({ ...payload.data.customer, ...payload.data.tokens });
-          setCustomerState(migrated);
-          window.localStorage.setItem(customerKey, JSON.stringify(customerProfileForStorage(migrated)));
-        })
-        .catch(() => undefined)
-        .finally(() => setCustomerReady(true));
+        };
+        if (!payload.data) return;
+        const migrated = withoutCustomerRefreshToken({
+          ...payload.data.customer,
+          ...payload.data.tokens,
+        });
+        setCustomerState(migrated);
+        window.localStorage.setItem(
+          customerKey,
+          JSON.stringify(customerProfileForStorage(migrated)),
+        );
+      })
+      .catch(() => undefined)
+      .finally(() => setCustomerReady(true));
     setFavoriteIds(readStoredValue<string[]>(favoritesKey, []));
     setHydrated(true);
   }, []);
@@ -334,7 +360,10 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setCustomerReady(true);
 
     if (browserCustomer) {
-      window.localStorage.setItem(customerKey, JSON.stringify(customerProfileForStorage(browserCustomer)));
+      window.localStorage.setItem(
+        customerKey,
+        JSON.stringify(customerProfileForStorage(browserCustomer)),
+      );
     } else {
       window.localStorage.removeItem(customerKey);
       void fetch(`${getCustomerApiBaseUrl()}/customer/auth/logout`, {
@@ -395,16 +424,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   }, [customer, setCustomer]);
 
   const subtotal = useMemo(
-    () =>
-      items.reduce((total, item) => {
-        const modifiersTotal = item.modifiers.reduce(
-          (sum, modifier) => sum + Number(modifier.price),
-          0,
-        );
-        return (
-          total + (Number(item.unitPrice) + modifiersTotal) * item.quantity
-        );
-      }, 0),
+    () => items.reduce((total, item) => total + cartItemTotal(item), 0),
     [items],
   );
 
@@ -545,17 +565,25 @@ export function useCart() {
 
 export function formatMoney(value: string | number, locale = "uz"): string {
   const numberLocale = locale === "ru" ? "ru-RU" : "en-US";
-  const currency = locale === "ru" ? "сум" : "so" + String.fromCharCode(39) + "m";
+  const currency =
+    locale === "ru" ? "сум" : "so" + String.fromCharCode(39) + "m";
   return Number(value || 0).toLocaleString(numberLocale) + " " + currency;
 }
 
 export function cartItemKey(item: {
   productId: string;
   variantId?: string | undefined;
-  modifiers?: { modifierId: string }[];
+  modifiers?: { modifierId: string; quantity?: number }[];
   notes?: string;
 }): string {
-  return `${item.productId}-${item.variantId ?? "base"}-${(item.modifiers ?? []).map((modifier) => modifier.modifierId).join(".")}-${item.notes ?? ""}`;
+  const modifiers = (item.modifiers ?? [])
+    .map((modifier) => [modifier.modifierId, modifier.quantity ?? 1] as const)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([modifierId, quantity]) =>
+      quantity > 1 ? `${modifierId}:${quantity}` : modifierId,
+    )
+    .join(".");
+  return `${item.productId}-${item.variantId ?? "base"}-${modifiers}-${item.notes ?? ""}`;
 }
 
 export function productImage(imageUrl?: string | null): string {

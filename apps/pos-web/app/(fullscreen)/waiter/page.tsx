@@ -30,8 +30,10 @@ import {
   canRequestPayment,
   canSendToKitchen,
   defaultVariant,
+  initialModifierQuantities,
   isOrderEditable,
   lineModifierIds,
+  lineModifierQuantities,
   lineQuantity,
   lineSubtitle,
   maxGuestCount,
@@ -614,7 +616,7 @@ function WaiterFloor() {
       product.id,
       draft.variantId ?? "",
       draft.quantity,
-      [...draft.modifierIds].sort().join(","),
+      JSON.stringify(Object.entries(draft.modifierQuantities).sort()),
       draft.notes.trim(),
     ].join(":");
     const idempotencyKey =
@@ -634,7 +636,7 @@ function WaiterFloor() {
             expectedVersion: currentOrder.version,
             modifiers: draft.modifierIds.map((modifierId) => ({
               modifierId,
-              quantity: 1,
+              quantity: draft.modifierQuantities[modifierId] ?? 1,
             })),
             ...(draft.notes.trim() ? { notes: draft.notes.trim() } : {}),
           }),
@@ -658,10 +660,16 @@ function WaiterFloor() {
       ? (productById.get(line.productId) ?? null)
       : null;
     const currentModifierIds = lineModifierIds(line);
+    const currentModifierQuantities = lineModifierQuantities(line);
     const modifiersChanged =
       product !== null &&
       (currentModifierIds.length !== draft.modifierIds.length ||
-        currentModifierIds.some((id) => !draft.modifierIds.includes(id)));
+        currentModifierIds.some((id) => !draft.modifierIds.includes(id)) ||
+        draft.modifierIds.some(
+          (id) =>
+            currentModifierQuantities[id] !==
+            (draft.modifierQuantities[id] ?? 1),
+        ));
     const body = {
       quantity: draft.quantity,
       notes: draft.notes.trim(),
@@ -670,7 +678,7 @@ function WaiterFloor() {
         ? {
             modifiers: draft.modifierIds.map((modifierId) => ({
               modifierId,
-              quantity: 1,
+              quantity: draft.modifierQuantities[modifierId] ?? 1,
             })),
           }
         : {}),
@@ -1014,9 +1022,10 @@ function WaiterFloor() {
           product={addTarget}
           initial={{
             variantId: defaultVariant(addTarget)?.id ?? null,
-            modifierIds: addTarget.modifiers
-              .filter((entry) => entry.isRequired)
-              .map((entry) => entry.modifier.id),
+            modifierQuantities: initialModifierQuantities(addTarget.modifiers),
+            modifierIds: Object.keys(
+              initialModifierQuantities(addTarget.modifiers),
+            ),
             quantity: 1,
             notes: "",
           }}
@@ -1041,6 +1050,7 @@ function WaiterFloor() {
           initial={{
             variantId: editTarget.variantId,
             modifierIds: lineModifierIds(editTarget),
+            modifierQuantities: lineModifierQuantities(editTarget),
             quantity: lineQuantity(editTarget),
             notes: editTarget.notes ?? "",
           }}

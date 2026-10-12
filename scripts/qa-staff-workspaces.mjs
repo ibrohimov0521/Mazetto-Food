@@ -721,9 +721,23 @@ try {
       .getByRole("button", { name: "Double chizburger,", exact: false })
       .click();
     await page.getByRole("radio", { name: /Katta/ }).check();
-    await page.getByRole("checkbox", { name: /Pishloq/ }).check();
-    assert(
-      await page.getByRole("checkbox", { name: /Maxsus sous/ }).isChecked(),
+    const requiredSauceDecrease = page.getByRole("button", {
+      name: "Maxsus sousni kamaytirish",
+    });
+    assert.equal(
+      await requiredSauceDecrease.isDisabled(),
+      true,
+      "Required modifier starts at its minimum quantity",
+    );
+    await page.getByRole("button", { name: "Pishloqni ko'paytirish" }).click();
+    const cheeseQuantity = page
+      .getByRole("button", { name: "Pishloqni kamaytirish" })
+      .locator("..")
+      .locator("output");
+    assert.equal(
+      (await cheeseQuantity.innerText()).trim(),
+      "1",
+      "Optional modifier quantity increments",
     );
     await screenshot(page, "pos-variant-dialog");
     await page

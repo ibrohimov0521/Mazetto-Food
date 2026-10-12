@@ -79,7 +79,7 @@ export function reportDateLabel(
     : dayLabelFormatter.format(date);
 }
 
-export function reportDate(value: string): string {
+function reportDate(value: string): string {
   const date = new Date(value);
 
   return Number.isNaN(date.getTime()) ? "—" : dateFormatter.format(date);
@@ -357,7 +357,13 @@ export function EmployeeReportView({ query }: { query: ReportQuery }) {
                 onClick={() =>
                   downloadCsv(
                     "xodimlar-hisoboti",
-                    ["Xodim", "Kod", "Buyurtmalar", "Smenalar", "Qabul qilingan to'lov"],
+                    [
+                      "Xodim",
+                      "Kod",
+                      "Buyurtmalar",
+                      "Smenalar",
+                      "Qabul qilingan to'lov",
+                    ],
                     rows.map((row) => [
                       row.employee
                         ? `${row.employee.firstName} ${row.employee.lastName ?? ""}`.trim()
@@ -448,9 +454,7 @@ export function ExpenseReportView({ query }: { query: ReportQuery }) {
       key: "count",
       header: "Soni",
       align: "right",
-      render: (row) => (
-        <span className={numberCell}>{`${row.count} ta`}</span>
-      ),
+      render: (row) => <span className={numberCell}>{`${row.count} ta`}</span>,
     },
     {
       key: "amount",

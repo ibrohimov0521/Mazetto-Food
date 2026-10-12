@@ -10,7 +10,7 @@
  * Berilmasa quyidagi default ishlatiladi.
  */
 
-export const defaultAllowedOrigins = [
+const defaultAllowedOrigins = [
   "http://localhost:3000",
   "http://localhost:3100",
   "http://localhost:3001",
@@ -24,7 +24,9 @@ export const defaultAllowedOrigins = [
   "https://pos.mazettofood.uz",
 ];
 
-export function resolveAllowedOrigins(configured = process.env.CORS_ORIGINS): string[] {
+export function resolveAllowedOrigins(
+  configured = process.env.CORS_ORIGINS,
+): string[] {
   if (!configured?.trim()) {
     return defaultAllowedOrigins;
   }
@@ -55,10 +57,14 @@ export function resolveAllowedOrigins(configured = process.env.CORS_ORIGINS): st
   return origins;
 }
 
-export function corsConfigurationSummary(configured = process.env.CORS_ORIGINS) {
+export function corsConfigurationSummary(
+  configured = process.env.CORS_ORIGINS,
+) {
   const origins = resolveAllowedOrigins(configured);
   return {
-    source: configured?.trim() ? ("environment" as const) : ("default" as const),
+    source: configured?.trim()
+      ? ("environment" as const)
+      : ("default" as const),
     originCount: origins.length,
     fingerprint: createHash("sha256")
       .update([...origins].sort().join("\n"))

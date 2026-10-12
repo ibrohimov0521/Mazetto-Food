@@ -2,39 +2,60 @@ import type { NextConfig } from "next";
 import createNextIntlPlugin from "next-intl/plugin";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { createMediaImageConfig } from "./lib/media-remote-pattern.mjs";
 
 const configDir = path.dirname(fileURLToPath(import.meta.url));
-const apiOrigin = (process.env.API_INTERNAL_URL || (process.env.NODE_ENV === "production"
-  ? "http://mazetto-food-backend-pdslpm:4000" : "http://127.0.0.1:4000")).replace(/\/$/, "");
+const apiOrigin = (
+  process.env.API_INTERNAL_URL ||
+  (process.env.NODE_ENV === "production"
+    ? "http://mazetto-food-backend-pdslpm:4000"
+    : "http://127.0.0.1:4000")
+).replace(/\/$/, "");
 
 const nextConfig: NextConfig = {
-  images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "media.mazettofood.uz",
-      },
-    ],
-  },
+  images: createMediaImageConfig(
+    process.env.NEXT_PUBLIC_MEDIA_URL,
+    process.env.NODE_ENV,
+  ),
   output: "standalone",
   outputFileTracingRoot: path.join(configDir, "../.."),
   async headers() {
     return [
       {
         source: "/brand/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
       },
       {
         source: "/menu-media/source/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
       },
       {
         source: "/products/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
       },
       {
         source: "/categories/:path*",
-        headers: [{ key: "Cache-Control", value: "public, max-age=31536000, immutable" }],
+        headers: [
+          {
+            key: "Cache-Control",
+            value: "public, max-age=31536000, immutable",
+          },
+        ],
       },
       {
         source: "/design-options.html",

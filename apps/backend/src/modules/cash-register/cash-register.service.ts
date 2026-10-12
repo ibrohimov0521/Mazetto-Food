@@ -1,4 +1,8 @@
-import { ForbiddenException, Injectable, NotFoundException } from "@nestjs/common";
+import {
+  ForbiddenException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import {
   CashTransactionType,
   OrderStatus,
@@ -64,40 +68,41 @@ export class CashRegisterService {
           return null;
         }
 
-        const [cashTransactionTotals, cashSales, shiftOrders] = await Promise.all([
-          tx.cashTransaction.groupBy({
-            by: ["type"],
-            where: { shiftId: shift.id, branchId: shift.branchId },
-            _sum: { amount: true },
-            _count: { _all: true },
-          }),
-          tx.revenueRecord.aggregate({
-            where: {
-              shiftId: shift.id,
-              branchId: shift.branchId,
-              payment: { method: { code: "CASH" } },
-            },
-            _sum: { amount: true },
-          }),
-          tx.order.findMany({
-            where: {
-              branchId: shift.branchId,
-              OR: [
-                { shiftId: shift.id },
-                {
-                  revenueRecords: {
-                    some: {
-                      shiftId: shift.id,
-                      branchId: shift.branchId,
+        const [cashTransactionTotals, cashSales, shiftOrders] =
+          await Promise.all([
+            tx.cashTransaction.groupBy({
+              by: ["type"],
+              where: { shiftId: shift.id, branchId: shift.branchId },
+              _sum: { amount: true },
+              _count: { _all: true },
+            }),
+            tx.revenueRecord.aggregate({
+              where: {
+                shiftId: shift.id,
+                branchId: shift.branchId,
+                payment: { method: { code: "CASH" } },
+              },
+              _sum: { amount: true },
+            }),
+            tx.order.findMany({
+              where: {
+                branchId: shift.branchId,
+                OR: [
+                  { shiftId: shift.id },
+                  {
+                    revenueRecords: {
+                      some: {
+                        shiftId: shift.id,
+                        branchId: shift.branchId,
+                      },
                     },
                   },
-                },
-              ],
-            },
-            select: { id: true },
-            orderBy: { id: "asc" },
-          }),
-        ]);
+                ],
+              },
+              select: { id: true },
+              orderBy: { id: "asc" },
+            }),
+          ]);
         const shiftOrderIds = shiftOrders.map(({ id }) => id);
 
         return {
@@ -278,8 +283,6 @@ export class CashRegisterService {
 
     const status = this.toOrderStatus(query.status);
     const search = query.search?.trim();
-    const day = this.todayTashkentRange();
-
     return this.prisma.order.findMany({
       where: {
         AND: [
@@ -299,7 +302,6 @@ export class CashRegisterService {
         ],
         branchId: shift.branchId,
         branch: { tenantId },
-        createdAt: { gte: day.start, lt: day.end },
         ...(status ? { status } : {}),
         ...(search
           ? {
@@ -347,14 +349,20 @@ export class CashRegisterService {
           include: {
             method: true,
             refunds: {
-              select: { id: true, orderItemId: true, amount: true, reason: true, createdAt: true },
+              select: {
+                id: true,
+                orderItemId: true,
+                amount: true,
+                reason: true,
+                createdAt: true,
+              },
               orderBy: { createdAt: "asc" },
             },
           },
           orderBy: { createdAt: "asc" },
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       skip: this.parseOffset(query.offset),
       take: this.parseLimit(query.limit),
     });
@@ -466,19 +474,21 @@ export class CashRegisterService {
     const search = query.search?.trim();
     return this.prisma.order.findMany({
       where: {
-        AND: [{
-          OR: [
-            { shiftId: shift.id },
-            {
-              revenueRecords: {
-                some: {
-                  shiftId: shift.id,
-                  branchId: shift.branchId,
+        AND: [
+          {
+            OR: [
+              { shiftId: shift.id },
+              {
+                revenueRecords: {
+                  some: {
+                    shiftId: shift.id,
+                    branchId: shift.branchId,
+                  },
                 },
               },
-            },
-          ],
-        }],
+            ],
+          },
+        ],
         branchId: shift.branchId,
         branch: { tenantId },
         ...(status ? { status } : {}),
@@ -486,10 +496,18 @@ export class CashRegisterService {
           ? {
               OR: [
                 { orderNumber: { contains: search, mode: "insensitive" } },
-                { displayOrderNumber: { contains: search, mode: "insensitive" } },
+                {
+                  displayOrderNumber: { contains: search, mode: "insensitive" },
+                },
                 { customerName: { contains: search, mode: "insensitive" } },
                 { customerPhone: { contains: search, mode: "insensitive" } },
-                { items: { some: { productName: { contains: search, mode: "insensitive" } } } },
+                {
+                  items: {
+                    some: {
+                      productName: { contains: search, mode: "insensitive" },
+                    },
+                  },
+                },
               ],
             }
           : {}),
@@ -514,7 +532,13 @@ export class CashRegisterService {
           include: {
             method: true,
             refunds: {
-              select: { id: true, orderItemId: true, amount: true, reason: true, createdAt: true },
+              select: {
+                id: true,
+                orderItemId: true,
+                amount: true,
+                reason: true,
+                createdAt: true,
+              },
               orderBy: { createdAt: "asc" },
             },
           },
@@ -526,13 +550,14 @@ export class CashRegisterService {
           orderBy: { createdAt: "desc" },
         },
       },
-      orderBy: query.sort === "amount-high"
-        ? [{ total: "desc" }, { id: "desc" }]
-        : query.sort === "amount-low"
-          ? [{ total: "asc" }, { id: "asc" }]
-          : query.sort === "oldest"
-            ? [{ createdAt: "asc" }, { id: "asc" }]
-            : [{ createdAt: "desc" }, { id: "desc" }],
+      orderBy:
+        query.sort === "amount-high"
+          ? [{ total: "desc" }, { id: "desc" }]
+          : query.sort === "amount-low"
+            ? [{ total: "asc" }, { id: "asc" }]
+            : query.sort === "oldest"
+              ? [{ createdAt: "asc" }, { id: "asc" }]
+              : [{ createdAt: "desc" }, { id: "desc" }],
       skip: this.parseOffset(query.offset),
       take: this.parseLimit(query.limit),
     });
@@ -554,27 +579,30 @@ export class CashRegisterService {
           group.type === CashTransactionType.OPENING_BALANCE) &&
         group._count._all > 0,
     );
-    const currentBalance = transactionTotals.reduce((total, group) => {
-      const amount = group._sum.amount ?? new Prisma.Decimal(0);
+    const currentBalance = transactionTotals.reduce(
+      (total, group) => {
+        const amount = group._sum.amount ?? new Prisma.Decimal(0);
 
-      if (
-        group.type === CashTransactionType.REFUND ||
-        group.type === CashTransactionType.EXPENSE ||
-        group.type === CashTransactionType.WITHDRAW ||
-        group.type === CashTransactionType.CASH_OUT
-      ) {
-        return total.sub(amount);
-      }
+        if (
+          group.type === CashTransactionType.REFUND ||
+          group.type === CashTransactionType.EXPENSE ||
+          group.type === CashTransactionType.WITHDRAW ||
+          group.type === CashTransactionType.CASH_OUT
+        ) {
+          return total.sub(amount);
+        }
 
-      if (
-        group.type === CashTransactionType.CLOSING ||
-        group.type === CashTransactionType.CLOSING_BALANCE
-      ) {
-        return total;
-      }
+        if (
+          group.type === CashTransactionType.CLOSING ||
+          group.type === CashTransactionType.CLOSING_BALANCE
+        ) {
+          return total;
+        }
 
-      return total.add(amount);
-    }, hasOpeningTransaction ? new Prisma.Decimal(0) : openingBalance);
+        return total.add(amount);
+      },
+      hasOpeningTransaction ? new Prisma.Decimal(0) : openingBalance,
+    );
     const cashSales = cashSalesAmount ?? new Prisma.Decimal(0);
 
     return {
@@ -609,22 +637,6 @@ export class CashRegisterService {
     }
 
     throw new ForbiddenException("Cannot access another employee shift");
-  }
-
-  private todayTashkentRange(): { start: Date; end: Date } {
-    const offsetMs = 5 * 60 * 60 * 1000;
-    const shifted = new Date(Date.now() + offsetMs);
-    const startUtcMs =
-      Date.UTC(
-        shifted.getUTCFullYear(),
-        shifted.getUTCMonth(),
-        shifted.getUTCDate(),
-      ) - offsetMs;
-
-    return {
-      start: new Date(startUtcMs),
-      end: new Date(startUtcMs + 24 * 60 * 60 * 1000),
-    };
   }
 
   private toOrderStatus(status?: string): OrderStatus | undefined {

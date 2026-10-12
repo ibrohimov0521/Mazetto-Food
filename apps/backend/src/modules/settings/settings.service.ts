@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from "@nestjs/common";
+import type { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { resolveRestaurantTenantId } from "../../common/auth/tenant-scope";
@@ -29,10 +30,16 @@ import { writeAuditLog } from "../audit/audit-write";
  * ishlaganda yozishni bajarган instance keshni faqat O'ZIDA emas, Redis'da
  * bekor qiladi — bu yetarli. TTL esa Redis tushib qayta ko'tarilgan yoki
  * bazaga qo'lda yozilgan holatlar uchun oxirgi himoya.
+ *
+ * `cashier_payment_methods` istisno: eskirgan kesh o'chirilgan to'lovni
+ * qayta yoqmasligi uchun doim DB'dan o'qiladi, mavjud transaction qayta ishlatiladi.
  */
 
 const cacheKey = (tenantId: string) => `settings:${tenantId}:all`;
 const CACHE_TTL_SECONDS = 60;
+// A cashier payment-method kill switch must not depend on Redis invalidation.
+const IMMEDIATE_SETTING_KEYS = new Set<SettingKey>(["cashier_payment_methods"]);
+type SettingReadClient = Pick<Prisma.TransactionClient, "setting">;
 
 @Injectable()
 export class SettingsService {
@@ -53,8 +60,12 @@ export class SettingsService {
     return parseBoolSetting(key, await this.readRaw(key, tenantId));
   }
 
-  async getCsv(key: SettingKey, tenantId: string): Promise<string[]> {
-    return parseCsvSetting(key, await this.readRaw(key, tenantId));
+  async getCsv(
+    key: SettingKey,
+    tenantId: string,
+    client?: SettingReadClient,
+  ): Promise<string[]> {
+    return parseCsvSetting(key, await this.readRaw(key, tenantId, client));
   }
 
   // --- Admin ekrani ------------------------------------------------------
@@ -70,20 +81,29 @@ export class SettingsService {
    */
   async listSettings(user: AuthenticatedUser) {
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
-    const stored = await this.readAll(tenantId);
+    const [stored, immediate] = await Promise.all([
+      this.readAll(tenantId),
+      this.readImmediateSettings(tenantId),
+    ]);
 
-    return settingKeys.map((key) => ({
-      key,
-      value:
-        describeSettingRule(key).kind === "csv-enum"
-          ? parseCsvSetting(key, stored[key]).join(",")
-          : (stored[key] ?? settingFallback(key)),
-      isStored: stored[key] !== undefined,
-      isPublic: isPublicSettingKey(key),
-      affectsCustomer: affectsCustomerCheckout(key),
-      rule: describeSettingRule(key),
-      fallback: settingFallback(key),
-    }));
+    return settingKeys.map((key) => {
+      const rawValue = IMMEDIATE_SETTING_KEYS.has(key)
+        ? immediate[key]
+        : stored[key];
+
+      return {
+        key,
+        value:
+          describeSettingRule(key).kind === "csv-enum"
+            ? parseCsvSetting(key, rawValue).join(",")
+            : (rawValue ?? settingFallback(key)),
+        isStored: rawValue !== undefined,
+        isPublic: isPublicSettingKey(key),
+        affectsCustomer: affectsCustomerCheckout(key),
+        rule: describeSettingRule(key),
+        fallback: settingFallback(key),
+      };
+    });
   }
 
   /** Mijoz tomoniga oshkor qilinadigan qism. */
@@ -154,9 +174,45 @@ export class SettingsService {
   private async readRaw(
     key: SettingKey,
     tenantId: string,
+    client?: SettingReadClient,
   ): Promise<string | undefined> {
+    if (IMMEDIATE_SETTING_KEYS.has(key)) {
+      return this.readImmediateSetting(key, tenantId, client);
+    }
+
     const all = await this.readAll(tenantId);
     return all[key];
+  }
+
+  private async readImmediateSettings(
+    tenantId: string,
+  ): Promise<Partial<Record<SettingKey, string>>> {
+    const entries = await Promise.all(
+      [...IMMEDIATE_SETTING_KEYS].map(
+        async (key) =>
+          [key, await this.readImmediateSetting(key, tenantId)] as const,
+      ),
+    );
+
+    return Object.fromEntries(
+      entries.filter(
+        (entry): entry is readonly [SettingKey, string] =>
+          entry[1] !== undefined,
+      ),
+    );
+  }
+
+  private async readImmediateSetting(
+    key: SettingKey,
+    tenantId: string,
+    client: SettingReadClient = this.prisma,
+  ): Promise<string | undefined> {
+    const row = await client.setting.findUnique({
+      where: { tenantId_key: { tenantId, key } },
+      select: { value: true },
+    });
+
+    return row?.value;
   }
 
   private async readAll(
@@ -179,7 +235,7 @@ export class SettingsService {
       // Reestrdan olib tashlangan kalitlar bazada qolishi mumkin — ular
       // e'tiborsiz qoldiriladi, o'chirilmaydi: qatorni saqlash sozlamani
       // qaytarib yoqishni oson qiladi.
-      if (isKnownSettingKey(row.key)) {
+      if (isKnownSettingKey(row.key) && !IMMEDIATE_SETTING_KEYS.has(row.key)) {
         map[row.key] = row.value;
       }
     }

@@ -48,6 +48,14 @@ test("business settings and Redis cache are isolated by restaurant", async () =>
             },
           ];
         },
+        findUnique: async ({
+          where,
+        }: {
+          where: { tenantId_key: { tenantId: string } };
+        }) => ({
+          value:
+            where.tenantId_key.tenantId === "tenant-a" ? "CASH" : "CARD,CLICK",
+        }),
       },
     } as never,
     {
@@ -106,4 +114,103 @@ test("business settings and Redis cache are isolated by restaurant", async () =>
     "settings:tenant-a:all",
     "settings:tenant-b:all",
   ]);
+});
+
+test("cashier payment methods ignore a stale Redis cache entry", async () => {
+  const cache = new Map([
+    [
+      "settings:tenant-a:all",
+      JSON.stringify({ cashier_payment_methods: "CASH,CLICK" }),
+    ],
+  ]);
+  const service = new SettingsService(
+    {
+      restaurantTenant: {
+        findFirst: async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+        }),
+      },
+      setting: {
+        findMany: async () => [
+          { key: "cashier_payment_methods", value: "CASH,CLICK" },
+        ],
+        findUnique: async () => ({ value: "CASH" }),
+      },
+    } as never,
+    {
+      getClient: () => ({
+        get: async (key: string) => cache.get(key) ?? null,
+        set: async (key: string, value: string) => {
+          cache.set(key, value);
+          return "OK";
+        },
+      }),
+    } as never,
+  );
+
+  assert.deepEqual(
+    await service.getCsv("cashier_payment_methods", "tenant-a"),
+    ["CASH"],
+  );
+  const listed = await service.listSettings(owner);
+  assert.equal(
+    listed.find((setting) => setting.key === "cashier_payment_methods")?.value,
+    "CASH",
+  );
+});
+
+test("cashier payment methods fail closed when the live settings read fails", async () => {
+  const service = new SettingsService(
+    {
+      setting: {
+        findUnique: async () => {
+          throw new Error("database unavailable");
+        },
+      },
+    } as never,
+    {
+      getClient: () => ({
+        get: async () =>
+          JSON.stringify({ cashier_payment_methods: "CASH,CLICK" }),
+      }),
+    } as never,
+  );
+
+  await assert.rejects(
+    service.getCsv("cashier_payment_methods", "tenant-a"),
+    /database unavailable/,
+  );
+});
+
+test("cashier payment settings reuse an existing transaction client", async () => {
+  const service = new SettingsService(
+    {
+      setting: {
+        findUnique: async () =>
+          assert.fail("must use the provided transaction"),
+      },
+    } as never,
+    { getClient: () => null } as never,
+  );
+  let lookup: Record<string, unknown> | undefined;
+  const transaction = {
+    setting: {
+      findUnique: async (args: { where: Record<string, unknown> }) => {
+        lookup = args.where;
+        return { value: "CASH" };
+      },
+    },
+  };
+
+  assert.deepEqual(
+    await service.getCsv(
+      "cashier_payment_methods",
+      "tenant-a",
+      transaction as never,
+    ),
+    ["CASH"],
+  );
+  assert.deepEqual(lookup, {
+    tenantId_key: { tenantId: "tenant-a", key: "cashier_payment_methods" },
+  });
 });

@@ -168,19 +168,108 @@ test("buyurtma topilmasa qayta hisoblash to'xtaydi", async () => {
   );
 });
 
-test("modifikatorsiz qator tashqi so'rov yubormaydi", async () => {
+test("modifikatorsiz qator ham mahsulot qoidalarini tekshiradi", async () => {
   let called = false;
   const tx = {
     productModifier: {
       findMany: async () => {
         called = true;
-        return [];
+        return [
+          {
+            modifierId: "m1",
+            isRequired: false,
+            minSelect: 0,
+            maxSelect: null,
+            modifier: {
+              id: "m1",
+              code: "C1",
+              name: "Sous",
+              price: new Prisma.Decimal(0),
+            },
+          },
+        ];
       },
     },
   } as unknown as Tx;
 
   assert.deepEqual(await createModifierSnapshot(tx, "p1", []), []);
-  assert.equal(called, false, "bo'sh ro'yxatda bazaga borilmasligi kerak");
+  assert.equal(called, true);
+});
+
+test("majburiy qo'shimcha buyurtmadan tushib qolsa rad etiladi", async () => {
+  const tx = {
+    productModifier: {
+      findMany: async () => [
+        {
+          modifierId: "m1",
+          isRequired: true,
+          minSelect: 2,
+          maxSelect: 3,
+          modifier: {
+            id: "m1",
+            code: "CHEESE",
+            name: "Pishloq",
+            price: new Prisma.Decimal(2000),
+          },
+        },
+      ],
+    },
+  } as unknown as Tx;
+
+  await assert.rejects(
+    () => createModifierSnapshot(tx, "p1", []),
+    BadRequestException,
+  );
+});
+
+test("qo'shimcha miqdori min/max chegarasida bo'lishi shart", async () => {
+  const tx = {
+    productModifier: {
+      findMany: async () => [
+        {
+          modifierId: "m1",
+          isRequired: true,
+          minSelect: 2,
+          maxSelect: 3,
+          modifier: {
+            id: "m1",
+            code: "CHEESE",
+            name: "Pishloq",
+            price: new Prisma.Decimal(2000),
+          },
+        },
+      ],
+    },
+  } as unknown as Tx;
+
+  await assert.rejects(
+    () => createModifierSnapshot(tx, "p1", [{ modifierId: "m1", quantity: 1 }]),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () => createModifierSnapshot(tx, "p1", [{ modifierId: "m1", quantity: 4 }]),
+    BadRequestException,
+  );
+  const snapshot = await createModifierSnapshot(tx, "p1", [
+    { modifierId: "m1", quantity: 2 },
+  ]);
+  assert.equal(snapshot[0]?.quantity, "2.000");
+  assert.equal(snapshot[0]?.totalPrice, "4000.00");
+});
+
+test("takroriy qo'shimcha tanlovi rad etiladi", async () => {
+  const tx = {
+    productModifier: { findMany: async () => [] },
+  } as unknown as Tx;
+
+  await assert.rejects(
+    () =>
+      createModifierSnapshot(tx, "p1", [
+        { modifierId: "m1", quantity: 1 },
+        { modifierId: "m1", quantity: 1 },
+      ]),
+    BadRequestException,
+  );
 });
 
 test("mahsulotga biriktirilmagan modifikator rad etiladi", async () => {
@@ -224,6 +313,9 @@ test("snapshot narxni buyurtma paytidagi holatda yozadi", async () => {
       findMany: async () => [
         {
           modifierId: "m1",
+          isRequired: false,
+          minSelect: 0,
+          maxSelect: null,
           modifier: {
             id: "m1",
             code: "CHEESE",

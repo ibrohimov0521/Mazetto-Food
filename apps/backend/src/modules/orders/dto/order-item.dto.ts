@@ -19,7 +19,7 @@ export class OrderItemModifierDto {
   modifierId!: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   @IsPositive()
   quantity = 1;
 }

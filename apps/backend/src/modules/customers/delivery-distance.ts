@@ -27,17 +27,23 @@ function toRadians(degrees: number): number {
   return (degrees * Math.PI) / 180;
 }
 
+function isValidCoordinate(value: Coordinate): boolean {
+  return (
+    Number.isFinite(value.latitude) &&
+    Number.isFinite(value.longitude) &&
+    value.latitude >= -90 &&
+    value.latitude <= 90 &&
+    value.longitude >= -180 &&
+    value.longitude <= 180
+  );
+}
+
 /**
  * Ikki nuqta orasidagi to'g'ri chiziq masofasi, kilometrda.
  * Koordinata yaroqsiz bo'lsa `null`.
  */
 export function haversineKm(from: Coordinate, to: Coordinate): number | null {
-  if (
-    !Number.isFinite(from.latitude) ||
-    !Number.isFinite(from.longitude) ||
-    !Number.isFinite(to.latitude) ||
-    !Number.isFinite(to.longitude)
-  ) {
+  if (!isValidCoordinate(from) || !isValidCoordinate(to)) {
     return null;
   }
 
@@ -46,20 +52,21 @@ export function haversineKm(from: Coordinate, to: Coordinate): number | null {
   const lat1 = toRadians(from.latitude);
   const lat2 = toRadians(to.latitude);
 
-  const a =
+  const rawA =
     Math.sin(dLat / 2) ** 2 +
     Math.sin(dLon / 2) ** 2 * Math.cos(lat1) * Math.cos(lat2);
+  const a = Math.min(1, Math.max(0, rawA));
 
   /*
-   * `atan2` ATAYLAB `asin` emas: juda uzoq nuqtalarda suzuvchi nuqta
-   * xatosi `a` ni 1 dan biroz kattaroq qilishi mumkin va `asin` NaN
-   * qaytarardi. `atan2` bunday holatda ham barqaror.
+   * Floating-point rounding can push the haversine term slightly outside
+   * [0, 1], so clamp before square roots. atan2 remains stable near
+   * antipodes, where asin is more sensitive to rounding error.
    */
   return EARTH_RADIUS_KM * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 }
 
 /** Prisma `Decimal?` ni raqamga aylantiradi; bo'sh bo'lsa `null`. */
-export function decimalToNumber(
+function decimalToNumber(
   value: Prisma.Decimal | null | undefined,
 ): number | null {
   if (value === null || value === undefined) return null;
@@ -74,12 +81,29 @@ export function decimalToNumber(
  * koordinatasiz manzil bo'lishi mumkin (xarita qo'shilishidan oldingi
  * buyurtmalar), shuning uchun har maydon alohida tekshiriladi.
  */
+
+function parseCoordinateNumber(value: unknown): number | null {
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value !== "string" || value.trim() === "") return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 export function coordinateFromJson(value: unknown): Coordinate | null {
-  if (!value || typeof value !== "object") return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const latitude = Number(record.latitude);
-  const longitude = Number(record.longitude);
-  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  const latitude = parseCoordinateNumber(record.latitude);
+  const longitude = parseCoordinateNumber(record.longitude);
+  if (
+    latitude === null ||
+    longitude === null ||
+    latitude < -90 ||
+    latitude > 90 ||
+    longitude < -180 ||
+    longitude > 180
+  ) {
+    return null;
+  }
   return { latitude, longitude };
 }
 

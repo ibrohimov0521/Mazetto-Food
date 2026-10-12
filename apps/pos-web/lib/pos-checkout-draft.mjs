@@ -1,6 +1,6 @@
 /**
  * @typedef {{ key: string; payloadSignature: string }} PosCheckoutAttempt
- * @typedef {{ key: string; productId: string; variantId?: string | null; modifierIds: string[]; quantity: number }} PosCartLineDraft
+ * @typedef {{ key: string; productId: string; variantId?: string | null; modifierIds: string[]; modifierQuantities?: Record<string, number>; quantity: number }} PosCartLineDraft
  * @typedef {{
  *   lines: PosCartLineDraft[];
  *   checkoutAttempt: PosCheckoutAttempt | null;
@@ -10,6 +10,9 @@
  *   paymentCode: string;
  *   cashReceived: string;
  * }} PosCheckoutDraft
+ * @typedef {{ modifierId: string; quantity?: number }} PosCheckoutModifier
+ * @typedef {{ productId: string; variantId?: string | null; quantity: number; modifiers: PosCheckoutModifier[] }} PosCheckoutItem
+ * @typedef {{ orderType: "TAKEAWAY" | "DINE_IN"; deferPayment: boolean; tableId: string | null; paymentCode: string | null; cashReceived: number | null; total: number; items: PosCheckoutItem[] }} PosCheckoutSignatureInput
  */
 
 /** @param {unknown} value */
@@ -24,6 +27,16 @@ function isCartLine(value) {
       typeof line.variantId === "string") &&
     Array.isArray(line.modifierIds) &&
     line.modifierIds.every((id) => typeof id === "string") &&
+    (line.modifierQuantities === undefined ||
+      (line.modifierQuantities !== null &&
+        typeof line.modifierQuantities === "object" &&
+        !Array.isArray(line.modifierQuantities) &&
+        Object.values(line.modifierQuantities).every(
+          (quantity) =>
+            typeof quantity === "number" &&
+            Number.isInteger(quantity) &&
+            quantity > 0,
+        ))) &&
     typeof line.quantity === "number" &&
     Number.isInteger(line.quantity) &&
     line.quantity > 0
@@ -83,4 +96,24 @@ export function parsePosCheckoutDraft(raw) {
 /** @param {PosCheckoutDraft} draft */
 export function serializePosCheckoutDraft(draft) {
   return JSON.stringify({ version: 1, ...draft });
+}
+
+/** @param {PosCheckoutSignatureInput} input */
+export function buildPosCheckoutPayloadSignature(input) {
+  return JSON.stringify({
+    orderType: input.orderType,
+    deferPayment: input.deferPayment,
+    tableId: input.tableId,
+    paymentCode: input.paymentCode,
+    cashReceived: input.cashReceived,
+    total: input.total,
+    items: input.items.map((item) => [
+      item.productId,
+      item.variantId ?? null,
+      item.quantity,
+      item.modifiers
+        .map((modifier) => [modifier.modifierId, modifier.quantity ?? 1])
+        .sort(([left], [right]) => left.localeCompare(right)),
+    ]),
+  });
 }

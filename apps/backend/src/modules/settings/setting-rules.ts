@@ -31,7 +31,7 @@ type SettingRule =
   | { kind: "csv-enum"; values: readonly string[]; fallback: string }
   | { kind: "string"; fallback: string };
 
-export const CASHIER_PAYMENT_METHOD_CODES = [
+const CASHIER_PAYMENT_METHOD_CODES = [
   "CASH",
   "CARD",
   "UZCARD",

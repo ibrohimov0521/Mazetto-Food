@@ -18,33 +18,96 @@ async function main() {
   const url = new URL(process.env.DATABASE_URL || "http://invalid");
   assert.equal(process.env.MAZETTO_CASH_DB_SMOKE, "1");
   assert.ok(["127.0.0.1", "localhost"].includes(url.hostname));
-  assert.equal(url.pathname, "/cash_qa", "Only the disposable cash_qa database is allowed");
+  assert.equal(
+    url.pathname,
+    "/cash_qa",
+    "Only the disposable cash_qa database is allowed",
+  );
   const prisma = new PrismaService();
   await prisma.$connect();
   try {
     const id = Date.now().toString();
-    const branch = await prisma.branch.create({ data: { code: "CASHQA" + id, name: "Cash QA", isActive: true, acceptsOrders: true } });
-    const actor = async (name: string, roles: string[]): Promise<AuthenticatedUser> => {
-      const user = await prisma.user.create({ data: { email: name + id + "@example.test", displayName: name } });
-      const employee = await prisma.employee.create({ data: { userId: user.id, branchId: branch.id, employeeCode: name + id, firstName: name, status: "ACTIVE" } });
+    const branch = await prisma.branch.create({
+      data: {
+        code: "CASHQA" + id,
+        name: "Cash QA",
+        isActive: true,
+        acceptsOrders: true,
+      },
+    });
+    const actor = async (
+      name: string,
+      roles: string[],
+    ): Promise<AuthenticatedUser> => {
+      const user = await prisma.user.create({
+        data: { email: name + id + "@example.test", displayName: name },
+      });
+      const employee = await prisma.employee.create({
+        data: {
+          userId: user.id,
+          branchId: branch.id,
+          employeeCode: name + id,
+          firstName: name,
+          status: "ACTIVE",
+        },
+      });
       for (const code of roles) {
-        const role = await prisma.role.upsert({ where: { code }, update: {}, create: { code, name: code } });
-        await prisma.userRole.create({ data: { userId: user.id, roleId: role.id } });
+        const role = await prisma.role.upsert({
+          where: { code },
+          update: {},
+          create: { code, name: code },
+        });
+        await prisma.userRole.create({
+          data: { userId: user.id, roleId: role.id },
+        });
       }
-      return { id: user.id, employeeId: employee.id, branchId: branch.id, roles, permissions: ["*"] };
+      return {
+        id: user.id,
+        employeeId: employee.id,
+        branchId: branch.id,
+        roles,
+        permissions: ["*"],
+      };
     };
     const worker = await actor("Worker", ["KITCHEN", "CASHIER", "COURIER"]);
     const receiver = await actor("Receiver", ["CASHIER"]);
     const branchManager = await actor("Manager", ["BRANCH_MANAGER"]);
     const cashOperator = await actor("CashOperator", ["CASHIER"]);
-    const category = await prisma.category.create({ data: { code: "CASHQA" + id, name: "QA" } });
-    const product = await prisma.product.findFirst({ where: { code: "CLASSIC_LAVASH" } }) ?? await prisma.product.create({ data: { code: "CLASSIC_LAVASH", categoryId: category.id, name: "QA item", sellingPrice: 10000, isAvailable: true } });
-    await prisma.paymentMethod.create({ data: { branchId: branch.id, code: "CASH", name: "Cash", isActive: true } });
-    await prisma.paymentMethod.create({ data: { branchId: branch.id, code: "CARD", name: "Card", isActive: true } });
-    const customer = await prisma.customer.create({ data: { tenantId: branch.tenantId, phone: "qa-cash-" + id, name: "QA customer" } });
+    const category = await prisma.category.create({
+      data: { code: "CASHQA" + id, name: "QA" },
+    });
+    const product =
+      (await prisma.product.findFirst({ where: { code: "CLASSIC_LAVASH" } })) ??
+      (await prisma.product.create({
+        data: {
+          code: "CLASSIC_LAVASH",
+          categoryId: category.id,
+          name: "QA item",
+          sellingPrice: 10000,
+          isAvailable: true,
+        },
+      }));
+    await prisma.paymentMethod.create({
+      data: { branchId: branch.id, code: "CASH", name: "Cash", isActive: true },
+    });
+    await prisma.paymentMethod.create({
+      data: { branchId: branch.id, code: "CARD", name: "Card", isActive: true },
+    });
+    const customer = await prisma.customer.create({
+      data: {
+        tenantId: branch.tenantId,
+        phone: "qa-cash-" + id,
+        name: "QA customer",
+      },
+    });
     const shifts = new ShiftsService(prisma);
     const cash = new CashRegisterService(prisma, shifts);
-    const kitchen = new KitchenService(prisma, { emitOrderCreated() {}, emitOrderConfirmed() {}, emitOrderSentToKitchen() {}, emitOrderStatusChanged() {} } as never);
+    const kitchen = new KitchenService(prisma, {
+      emitOrderCreated() {},
+      emitOrderConfirmed() {},
+      emitOrderSentToKitchen() {},
+      emitOrderStatusChanged() {},
+    } as never);
     const payments = new PaymentsService(prisma);
     const courier = new CustomerCourierService(prisma, kitchen, payments);
     const posEvents: string[] = [];
@@ -82,6 +145,39 @@ async function main() {
       { openingBalance: 0 },
       cashOperator,
     );
+    const parallelCashierA = await actor("ParallelCashierA", ["CASHIER"]);
+    const parallelCashierB = await actor("ParallelCashierB", ["CASHIER"]);
+    const concurrentOpenings = await Promise.all([
+      shifts.openShift({ openingBalance: 0 }, parallelCashierA),
+      shifts.openShift({ openingBalance: 0 }, parallelCashierB),
+    ]);
+    assert.notEqual(
+      concurrentOpenings[0]!.shiftNumber,
+      concurrentOpenings[1]!.shiftNumber,
+      "parallel cashiers must receive distinct branch shift numbers",
+    );
+
+    const duplicateOpeningCashier = await actor("DuplicateOpening", [
+      "CASHIER",
+    ]);
+    const duplicateOpenings = await Promise.allSettled([
+      shifts.openShift({ openingBalance: 0 }, duplicateOpeningCashier),
+      shifts.openShift({ openingBalance: 0 }, duplicateOpeningCashier),
+    ]);
+    assert.equal(
+      duplicateOpenings.filter((result) => result.status === "fulfilled")
+        .length,
+      1,
+      "one employee must not open two shifts concurrently",
+    );
+    assert.match(
+      String(
+        duplicateOpenings.find((result) => result.status === "rejected")
+          ?.reason,
+      ),
+      /already has an open shift/,
+    );
+
     let releaseShiftLock!: () => void;
     let signalShiftLocked!: () => void;
     const shiftLockReleased = new Promise<void>((resolve) => {
@@ -123,11 +219,43 @@ async function main() {
       true,
       "manual cash entries must serialize with shift close and transfers",
     );
-    await assert.rejects(() => shifts.openCourierShift({ openingBalance: 0 }, worker));
-    const balance = async (user = worker) => (await cash.getCurrentShift(user))!.expectedCash.toNumber();
-    const online = async (type: "DELIVERY" | "TAKEAWAY", total: number, status: OrderStatus = OrderStatus.READY) => {
-      const order = await prisma.order.create({ data: { branchId: branch.id, source: OrderSource.WEB, type, status, total, subtotal: total, orderNumber: "QA" + crypto.randomUUID(), ...(type === "DELIVERY" ? { servedById: worker.employeeId! } : {}), kitchenTickets: { create: { status: "READY", ticketNumber: "QA" + crypto.randomUUID() } } } });
-      const link = await prisma.customerOrder.create({ data: { orderId: order.id, branchId: branch.id, customerId: customer.id, type: type === "DELIVERY" ? "DELIVERY" : "PICKUP", paymentMethod: "CASH" } });
+    await assert.rejects(() =>
+      shifts.openCourierShift({ openingBalance: 0 }, worker),
+    );
+    const balance = async (user = worker) =>
+      (await cash.getCurrentShift(user))!.expectedCash.toNumber();
+    const online = async (
+      type: "DELIVERY" | "TAKEAWAY",
+      total: number,
+      status: OrderStatus = OrderStatus.READY,
+    ) => {
+      const order = await prisma.order.create({
+        data: {
+          branchId: branch.id,
+          source: OrderSource.WEB,
+          type,
+          status,
+          total,
+          subtotal: total,
+          orderNumber: "QA" + crypto.randomUUID(),
+          ...(type === "DELIVERY" ? { servedById: worker.employeeId! } : {}),
+          kitchenTickets: {
+            create: {
+              status: "READY",
+              ticketNumber: "QA" + crypto.randomUUID(),
+            },
+          },
+        },
+      });
+      const link = await prisma.customerOrder.create({
+        data: {
+          orderId: order.id,
+          branchId: branch.id,
+          customerId: customer.id,
+          type: type === "DELIVERY" ? "DELIVERY" : "PICKUP",
+          paymentMethod: "CASH",
+        },
+      });
       return { order, link };
     };
 
@@ -145,9 +273,20 @@ async function main() {
     assert.equal(posRetries[1]!.order.id, pos.order.id);
     assert.deepEqual(posEvents, ["created", "confirmed", "sent-to-kitchen"]);
     assert.equal(await prisma.order.count({ where: { id: pos.order.id } }), 1);
-    assert.equal(await prisma.paymentOperation.count({ where: { idempotencyKey: "POS_CHECKOUT:" + posIdempotencyKey } }), 1);
-    assert.equal(await prisma.payment.count({ where: { orderId: pos.order.id } }), 1);
-    assert.equal(await prisma.kitchenTicket.count({ where: { orderId: pos.order.id } }), 1);
+    assert.equal(
+      await prisma.paymentOperation.count({
+        where: { idempotencyKey: "POS_CHECKOUT:" + posIdempotencyKey },
+      }),
+      1,
+    );
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: pos.order.id } }),
+      1,
+    );
+    assert.equal(
+      await prisma.kitchenTicket.count({ where: { orderId: pos.order.id } }),
+      1,
+    );
     assert.equal(await balance(), 10000);
     const unpaidHallOrder = await prisma.order.create({
       data: {
@@ -164,12 +303,23 @@ async function main() {
         acceptedById: worker.employeeId!,
       },
     });
-    assert.equal(await prisma.payment.count({ where: { orderId: unpaidHallOrder.id } }), 0);
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: unpaidHallOrder.id } }),
+      0,
+    );
     const pickup = await online("TAKEAWAY", 20000);
-    const ticket = await prisma.kitchenTicket.findFirstOrThrow({ where: { orderId: pickup.order.id } });
-    await assert.rejects(() => kitchen.completeTicket(ticket.id, worker), /kassada to'lovni qabul qiling/);
+    const ticket = await prisma.kitchenTicket.findFirstOrThrow({
+      where: { orderId: pickup.order.id },
+    });
+    await assert.rejects(
+      () => kitchen.completeTicket(ticket.id, worker),
+      /kassada to'lovni qabul qiling/,
+    );
     assert.equal(await balance(), 10000);
-    assert.equal(await prisma.payment.count({ where: { orderId: pickup.order.id } }), 0);
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: pickup.order.id } }),
+      0,
+    );
     const pickupPayment = {
       orderId: pickup.order.id,
       idempotencyKey: "qa-pickup-" + id,
@@ -179,71 +329,211 @@ async function main() {
     await payments.processOrderPayment(pickupPayment, worker);
     await payments.processOrderPayment(pickupPayment, worker);
     assert.equal(await balance(), 30000);
-    assert.equal(await prisma.payment.count({ where: { orderId: pickup.order.id } }), 1);
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: pickup.order.id } }),
+      1,
+    );
     await kitchen.completeTicket(ticket.id, worker);
     assert.equal(await balance(), 30000);
-    assert.equal(await prisma.payment.count({ where: { orderId: pickup.order.id } }), 1);
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: pickup.order.id } }),
+      1,
+    );
 
     const delivery = await online("DELIVERY", 30000, OrderStatus.SERVED);
-    await assert.rejects(() => courier.updateCourierOrderStatus(delivery.link.id, { status: CourierOrderStatus.COMPLETED }, receiver), /boshqa kuryer/);
-    await assert.rejects(() => courier.updateCourierOrderStatus(delivery.link.id, { status: CourierOrderStatus.COMPLETED, amount: 1000 }, worker), /to'liq/);
-    assert.equal(await prisma.payment.count({ where: { orderId: delivery.order.id } }), 0);
+    await assert.rejects(
+      () =>
+        courier.updateCourierOrderStatus(
+          delivery.link.id,
+          { status: CourierOrderStatus.COMPLETED },
+          receiver,
+        ),
+      /boshqa kuryer/,
+    );
+    await assert.rejects(
+      () =>
+        courier.updateCourierOrderStatus(
+          delivery.link.id,
+          { status: CourierOrderStatus.COMPLETED, amount: 1000 },
+          worker,
+        ),
+      /to'liq/,
+    );
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: delivery.order.id } }),
+      0,
+    );
     const notReady = await online("DELIVERY", 30000, OrderStatus.PREPARING);
-    await assert.rejects(() => courier.updateCourierOrderStatus(notReady.link.id, { status: CourierOrderStatus.COMPLETED }, worker), /tayyor bo'lmagan/);
-    assert.equal(await prisma.payment.count({ where: { orderId: notReady.order.id } }), 0);
+    await assert.rejects(
+      () =>
+        courier.updateCourierOrderStatus(
+          notReady.link.id,
+          { status: CourierOrderStatus.COMPLETED },
+          worker,
+        ),
+      /tayyor bo'lmagan/,
+    );
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: notReady.order.id } }),
+      0,
+    );
 
     class FailingPayments extends PaymentsService {
-      override async processOrderPayment(...args: Parameters<PaymentsService["processOrderPayment"]>): Promise<never> {
+      override async processOrderPayment(
+        ...args: Parameters<PaymentsService["processOrderPayment"]>
+      ): Promise<never> {
         await super.processOrderPayment(...args);
         throw new Error("QA failure after payment write");
       }
     }
-    const broken = new CustomerCourierService(prisma, kitchen, new FailingPayments(prisma));
-    await assert.rejects(() => broken.updateCourierOrderStatus(delivery.link.id, { status: CourierOrderStatus.COMPLETED }, worker), /QA failure/);
-    assert.equal(await prisma.payment.count({ where: { orderId: delivery.order.id } }), 0);
-    assert.equal((await prisma.order.findUniqueOrThrow({ where: { id: delivery.order.id } })).status, "SERVED");
+    const broken = new CustomerCourierService(
+      prisma,
+      kitchen,
+      new FailingPayments(prisma),
+    );
+    await assert.rejects(
+      () =>
+        broken.updateCourierOrderStatus(
+          delivery.link.id,
+          { status: CourierOrderStatus.COMPLETED },
+          worker,
+        ),
+      /QA failure/,
+    );
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: delivery.order.id } }),
+      0,
+    );
+    assert.equal(
+      (
+        await prisma.order.findUniqueOrThrow({
+          where: { id: delivery.order.id },
+        })
+      ).status,
+      "SERVED",
+    );
     const completions = await Promise.allSettled([
-      courier.updateCourierOrderStatus(delivery.link.id, { status: CourierOrderStatus.COMPLETED }, worker),
-      courier.updateCourierOrderStatus(delivery.link.id, { status: CourierOrderStatus.COMPLETED }, worker),
+      courier.updateCourierOrderStatus(
+        delivery.link.id,
+        { status: CourierOrderStatus.COMPLETED },
+        worker,
+      ),
+      courier.updateCourierOrderStatus(
+        delivery.link.id,
+        { status: CourierOrderStatus.COMPLETED },
+        worker,
+      ),
     ]);
-    assert.equal(completions.filter(result => result.status === "fulfilled").length, 1);
+    assert.equal(
+      completions.filter((result) => result.status === "fulfilled").length,
+      1,
+    );
     assert.equal(await balance(), 60000);
-    assert.equal(await prisma.payment.count({ where: { orderId: delivery.order.id } }), 1);
-    assert.equal(await prisma.revenueRecord.count({ where: { shiftId: sourceShift.id } }), 3);
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: delivery.order.id } }),
+      1,
+    );
+    assert.equal(
+      await prisma.revenueRecord.count({ where: { shiftId: sourceShift.id } }),
+      3,
+    );
 
-    const transfer = await shifts.createCashTransfer({ amount: 60000, toShiftId: targetShift.id }, worker);
-    await assert.rejects(() => shifts.acceptCashTransfer(transfer.id, worker), /o'zingiz qabul/);
-    await assert.rejects(() => shifts.closeShift(sourceShift.id, { closingBalance: 0 }, worker), /hali tasdiqlanmagan/);
-    const accepted = await Promise.allSettled([shifts.acceptCashTransfer(transfer.id, receiver), shifts.acceptCashTransfer(transfer.id, receiver)]);
-    assert.equal(accepted.filter(result => result.status === "fulfilled").length, 1);
+    const transfer = await shifts.createCashTransfer(
+      { amount: 60000, toShiftId: targetShift.id },
+      worker,
+    );
+    await assert.rejects(
+      () => shifts.acceptCashTransfer(transfer.id, worker),
+      /o'zingiz qabul/,
+    );
+    await assert.rejects(
+      () => shifts.closeShift(sourceShift.id, { closingBalance: 0 }, worker),
+      /hali tasdiqlanmagan/,
+    );
+    const accepted = await Promise.allSettled([
+      shifts.acceptCashTransfer(transfer.id, receiver),
+      shifts.acceptCashTransfer(transfer.id, receiver),
+    ]);
+    assert.equal(
+      accepted.filter((result) => result.status === "fulfilled").length,
+      1,
+    );
     assert.equal(await balance(), 0);
     assert.equal(await balance(receiver), 60000);
-    assert.equal(await prisma.revenueRecord.count({ where: { shiftId: targetShift.id } }), 0, "handover is not another sale");
-    assert.equal(await prisma.cashTransaction.count({ where: { cashTransferId: transfer.id, type: "CASH_IN" } }), 1);
+    assert.equal(
+      await prisma.revenueRecord.count({ where: { shiftId: targetShift.id } }),
+      0,
+      "handover is not another sale",
+    );
+    assert.equal(
+      await prisma.cashTransaction.count({
+        where: { cashTransferId: transfer.id, type: "CASH_IN" },
+      }),
+      1,
+    );
 
-    await shifts.createCashTransaction(sourceShift.id, { type: "INCOME", amount: 15000 }, worker);
-    const attempts = await Promise.allSettled([shifts.createCashTransfer({ amount: 10000, toShiftId: targetShift.id }, worker), shifts.createCashTransfer({ amount: 10000, toShiftId: targetShift.id }, worker)]);
-    assert.equal(attempts.filter(result => result.status === "fulfilled").length, 1, "parallel submissions cannot overdraw");
-    const pending = await prisma.cashTransfer.findFirstOrThrow({ where: { fromShiftId: sourceShift.id, status: "PENDING" } });
+    await shifts.createCashTransaction(
+      sourceShift.id,
+      { type: "INCOME", amount: 15000 },
+      worker,
+    );
+    const attempts = await Promise.allSettled([
+      shifts.createCashTransfer(
+        { amount: 10000, toShiftId: targetShift.id },
+        worker,
+      ),
+      shifts.createCashTransfer(
+        { amount: 10000, toShiftId: targetShift.id },
+        worker,
+      ),
+    ]);
+    assert.equal(
+      attempts.filter((result) => result.status === "fulfilled").length,
+      1,
+      "parallel submissions cannot overdraw",
+    );
+    const pending = await prisma.cashTransfer.findFirstOrThrow({
+      where: { fromShiftId: sourceShift.id, status: "PENDING" },
+    });
     await shifts.rejectCashTransfer(pending.id, "QA returned", receiver);
-    await assert.rejects(() => shifts.rejectCashTransfer(pending.id, undefined, receiver));
+    await assert.rejects(() =>
+      shifts.rejectCashTransfer(pending.id, undefined, receiver),
+    );
     assert.equal(await balance(), 15000);
-    await prisma.cashTransaction.createMany({ data: Array.from({ length: 250 }, () => ({ branchId: branch.id, employeeId: worker.employeeId!, shiftId: sourceShift.id, type: "CASH_IN" as const, amount: 1 })) });
-    assert.equal(await balance(), 15250, "older ledger entries must remain in the balance");
+    await prisma.cashTransaction.createMany({
+      data: Array.from({ length: 250 }, () => ({
+        branchId: branch.id,
+        employeeId: worker.employeeId!,
+        shiftId: sourceShift.id,
+        type: "CASH_IN" as const,
+        amount: 1,
+      })),
+    });
+    assert.equal(
+      await balance(),
+      15250,
+      "older ledger entries must remain in the balance",
+    );
     const activeShiftSummary = (await cash.getCurrentShift(worker))!;
     assert.equal(activeShiftSummary.cashTransactions.length, 50);
     assert.equal(activeShiftSummary.cashSales.toNumber(), 60000);
     assert.equal(activeShiftSummary.orderCount, 4);
     assert.equal(
-      new Set(activeShiftSummary.revenueRecords.map(({ orderId }) => orderId)).size,
+      new Set(activeShiftSummary.revenueRecords.map(({ orderId }) => orderId))
+        .size,
       4,
       "offline replay order IDs must stay compact and unique",
     );
     assert.ok(
-      activeShiftSummary.revenueRecords.some(({ orderId }) => orderId === unpaidHallOrder.id),
+      activeShiftSummary.revenueRecords.some(
+        ({ orderId }) => orderId === unpaidHallOrder.id,
+      ),
       "directly assigned unpaid hall orders must be counted before payment",
     );
-    assert.equal((await shifts.getCurrentCourierShift(worker))!.currentCash.toNumber(), 15250);
+    assert.equal(
+      (await shifts.getCurrentCourierShift(worker))!.currentCash.toNumber(),
+      15250,
+    );
 
     const recoveryTransfer = await shifts.createCashTransfer(
       { amount: 5000, toShiftId: targetShift.id },
@@ -283,13 +573,28 @@ async function main() {
 
     const card = await online("TAKEAWAY", 10000);
     await assert.rejects(
-      () => payments.processOrderPayment({ orderId: card.order.id, idempotencyKey: "qa-card-" + id, shiftId: sourceShift.id, payments: [{ paymentMethodCode: "CARD", amount: 10000 }] }, worker),
+      () =>
+        payments.processOrderPayment(
+          {
+            orderId: card.order.id,
+            idempotencyKey: "qa-card-" + id,
+            shiftId: sourceShift.id,
+            payments: [{ paymentMethodCode: "CARD", amount: 10000 }],
+          },
+          worker,
+        ),
       /to'lov usuli tizim sozlamalarida o'chirilgan/,
     );
-    assert.equal(await prisma.payment.count({ where: { orderId: card.order.id } }), 0);
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: card.order.id } }),
+      0,
+    );
     assert.equal(await balance(), 10250, "card revenue is not physical cash");
     const refundOperator = await actor("RefundOperator", ["CASHIER"]);
-    const refundShift = await shifts.openShift({ openingBalance: 0 }, refundOperator);
+    const refundShift = await shifts.openShift(
+      { openingBalance: 0 },
+      refundOperator,
+    );
     const refundableOrder = await online("TAKEAWAY", 9000);
     await payments.processOrderPayment(
       {
@@ -340,9 +645,11 @@ async function main() {
     assert.equal(totalRefunded, 7000);
     assert.equal(await balance(refundOperator), 2000);
     assert.equal(
-      (await prisma.order.findUniqueOrThrow({
-        where: { id: refundableOrder.order.id },
-      })).paymentStatus,
+      (
+        await prisma.order.findUniqueOrThrow({
+          where: { id: refundableOrder.order.id },
+        })
+      ).paymentStatus,
       PaymentStatus.PENDING,
     );
 
@@ -362,11 +669,12 @@ async function main() {
       idempotencyKey: "qa-refund-cross-shift-" + id,
     };
     await assert.rejects(
-      () => payments.refundPayment(
-        refundablePayment.id,
-        crossShiftRequest,
-        restrictedRefundActor,
-      ),
+      () =>
+        payments.refundPayment(
+          refundablePayment.id,
+          crossShiftRequest,
+          restrictedRefundActor,
+        ),
       /another employee's shift/,
     );
     assert.equal(
@@ -386,11 +694,12 @@ async function main() {
     );
     assert.ok(crossShiftRefund.id);
     await assert.rejects(
-      () => payments.refundPayment(
-        refundablePayment.id,
-        crossShiftRequest,
-        restrictedRefundActor,
-      ),
+      () =>
+        payments.refundPayment(
+          refundablePayment.id,
+          crossShiftRequest,
+          restrictedRefundActor,
+        ),
       /another employee's shift/,
     );
     assert.equal(
@@ -402,7 +711,10 @@ async function main() {
     assert.equal(await balance(otherCashier), 4000);
 
     const retryOperator = await actor("RefundRetry", ["CASHIER"]);
-    const retryShift = await shifts.openShift({ openingBalance: 0 }, retryOperator);
+    const retryShift = await shifts.openShift(
+      { openingBalance: 0 },
+      retryOperator,
+    );
     const retryOrder = await online("TAKEAWAY", 4000);
     await payments.processOrderPayment(
       {
@@ -448,24 +760,64 @@ async function main() {
     );
     assert.equal(await balance(retryOperator), 3000);
 
-    const closed = await shifts.closeShift(sourceShift.id, { closingBalance: 10250 }, worker);
+    const closed = await shifts.closeShift(
+      sourceShift.id,
+      { closingBalance: 10250 },
+      worker,
+    );
     assert.equal(closed.cashDifference?.toNumber(), 0);
     assert.equal(closed.cashTotal.toNumber(), 60000);
     assert.equal(closed.terminalTotal.toNumber(), 0);
     assert.equal(closed.salesTotal.toNumber(), 60000);
-    const closedShiftOrders = await cash.getShiftOrders(sourceShift.id, {}, worker);
+    const closedShiftOrders = await cash.getShiftOrders(
+      sourceShift.id,
+      {},
+      worker,
+    );
     assert.ok(closedShiftOrders.some(({ id }) => id === unpaidHallOrder.id));
     assert.equal(closed.orderCount, closedShiftOrders.length);
-    assert.equal((await prisma.order.findUniqueOrThrow({ where: { id: pos.order.id } })).shiftId, sourceShift.id);
+    assert.equal(
+      (await prisma.order.findUniqueOrThrow({ where: { id: pos.order.id } }))
+        .shiftId,
+      sourceShift.id,
+    );
 
     const roleCodes = ["KITCHEN", "COURIER"];
-    const permissionCodes = ["SHIFT_VIEW_OWN", "SHIFT_OPEN", "SHIFT_CLOSE", "CASH_TRANSACTION_CREATE"];
-    for (const code of roleCodes) await prisma.role.upsert({ where: { code }, update: {}, create: { code, name: code } });
-    for (const code of permissionCodes) await prisma.permission.upsert({ where: { code }, update: {}, create: { code, name: code } });
-    const sql = readFileSync(resolve("prisma/migrations/20260911170000_employee_cash_permissions/migration.sql"), "utf8");
+    const permissionCodes = [
+      "SHIFT_VIEW_OWN",
+      "SHIFT_OPEN",
+      "SHIFT_CLOSE",
+      "CASH_TRANSACTION_CREATE",
+    ];
+    for (const code of roleCodes)
+      await prisma.role.upsert({
+        where: { code },
+        update: {},
+        create: { code, name: code },
+      });
+    for (const code of permissionCodes)
+      await prisma.permission.upsert({
+        where: { code },
+        update: {},
+        create: { code, name: code },
+      });
+    const sql = readFileSync(
+      resolve(
+        "prisma/migrations/20260911170000_employee_cash_permissions/migration.sql",
+      ),
+      "utf8",
+    );
     await prisma.$executeRawUnsafe(sql);
     await prisma.$executeRawUnsafe(sql);
-    assert.equal(await prisma.rolePermission.count({ where: { role: { code: { in: roleCodes } }, permission: { code: { in: permissionCodes } } } }), 8);
+    assert.equal(
+      await prisma.rolePermission.count({
+        where: {
+          role: { code: { in: roleCodes } },
+          permission: { code: { in: permissionCodes } },
+        },
+      }),
+      8,
+    );
     const waiter = await actor("Waiter", ["WAITER"]);
     assert.ok(waiter.employeeId);
     assert.ok(receiver.employeeId);
@@ -491,11 +843,25 @@ async function main() {
     await payments.processOrderPayment(diningPayment, receiver);
     await payments.processOrderPayment(diningPayment, receiver);
     assert.equal(await balance(receiver), 12000);
-    assert.equal(await prisma.payment.count({ where: { orderId: diningOrder.id } }), 1);
-    assert.equal(await prisma.cashTransaction.count({
-      where: { orderId: diningOrder.id, shiftId: replacementTargetShift.id, employeeId: receiver.employeeId },
-    }), 1);
-    console.info("PASS: POS/pickup/delivery/waiter cash, ownership, rollback, duplicate/race protection, concurrent refund bounds, idempotent retries, cross-shift refund access and replay, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration");
-  } finally { await prisma.onModuleDestroy(); }
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: diningOrder.id } }),
+      1,
+    );
+    assert.equal(
+      await prisma.cashTransaction.count({
+        where: {
+          orderId: diningOrder.id,
+          shiftId: replacementTargetShift.id,
+          employeeId: receiver.employeeId,
+        },
+      }),
+      1,
+    );
+    console.info(
+      "PASS: POS/pickup/delivery/waiter cash, ownership, rollback, duplicate/race protection, concurrent refund bounds, idempotent retries, cross-shift refund access and replay, transfers, disabled-provider protection, full ledger balance, closing and idempotent permission migration",
+    );
+  } finally {
+    await prisma.onModuleDestroy();
+  }
 }
 void main();

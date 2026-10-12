@@ -81,5 +81,3 @@ export const PERMISSIONS = {
   NOTIFICATION_MANAGE: "NOTIFICATION_MANAGE",
   SETTING_MANAGE: "SETTING_MANAGE",
 } as const;
-
-export type PermissionCode = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];

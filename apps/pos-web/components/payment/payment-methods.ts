@@ -5,17 +5,14 @@
  * tekshirganidan keyin usulni tanlashi kerak.
  */
 
-export const POS_PAYMENT_METHOD_CODES = [
-  "CASH",
-  "CARD",
-  "UZCARD",
-  "HUMO",
-  "CLICK",
-  "PAYME",
-  "ONLINE",
-] as const;
-
-export type PaymentMethodCode = (typeof POS_PAYMENT_METHOD_CODES)[number];
+export type PaymentMethodCode =
+  | "CASH"
+  | "CARD"
+  | "UZCARD"
+  | "HUMO"
+  | "CLICK"
+  | "PAYME"
+  | "ONLINE";
 
 /** Kassir ekranida xom kod ("UZCARD") emas, odam o'qiydigan nom ko'rinadi. */
 const paymentMethodNames: Record<string, string> = {

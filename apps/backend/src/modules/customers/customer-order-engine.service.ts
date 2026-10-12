@@ -23,6 +23,7 @@ import {
   createOrderNumber as createBusinessOrderNumber,
   withUniqueConstraintRetry,
 } from "../orders/order-rules";
+import { createModifierSnapshot as createOrderModifierSnapshot } from "../orders/order-guards";
 import { OrdersService } from "../orders/orders.service";
 import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
 import { customerVisibleProductWhere } from "./customer-catalog-visibility";
@@ -625,50 +626,12 @@ export class CustomerOrderEngineService {
     };
   }
 
-  private async createModifierSnapshot(
+  private createModifierSnapshot(
     tx: TransactionClient,
     productId: string,
     modifiers: OnlineOrderModifierDto[],
   ): Promise<ModifierSnapshot[]> {
-    if (!modifiers.length) {
-      return [];
-    }
-
-    const modifierIds = [
-      ...new Set(modifiers.map((modifier) => modifier.modifierId)),
-    ];
-    const productModifiers = await tx.productModifier.findMany({
-      where: {
-        productId,
-        modifierId: { in: modifierIds },
-        modifier: { isActive: true },
-      },
-      include: { modifier: true },
-    });
-
-    return modifiers.map((selected) => {
-      const productModifier = productModifiers.find(
-        (candidate) => candidate.modifierId === selected.modifierId,
-      );
-
-      if (!productModifier) {
-        throw new BadRequestException(
-          "Modifier is not available for this product",
-        );
-      }
-
-      const quantity = new Prisma.Decimal(selected.quantity ?? 1);
-      const totalPrice = productModifier.modifier.price.mul(quantity);
-
-      return {
-        id: productModifier.modifier.id,
-        code: productModifier.modifier.code,
-        name: productModifier.modifier.name,
-        quantity: quantity.toFixed(3),
-        unitPrice: productModifier.modifier.price.toFixed(2),
-        totalPrice: totalPrice.toFixed(2),
-      };
-    });
+    return createOrderModifierSnapshot(tx, productId, modifiers);
   }
 
   private modifierTotal(modifiers: ModifierSnapshot[]) {

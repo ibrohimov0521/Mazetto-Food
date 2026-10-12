@@ -41,7 +41,7 @@ function jsonObject(
     : {};
 }
 
-export function receiptPrintRoute(
+function receiptPrintRoute(
   content: Prisma.JsonValue | null | undefined,
 ): ReceiptPrintRoute {
   const type = jsonObject(content).documentType;

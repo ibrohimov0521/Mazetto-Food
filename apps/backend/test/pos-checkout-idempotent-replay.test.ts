@@ -31,13 +31,19 @@ test("disabled payment methods are rejected before a new POS order is created", 
       callback: (tx: typeof transaction) => Promise<unknown>,
     ) => callback(transaction),
   };
+  let settingsReadClient: unknown;
   const service = new OrdersService(
     prisma as never,
     {} as never,
     {} as never,
     undefined,
     undefined,
-    { getCsv: async () => ["CASH"] } as never,
+    {
+      getCsv: async (_key: string, _tenantId: string, client: unknown) => {
+        settingsReadClient = client;
+        return ["CASH"];
+      },
+    } as never,
   );
 
   await assert.rejects(
@@ -55,6 +61,7 @@ test("disabled payment methods are rejected before a new POS order is created", 
       return true;
     },
   );
+  assert.equal(settingsReadClient, transaction);
 });
 
 test("completed POS checkout replay does not republish order side effects", async () => {
@@ -151,8 +158,9 @@ test("inactive employee cannot replay a completed POS checkout", async () => {
   };
   const service = new OrdersService(
     {
-      $transaction: async (callback: (tx: typeof transaction) => Promise<unknown>) =>
-        callback(transaction),
+      $transaction: async (
+        callback: (tx: typeof transaction) => Promise<unknown>,
+      ) => callback(transaction),
     } as never,
     {} as never,
     {} as never,

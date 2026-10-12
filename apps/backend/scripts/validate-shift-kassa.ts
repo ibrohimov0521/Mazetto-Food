@@ -15,7 +15,9 @@ function main(): void {
   const posPage = read("../pos-web/app/(fullscreen)/pos/page.tsx");
   const paymentPage = read("../pos-web/app/(fullscreen)/pos/payment/page.tsx");
   const historyPage = read("../pos-web/app/(fullscreen)/pos/history/page.tsx");
-  const navigation = read("../pos-web/components/staff/staff-panel-navigation.tsx");
+  const navigation = read(
+    "../pos-web/components/staff/staff-panel-navigation.tsx",
+  );
   const auth = read("../pos-web/lib/auth.ts");
 
   assert.match(schema, /expectedCash\s+Decimal\?/);
@@ -29,8 +31,14 @@ function main(): void {
   assert.match(ordersService, /CashTransactionType\.SALE/);
   assert.match(historyPage, /shiftId:\s*shift\.id/);
   assert.doesNotMatch(historyPage, /orderDetail\?\.shiftId === shift\.id/);
-  assert.match(ordersService, /const cancellationShiftId = order\.shiftId \?\? context\?\.shiftId/);
-  assert.match(ordersService, /const refundShiftId = order\.shiftId \?\? context\?\.shiftId/);
+  assert.match(
+    ordersService,
+    /const cancellationShiftId = order\.shiftId \?\? context\?\.shiftId/,
+  );
+  assert.match(
+    ordersService,
+    /const refundShiftId = order\.shiftId \?\? context\?\.shiftId/,
+  );
   assert.match(ordersService, /cashTransaction\.findMany/);
   assert.match(posPage, /\/cash-register\/shift/);
   assert.match(posPage, /router\.replace\("\/shift"\)/);
@@ -39,22 +47,40 @@ function main(): void {
   assert.match(historyPage, /CashierWorkspaceNavigation user=\{user\}/);
   assert.match(shiftPage, /CashierWorkspaceNavigation user=\{user\}/);
   assert.match(navigation, /href: "\/pos", label: "Kassa"/);
-  assert.match(navigation, /href: "\/pos\/payment", label: "Kutilayotgan to'lovlar"/);
+  assert.match(
+    navigation,
+    /href:\s*"\/pos\/payment",\s*label:\s*"Kutilayotgan to'lovlar"/,
+  );
   assert.match(navigation, /href: "\/pos\/history", label: "Tarix"/);
   assert.match(navigation, /href: "\/shift", label: "Smena"/);
   assert.match(auth, /CASHIER: "\/shift"/);
   assert.match(shiftPage, /\/cash-register\/shift\/open/);
   assert.match(shiftPage, /\/cash-register\/shift\/\$\{shift\.id\}\/close/);
   assert.match(shiftPage, /const needsBranchChoice = Boolean\(/);
-  assert.match(shiftPage, /user && \(user\.roles\.includes\("SUPER_ADMIN"\) \|\| !user\.branchId\)/);
-  assert.match(shiftPage, /needsBranchChoice \? \{ branchId: openingBranchId \} : \{\}/);
-  assert.match(shiftPage, /setShift\(current\?\.status === "OPEN" \? current : null\)/);
+  assert.match(
+    shiftPage,
+    /user && \(user\.roles\.includes\("SUPER_ADMIN"\) \|\| !user\.branchId\)/,
+  );
+  assert.match(
+    shiftPage,
+    /needsBranchChoice \? \{ branchId: openingBranchId \} : \{\}/,
+  );
+  assert.match(
+    shiftPage,
+    /setShift\(current\?\.status === "OPEN" \? current : null\)/,
+  );
   assert.match(shiftPage, /setIsConfirmingClose\(true\)/);
   assert.match(shiftPage, /Smenani yakunlaysizmi\?/);
   assert.match(shiftPage, /isSaving \? "Yopilmoqda\.\.\." : "Yakunlash"/);
-  assert.match(shiftPage, /closingCash !== "" &&\s+Number\.isFinite\(closingValue\) &&\s+closingValue >= 0/);
+  assert.match(
+    shiftPage,
+    /closingCash !== "" &&\s+Number\.isFinite\(closingValue\) &&\s+closingValue >= 0/,
+  );
   assert.match(shiftPage, /const hasUnresolvedCashTransfer = Boolean\(/);
-  assert.match(shiftPage, /transfer\.status === "PENDING" \|\| transfer\.pendingSync/);
+  assert.match(
+    shiftPage,
+    /transfer\.status === "PENDING" \|\| transfer\.pendingSync/,
+  );
   assert.match(
     shiftPage,
     /disabled=\{isSaving \|\| !closingValid \|\| hasUnresolvedCashTransfer\}/,

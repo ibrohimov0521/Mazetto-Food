@@ -58,6 +58,7 @@ export class RealtimeBootstrapService {
             ? await this.settings.getCsv(
                 "cashier_payment_methods",
                 scope.tenantId,
+                tx,
               )
             : ["CASH"],
         );

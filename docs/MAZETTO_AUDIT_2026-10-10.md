@@ -119,7 +119,7 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 ## Audit continuation: item-cancellation payment status
 
 - A service-level transaction regression exposed a financial status bug: after cancelling an item, order totals were recalculated and the code then subtracted that item's price a second time when deciding whether the remaining order was paid. An underpaid remainder could therefore be marked `PAID` incorrectly.
-- The remaining total is computed once from the pre-cancellation order and reused for refund calculation and post-cancellation payment status. A follow-up check found that order-level status must represent whether the *new* total is still owed, while the payment row retains its own `PARTIALLY_REFUNDED` audit status. The order is now `PAID` when net payments cover the reduced total, `PENDING` when a balance remains, and `REFUNDED` only when the zero-total order's funds have been fully returned. This prevents a fully covered pickup order from reappearing in the cashier queue while keeping underpaid orders payable.
+- The remaining total is computed once from the pre-cancellation order and reused for refund calculation and post-cancellation payment status. A follow-up check found that order-level status must represent whether the _new_ total is still owed, while the payment row retains its own `PARTIALLY_REFUNDED` audit status. The order is now `PAID` when net payments cover the reduced total, `PENDING` when a balance remains, and `REFUNDED` only when the zero-total order's funds have been fully returned. This prevents a fully covered pickup order from reappearing in the cashier queue while keeping underpaid orders payable.
 - End-to-end service tests cover the cash refund ledger/receipt/revenue row and same-shift association, underpaid and exactly paid remainders, a prior refund with a remaining balance, non-cash refund rejection, and closed-shift rejection. Backend tests pass 560/560 (including the three transient-retry script tests); the focused cancellation suite passes 5/5. Backend ESLint, app/script TypeScript checks, Nest build, and `git diff --check` pass. Full PR CI and production release remain the gate.
 
 ## Release confirmation: legacy shift opening balance
@@ -659,3 +659,173 @@ This is the current release audit, scoped to the live server checkout. Earlier a
 - Read-only production health checks passed for backend/POS/customer web/PostgreSQL/Redis; production smoke passed 27/27. This proves the current deployed baseline only, not these uncommitted fixes.
 - No push, PR, merge, production deploy, migration, or production data write occurred in this grouped audit pass. The working branch remains uncommitted.
 - Remaining external acceptance: verify the installed Windows Desktop build and native credential prompt/DPAPI, print a real multi-page shift report through the restaurant printer, exercise offline close/reconnect on the restaurant workstation, confirm Telegram webhook with authorized credentials, and obtain NBU transaction-reconciliation API/export evidence before automating QR payment matching.
+
+## Audit continuation: hall/table data integrity (2026-10-11)
+
+- Table reactivation could reintroduce a number already used by another active table in the hall. Reactivation now checks the same hall/number invariant as number edits; regression tests cover both conflict and successful reactivation when free.
+- Hall and table create/update paths now reject whitespace-only names after normalization. Hall codes use random suffixes instead of millisecond timestamps, preventing simultaneous same-name hall creation from colliding on the branch-scoped unique code.
+- Focused table suite passed 21/21; backend suite passed 636/636 plus HTTP retry 3/3. Full workspace tests passed; all eight package typecheck/lint/build tasks and 33/33 validators passed.
+- Disposable PostgreSQL 18 acceptance passed after all 59 migrations and seed; the customer order-to-cash-to-stock-to-print validator passed. The temporary database and container were removed. No schema migration, production write, push, merge, or deploy occurred in this follow-up.
+- The remaining external hardware and provider acceptance items above are still open; these tests verify source logic, not the restaurant workstation or printer.
+
+## Audit follow-up: customer media URL configuration (2026-10-12)
+
+- The customer-web image optimizer still allowed only the old hardcoded production media host, which rejected the documented local/custom media origin. It now builds a strict HTTP(S) Next image remote pattern from `NEXT_PUBLIC_MEDIA_URL`, retaining the production domain as the default and rejecting credentials/query/hash values.
+- Added focused tests for production default, local port/path, malformed schemes, and credential/query/hash rejection.
+- This changes image-host configuration only; development bypasses Next optimization so localhost media can load directly, while production remains optimized. The current production host behavior is unchanged. Customer-web tests passed 27/27; typecheck, lint, and production build passed with the production default. A separate build passed with `NEXT_PUBLIC_MEDIA_URL=http://localhost:8080/media`. Final full workspace `pnpm verify` passed across all 8 packages and 33/33 validators; `pnpm test` passed across all packages and root checks. No production service or database was changed.
+
+## Audit continuation: grouped acceptance and domain-boundary correction (2026-10-12)
+
+- Extended the disposable unified-cash PostgreSQL validator with parallel shift-open cases: different cashiers must receive distinct sequential branch numbers; concurrent duplicate opens for one employee must resolve to exactly one open shift. Both passed on a fresh PostgreSQL 18 database after all 59 migrations; the temporary container was removed.
+- The full workspace verification passed on the grouped worktree: all typecheck/lint tasks, all builds, and 33/33 validators. Full `pnpm test` passed across workspaces, including backend 636/636, HTTP retry 3/3, customer-web 27/27, and 11 root smoke/unit tests.
+- Repository docs had incorrectly described `mazetto.uz` as a public demo and stated that tenant authorization was not implemented. Updated the active roadmap/architecture to reflect the requested BestTeam owner-panel domain, the currently deployed `admin.mazetto.uz` route, Mazetto Food's separate brand/system, PR #296's unreleased tenant code, and the still-closed second-tenant gate. No DNS, Dokploy, production service, or data was changed.
+- The Prisma migration run emitted a node-postgres deprecation warning from `@prisma/adapter-pg` transaction I/O. Migrations and acceptance still passed; the warning is recorded for dependency/tooling follow-up and was not treated as a business-logic failure.
+- No per-file release was made. PR #296 remains open and undeployed; the current worktree is grouped and uncommitted pending the remaining audit and final release gate.
+- Remaining external acceptance is unchanged: tenant A/B staging across all flows, backup/restore rehearsal, real Windows offline recovery and printer output, authorized Telegram lifecycle, and NBU settlement reconciliation.
+
+## Audit continuation: live cashier payment-method setting (2026-10-12)
+
+- A stale Redis value could keep a disabled cashier payment option available if cache invalidation failed after a settings update. This conflicted with the UI's immediate-toggle behavior.
+- `cashier_payment_methods` now bypasses Redis for operational reads and the settings list, so new POS orders and payment collection consult the current tenant-scoped database value. Order creation and desktop snapshots reuse their existing transaction client, avoiding an extra connection; other low-churn settings retain the short Redis cache.
+- Regression tests cover stale cached `CLICK` being rejected after the database changes to `CASH`, and fail-closed behavior if the live database read itself errors. The focused settings tests passed 3/3; the full workspace test command, typecheck/lint/build/33 validators, and the disposable PostgreSQL cash-flow validator passed. The PostgreSQL test applied all 59 migrations and was removed after completion.
+- Offline POS payment options were extracted into a tested rule: offline mode exposes only `CASH`, while online mode retains all enabled methods; if `CASH` is disabled, the offline payment option list stays empty and submission is blocked. The focused regression passed 3/3 and the full POS suite passed 65/65 with lint and typecheck.
+- New payment acceptance reads the live toggle inside the same tenant-scoped database transaction as the payment; completed idempotent replays do not re-check or re-create a disabled method.
+- No production database, service, push, or deploy was changed in this pass.
+
+## Audit continuation: shifts crossing midnight (2026-10-12)
+
+- The current cashier shift-order endpoint additionally filtered by today's Tashkent date. If a cashier's shift remained open past midnight, orders already attached to that same shift from the previous date disappeared from its current-shift order list.
+- Removed the redundant date range and its now-unused helper; the open shift ID and tenant/branch scope define the correct order set. Added a stable ID tie-breaker for paginated results and updated the regression.
+- Backend suite passed 639/639; the focused shift regression passed 5/5; grouped verification passed 14/14 lint/typecheck, 7/7 builds, and 33/33 validators.
+- No production service or database was changed.
+
+## Audit continuation: offline cashier and receipt parity (2026-10-12)
+
+- Offline Desktop receipt construction used a different payload shape from the online receipt writer. Existing tenders could lose their method code and print as CASH; cached web-order receipts could omit customer details; and amount/item fields were not normalized to the online receipt contract. Desktop now maps tender aliases, item/modifier snapshots, quantities, totals, and customer contact/address fields into the same canonical shape and formats monetary values consistently.
+- POS marked the catalog offline only when a separate bootstrap fallback was used. Desktop's local gateway can instead return a cached catalog with HTTP 200 and an `X-Mazetto-Desktop: offline-cache` header; that path previously left all cached payment methods visible even though offline submission only permits cash. POS now combines the exact catalog cache freshness marker with the bootstrap fallback flag before filtering methods, so offline terminals expose CASH only (and block checkout if CASH is disabled).
+- Added regressions for online/offline receipt method and customer data parity, and for cached HTTP-200 catalog detection and the resulting offline payment-method policy.
+- Another fail-open UI edge was closed: if no valid POS catalog snapshot can be loaded, the temporary CASH fallback no longer enables the checkout button. Deferred-payment dine-in still needs a catalog, but does not require a tender until collection.
+- Verification in this batch: backend tests 639/639, POS tests 70/70, Desktop tests 165/165, customer-web tests 27/27, Telegram agent 5/5, print-agent 7/7, and root smoke tests 11/11; HTTP retry tests 3/3 and 33/33 operational validators passed. App/script typechecks, ESLint, backend Nest build, POS/customer/BestTeam production builds, and Desktop main/preload builds passed. POS production build passed again after the latest checkout guard.
+- `git diff --check` passed. Existing uncommitted work was preserved; no commit, push, merge, database migration, production write, or deployment was performed.
+- Remaining proof is operational: exercise the new offline selector on the installed restaurant Desktop after an actual network cut/reconnect, verify a multi-tender cached order receipt on paper, and continue auditing the remaining application and UX domains. This entry does not claim that every repository file or line has been reviewed.
+- Mocked Playwright role UI passed all 14 combinations: ADMIN, BRANCH_MANAGER, ACCOUNTANT, CASHIER, WAITER, KITCHEN, and COURIER at 1440px and 390px; route redirects and restricted admin access matched the role matrix, with no horizontal overflow.
+- Customer-web browser QA loaded 42 route/viewport combinations (375–1440px): zero page errors, zero tiny-text findings, and no document-level horizontal scroll. Its heuristic emitted image/gradient contrast warnings and clipped `object-contain` image-width notices; these are documented false-positive cases in that script and remain visual/manual checks, not confirmed defects.
+
+## Audit continuation: zero-balance semantics and cashier settings copy (2026-10-12)
+
+- Checked zero-balance cancellation against cashier payment UI: PAID represents no balance due and removes a zero-sum order from the waiting list; it does not mean money was received. A regression test locks this invariant and verifies no payment, revenue, cash, or refund ledger entry is created when the final unpaid item is cancelled.
+- The cashier payment settings still claimed offline terminals use the last downloaded full method list. Updated the admin hint and disable-confirmation copy to reflect the actual policy: offline POS permits CASH only; disabling CASH blocks offline sales, and pending offline actions must be synced before changing their payment method.
+- Reviewed shift-close printing: the pre-close modal preview can be stale during concurrent activity, but the auto-print component reloads all paginated orders after the server confirms closure. No code change was needed for the printed snapshot.
+- Focused cancellation/refund tests passed 17/17; full backend suite passed 640/640. Backend app/scripts typechecks, touched-file lint, and Nest build passed. POS tests passed 70/70; admin-settings typecheck/lint and the production build passed.
+- This grouped audit change remains in the server worktree; no commit, push, merge, production write, or deploy was performed.
+
+## Audit continuation: offline outbox error clarity (2026-10-12)
+
+- When the server rejected a queued Desktop payment with a JSON 4xx response, the whole JSON body was stored and rendered as the error. The gateway now extracts readable nested/top-level messages (including validation message arrays), keeps plain-text fallbacks, and caps the stored text.
+- Added a regression for CASH disabled after an offline payment was queued: the conflict stays in the outbox with a readable reason, then is retried successfully after CASH is re-enabled; the payment is sent exactly once on retry.
+- Desktop tests passed 166/166; Desktop TypeScript and ESLint checks passed. No commit, push, merge, production write, or deployment was performed.
+
+## Audit continuation: full local verification and live host smoke (2026-10-12)
+
+- Re-ran all repository application suites: backend 640, HTTP retry 3, Desktop 167, POS 70, customer web 27, Telegram 5, print agent 7, and root health/release/media tests 20; 939 tests passed with zero failures.
+- ESLint passed across all application packages. TypeScript passed for each application project and backend scripts. Backend Nest, Desktop main/preload, Telegram, print agent, customer web, POS web, and BestTeam platform production builds passed.
+- The read-only production smoke passed 27/27, including backend/database health, public customer APIs, customer root and www checkout-auth routes, POS login/admin dashboard/settings routes, BestTeam login, and media assets. Direct root/www/pos API-origin checks also returned tenant-scoped public data with the expected CORS origin. The previously reported internal error was not reproduced in this live check.
+- No production state was written. Changes remain uncommitted on the audit branch; no push, merge, migration, or deploy was performed. If the 500 recurs, capture its request ID so the exact failing endpoint can be matched to backend logs.
+
+## Audit continuation: saved receipt branding migration (2026-10-12)
+
+- Existing saved receipt profiles at schema versions 2 or 3 bypassed the new customer-receipt branding defaults, so the saved MAZETTO FOOD logo and name could remain visible after the renderer update.
+- Schema version 4 now applies the requested one-time default only to the standard MAZETTO FOOD customer receipt when both brand controls were still enabled. Kitchen/other document profiles and custom business names remain unchanged; users can explicitly re-enable both controls and that choice persists.
+- Receipt-renderer tests passed 22/22; the full Desktop suite passed 167/167. Desktop typecheck, ESLint, main/preload build passed.
+- This fix remains in the local audit branch; production was not changed.
+
+## Audit continuation: archived hall/table reactivation consistency (2026-10-12)
+
+- Table update could reactivate a table while its parent hall remained archived, although creating a table already requires an active hall. Reactivation now requires the active hall row to be found after taking its lock; a missing hall lock also fails closed.
+- Added a regression verifying an archived hall blocks table reactivation without writing the table. The complete backend suite passed 641/641; backend application and script typechecks, touched-file ESLint, and the Nest production build passed.
+- No production service, database, push, or deployment was changed.
+
+## Audit continuation: disposable cash acceptance and production smoke (2026-10-12)
+
+- A no-volume PostgreSQL 18 container, bound to loopback only, received all 59 migrations before the unified-cash database validator ran. It passed POS, pickup, delivery, waiter collection, shift ownership, concurrent shift numbering, one-open-shift-per-employee, refund race/idempotency, transfer, disabled-provider, ledger, closeout, and permission-migration checks.
+- The temporary database container was removed after the run; no production database or business data was touched.
+- Production read-only smoke passed 27/27 against the deployed baseline. This does not verify source changes that remain local or in a pull request.
+- `pg@8.23.0` emitted a non-failing deprecation warning from Prisma's PostgreSQL adapter during the intentional concurrent database workload. The acceptance passed; reassess adapter compatibility before adopting `pg@9`.
+- No commit, push, production migration, production write, or deployment occurred.
+
+## Audit continuation: production tenant-login diagnosis (2026-10-12)
+
+- A read-only production aggregate found one active tenant, zero active employee accounts missing tenant membership, zero active branch-scoped memberships without a matching active employee, zero active memberships without an active restaurant role, and zero pending memberships.
+- For the account shown in the earlier login screenshot, metadata-only lookup found an active account with a password hash, active employee, active tenant membership, and valid branch binding. Credentials/hash contents were not read or returned; no user identifier was recorded in this audit note.
+- This rules out a broad membership-backfill or inactive-account cause for that login report, but does not prove the password the app submitted or the precise request path. If the same account still rejects after its owner/admin resets the password, capture the request ID and trace that attempt. No password, session, or other production data was changed.
+
+## Audit continuation: repository inventory and validation-error detail (2026-10-12)
+
+- `git ls-files` reports 1,259 tracked repository files. The previous `251` figure in the historical audit is not a current complete-audit count. A scoped `src`/`app`/`test` query returned 535 files; this is an inventory count, not a claim that every line has been manually reviewed.
+- The Desktop outbox previously preferred NestJS's generic `error: "Bad Request"` over its detailed `message` array. It now prioritizes the actionable message, with a regression test using that framework response shape.
+- Current batch verification: backend full tests 641 passed; Desktop full tests 167 passed; focused Desktop TypeScript and ESLint checks passed; `git diff --check` is clean.
+- This fix remains in the grouped audit worktree. It has not been pushed or deployed.
+
+## Audit continuation: IPv6 target range validation (2026-10-12)
+
+- BestTeam's public HTTPS monitor accepted some reserved/documentation IPv6 addresses inside the broad global-unicast range, including 2001::/23 and 3fff::/20. This weakened the SSRF boundary and could report non-public targets as eligible.
+- The probe now rejects those special-purpose prefixes, plus the documentation and 6to4 ranges, using parsed hextets so expanded IPv6 forms are checked too. IANA marks the cited special-purpose ranges as not globally reachable: https://www.iana.org/assignments/iana-ipv6-special-registry.
+- Regression tests cover compressed and expanded forms and the 2001::/23 boundary. Focused test passed; full backend tests passed 641/641 plus HTTP retry 3/3; app/scripts TypeScript, touched-file ESLint, and Nest build passed.
+- No production service or data was changed.
+
+## Audit continuation: POS modifier retry fingerprint (2026-10-12)
+
+- POS checkout retry identity previously included modifier IDs but not their selected quantities. If a modifier quantity changed while the same order was being retried, the UI could reuse a key for a different request body.
+- The fingerprint now includes modifier IDs and quantities, sorted by ID so equivalent modifier ordering stays stable. A regression test proves quantity changes produce a new fingerprint and reordering does not.
+- Reorder now restores modifier quantities from the current catalog: newly required minimums are inserted, removed modifiers are ignored, saved quantities are clamped to new limits, legacy selections without a quantity default to one, and invalid current constraints skip that line instead of submitting a rejected order.
+- Final grouped verification passed 14 typecheck/lint tasks, 7 builds, and 33/33 operational validators. The full test run passed 945 tests: backend 649, HTTP retry 3, Desktop 167, POS 72, customer web 31, Telegram 5, print agent 7, and root smoke tests 11.
+- git diff --check passed; no commit, push, production write, migration, or deployment occurred.
+- Remaining external acceptance is unchanged: test real printer/driver output and offline disconnect/reconnect on the restaurant Desktop; verify Telegram webhook/provider credentials and NBU reconciliation with authorized production evidence.
+
+## Audit continuation: Telegram product modifiers and resilient add flow (2026-10-12)
+
+- Telegram product cards with variants or modifier choices now open a customer/chat-bound configurator; it shows selected modifiers and recalculated price, then revalidates the product options before adding the item.
+- Configurator state expires after 30 minutes. A Redis `SET PX NX` claim prevents duplicate add callbacks; Redis command errors fail closed. The in-memory fallback remains atomic within a single process.
+- Regression coverage includes required and optional modifiers, callback-size limits, chat/customer binding, option revalidation, concurrent duplicate callbacks, Redis argument/response semantics, and failure handling.
+- Corrected the staff-workspace Playwright check: it expected obsolete checkbox controls while the POS presents quantity steppers. The actual variant, required modifier, optional modifier, payment retry/lock and shift flows now pass; kitchen/courier role flows and viewport checks also pass.
+- Final local verification passed 14 typecheck/lint tasks, 7 builds, 33 operational validators, and 953 tests across all workspaces (backend 657, HTTP retry 3, Desktop 167, POS 72, customer web 31, Telegram 5, print agent 7, root smoke 11).
+- The work remains uncommitted on the audit branch; no production state, database migration, push, merge, or deployment was performed.
+- Still outstanding: physical printer/driver acceptance, restaurant Desktop offline disconnect/reconnect, authorized Telegram webhook/provider testing, NBU reconciliation evidence, tenant A/B staging and restore rehearsal, and the broader file-by-file audit. Passing CI/browser mocks is not proof of those external workflows.
+
+## Audit continuation: modifier quantity integrity (2026-10-12)
+
+- The order API accepted fractional modifier quantities even though modifier choice controls and product min/max constraints use whole units. With an unlimited maximum, a crafted request could be priced at a fraction of an add-on.
+- `OrderItemModifierDto` now requires a positive integer quantity; omitted quantity continues to default to one. A regression test covers whole, default, and fractional values.
+- Reorder now floors legacy fractional modifier snapshots before applying current min/max, so saved historical quantities do not produce a request rejected by the integer-only order API.
+- Latest verification passed 14 lint/typecheck tasks, 7 builds, 33 validators, and 955 tests (backend 658, HTTP retry 3, Desktop 167, POS 72, customer web 32, Telegram 5, print agent 7, root smoke 11). `git diff --check` is clean.
+- No commit, push, merge, production write, database migration, or deployment occurred.
+- One-shot Knip flagged 119 files, including runtime-discovered validators and the Prisma seed configured in `prisma.config.ts`; those are not confirmed dead code. It reported no unused package dependencies; `pg`/`tsx` warnings matched the scripts' intentional backend-workspace resolution. No file or dependency was deleted; remaining flags need individual reference review.
+
+## Audit continuation: tenant forwarded-host boundary (2026-10-12)
+
+- Internal service requests use X-Forwarded-Host to retain the restaurant domain across Next.js rewrites. Next.js preserves a pre-existing forwarded-host header, so trusting it without explicitly setting it at the app boundary depended on reverse-proxy sanitization.
+- Customer web and POS now overwrite X-Forwarded-Host from the incoming Host for /api/v1 requests, and remove the forwarded value if no direct host is present. This is defense in depth; production exploitability was not established because the edge proxy may already sanitize headers.
+- Regression tests cover forged-header overwrite and missing-host removal in both apps. Customer/POS typechecks and lint passed; customer tests 32/32, POS tests 72/72, backend tenant/login tests 19/19, and both app production builds passed.
+- No production request, migration, commit, push, or deployment was performed. This remains part of the broader audit; the release decision is intentionally deferred until meaningful changes are grouped and reviewed.
+
+## Audit continuation: delivery coordinate validation (2026-10-12)
+
+- Historical JSON coordinates could coerce null/blank values to zero, and out-of-range coordinates were accepted by the shared distance helper. It now rejects malformed and geographically impossible coordinates and clamps floating-point rounding before Haversine square roots.
+- Regression coverage includes null, blank, numeric-string, out-of-range and invalid coordinates; delivery-distance tests passed 9/9, backend typecheck/lint passed, and related delivery-fee/audit-integrity tests passed 19/19.
+- No production data, migration, push, or deployment was touched.
+
+## Audit continuation: customer standalone routing and mobile header (2026-10-12)
+
+- Reproduced a locale rewrite loop in the customer-web standalone runtime. The standalone server uses its configured container origin, while next-intl generated a rewrite against localhost; the issue happened before the page reached its normal route.
+- Locale rewrites now re-anchor only safe HTTP(S) paths to the standalone HOSTNAME/PORT. The API host-forwarding branch remains separate. Forwarded protocol parsing accepts only the first exact http or https value; malformed headers fall back to the request protocol.
+- The mobile restaurant logo was visibly clipped by a scale transform. The transform was removed, the image now crops transparent source padding inside its fixed box, and header widths are constrained to 200px on phones and 170px below 390px.
+- Browser QA covered /, /menu, /cart, /checkout, /orders, /profile at 375, 390, 430, 768, 1024, 1366, and 1440px: 42/42 HTTP 200, no page-level horizontal overflow, stylesheet failures, navigation exceptions, or browser page errors. The 390px logo was visually inspected.
+- The customer contrast QA now treats HTTP/navigation/style-load failures as hard failures. Its color contrast analyzer remains advisory for gradient/transparent backgrounds and is not claimed as a complete automated contrast proof.
+- Uncached workspace tests passed 950/950 across six package tasks; the root smoke/unit tests passed 11/11. Customer web specifically passed 37/37 tests, lint, typecheck, and production build.
+- Full lint, typecheck, and production build passed across all seven applicable workspace tasks; 33/33 safe operational validators passed; read-only production smoke passed 27/27.
+- The mocked role matrix passed all 14 role/viewport combinations (seven roles at 1440px and 390px), including restricted admin routes.
+- Standalone browser QA had no local backend connected, so the hydrated home page showed the expected disconnected-backend state. Production backend reachability is separately covered by the read-only smoke; this local run is not an offline acceptance test.
+- Full release acceptance then passed, including the DB-backed order-to-cash-to-stock-to-print E2E against a newly created volume-free PostgreSQL container. The disposable container and test database were removed afterward.
+- No push or deployment was made; the local code remains one grouped audit batch.
+- NODE_OPTIONS=--trace-deprecation traced one non-blocking query-queue warning to Prisma's PostgreSQL adapter; the disposable E2E still passed. Track before a pg@9/adapter upgrade.
+- Staff UI scenario QA passed: 73 product cards at 320/1024/1530px; Kitchen, Courier, POS, and Shift at 320/390/768/1024/1440px; no overflow or runtime errors. Mocked kitchen, courier, cashier retry/payment, shift-open/close, and read-only role workflows all passed.

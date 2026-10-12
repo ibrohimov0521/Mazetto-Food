@@ -3,6 +3,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsEnum,
+  IsInt,
   IsNumber,
   IsOptional,
   IsPositive,
@@ -62,7 +63,7 @@ export class OnlineOrderModifierDto {
   modifierId!: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   @IsPositive()
   quantity = 1;
 }

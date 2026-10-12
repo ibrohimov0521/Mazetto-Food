@@ -44,6 +44,12 @@ import type {
   UpdateTableStatusDto,
 } from "./dto/tables.dto";
 
+function normalizeRequiredName(value: string): string {
+  const name = value.trim();
+  if (!name) throw new BadRequestException("Name cannot be empty");
+  return name;
+}
+
 @Injectable()
 export class TablesService {
   constructor(
@@ -168,9 +174,9 @@ export class TablesService {
   }
 
   async createHall(dto: CreateHallDto, user: AuthenticatedUser) {
+    const name = normalizeRequiredName(dto.name);
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
     await assertBranchBelongsToActor(this.prisma, user, branchId);
-    const name = dto.name.trim();
 
     return this.prisma.hall.create({
       data: {
@@ -184,6 +190,7 @@ export class TablesService {
   }
 
   async createTable(dto: CreateTableDto, user: AuthenticatedUser) {
+    const name = normalizeRequiredName(dto.name);
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
     await assertBranchBelongsToActor(this.prisma, user, branchId);
     return this.prisma.$transaction(async (tx) => {
@@ -215,7 +222,7 @@ export class TablesService {
           hallId: dto.hallId,
           code: `T${dto.number}-${randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase()}`,
           number: dto.number,
-          name: dto.name.trim(),
+          name,
           capacity: dto.capacity,
           seats: dto.capacity,
           sortOrder: dto.sortOrder ?? dto.number,
@@ -275,6 +282,8 @@ export class TablesService {
   }
 
   async updateHall(id: string, dto: UpdateHallDto, user: AuthenticatedUser) {
+    const name =
+      dto.name === undefined ? undefined : normalizeRequiredName(dto.name);
     const scope = await resolveRestaurantScope(this.prisma, user);
     return this.prisma.$transaction(async (tx) => {
       const hallWhere = {
@@ -311,7 +320,7 @@ export class TablesService {
       return tx.hall.update({
         where: { id },
         data: {
-          ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+          ...(name !== undefined ? { name } : {}),
           ...(dto.description !== undefined
             ? { description: dto.description.trim() || null }
             : {}),
@@ -323,6 +332,8 @@ export class TablesService {
   }
 
   async updateTable(id: string, dto: UpdateTableDto, user: AuthenticatedUser) {
+    const name =
+      dto.name === undefined ? undefined : normalizeRequiredName(dto.name);
     const scope = await resolveRestaurantScope(this.prisma, user);
     return this.prisma.$transaction(async (tx) => {
       const tableWhere = {
@@ -337,19 +348,50 @@ export class TablesService {
       });
       if (!candidate) throw new NotFoundException("Table not found");
       await assertBranchBelongsToActor(tx, user, candidate.branchId);
-      if (candidate.hallId)
-        await this.lockHall(tx, candidate.hallId, candidate.branchId);
+      if (
+        candidate.hallId &&
+        !(await this.lockHall(tx, candidate.hallId, candidate.branchId))
+      ) {
+        throw new NotFoundException("Hall not found");
+      }
       await this.lockTable(tx, id, candidate.branchId);
       const table = await tx.restaurantTable.findFirst({
         where: tableWhere,
-        select: { id: true, branchId: true, hallId: true },
+        select: {
+          id: true,
+          branchId: true,
+          hallId: true,
+          number: true,
+          isActive: true,
+        },
       });
       if (!table) throw new NotFoundException("Table not found");
-      if (dto.number !== undefined && table.hallId) {
+      const targetNumber = dto.number ?? table.number;
+      const isReactivating = dto.isActive === true && !table.isActive;
+      if (isReactivating && table.hallId) {
+        const activeHall = await tx.hall.findFirst({
+          where: {
+            id: table.hallId,
+            branchId: table.branchId,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        if (!activeHall) {
+          throw new BadRequestException(
+            "Activate the hall before reactivating its table",
+          );
+        }
+      }
+      if (
+        table.hallId &&
+        typeof targetNumber === "number" &&
+        (dto.number !== undefined || isReactivating)
+      ) {
         const duplicate = await tx.restaurantTable.findFirst({
           where: {
             hallId: table.hallId,
-            number: dto.number,
+            number: targetNumber,
             isActive: true,
             id: { not: id },
           },
@@ -377,7 +419,7 @@ export class TablesService {
       return tx.restaurantTable.update({
         where: { id },
         data: {
-          ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
+          ...(name !== undefined ? { name } : {}),
           ...(dto.number !== undefined ? { number: dto.number } : {}),
           ...(dto.capacity !== undefined
             ? { capacity: dto.capacity, seats: dto.capacity }
@@ -823,6 +865,9 @@ export class TablesService {
     return `${value
       .trim()
       .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "_")}_${Date.now().toString(36).toUpperCase()}`;
+      .replace(/[^A-Z0-9]+/g, "_")}_${randomUUID()
+      .replaceAll("-", "")
+      .slice(0, 12)
+      .toUpperCase()}`;
   }
 }

@@ -23,7 +23,7 @@ export type ReceiptFieldKey =
   | "orderNotes"
   | "reason";
 
-export type ReceiptDocumentProfile = {
+type ReceiptDocumentProfile = {
   title: string;
   titleEnabled: boolean;
   defaultFooterEnabled: boolean;
@@ -40,7 +40,7 @@ export type ReceiptDocumentProfile = {
 };
 
 export type ReceiptPrintProfile = {
-  schemaVersion: 3;
+  schemaVersion: 4;
   businessName: string;
   commonHeaderLines: string[];
   commonFooterLines: string[];
@@ -91,7 +91,7 @@ function documentProfile(
 
 export function defaultReceiptPrintProfile(): ReceiptPrintProfile {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     businessName: "MAZETTO FOOD",
     commonHeaderLines: [],
     commonFooterLines: [],
@@ -221,7 +221,7 @@ export function normalizeReceiptPrintProfile(
   }
 
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     businessName: safeText(input.businessName, defaults.businessName, 80),
     commonHeaderLines: safeLines(input.commonHeaderLines),
     commonFooterLines: safeLines(input.commonFooterLines),
@@ -237,7 +237,7 @@ export function migrateStoredReceiptPrintProfile(
       ? (value as Record<string, unknown>)
       : {};
   const profile = normalizeReceiptPrintProfile(input);
-  if (typeof input.schemaVersion === "number" && input.schemaVersion >= 2)
+  if (typeof input.schemaVersion === "number" && input.schemaVersion >= 4)
     return profile;
 
   const documentsInput =

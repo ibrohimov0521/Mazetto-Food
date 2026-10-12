@@ -6,23 +6,109 @@ export type OfflineCommandDefinition = {
 };
 
 const registry: OfflineCommandDefinition[] = [
-  { commandType: "pos.order.create", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/pos\/orders$/ },
-  { commandType: "payment.process", aggregateType: "payments", methods: ["POST"], pattern: /^\/api\/v1\/payments\/process$/ },
-  { commandType: "shift.open", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/shift\/open$/ },
-  { commandType: "shift.close", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/shift\/[^/]+\/close$/ },
-  { commandType: "cash.transaction.create", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/shift\/[^/]+\/transactions$/ },
-  { commandType: "courier-shift.open", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/courier-shift\/open$/ },
-  { commandType: "cash.transfer.create", aggregateType: "cash-register", methods: ["POST"], pattern: /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/ },
-  { commandType: "order.status.update", aggregateType: "orders", methods: ["PATCH"], pattern: /^\/api\/v1\/orders\/[^/]+\/status$/ },
-  { commandType: "order.action", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/orders\/[^/]+\/actions\/accept$/ },
-  { commandType: "order.items.update", aggregateType: "orders", methods: ["POST", "PATCH"], pattern: /^\/api\/v1\/orders\/[^/]+\/items(?:\/[^/]+)?$/ },
-  { commandType: "table.order.create", aggregateType: "orders", methods: ["POST"], pattern: /^\/api\/v1\/tables\/[^/]+\/orders$/ },
-  { commandType: "kitchen.action", aggregateType: "kitchen", methods: ["PATCH"], pattern: /^\/api\/v1\/kitchen\/orders\/[^/]+\/(?:accept|start|ready|complete|cancel)$/ },
-  { commandType: "courier.status.update", aggregateType: "courier", methods: ["POST", "PATCH"], pattern: /^\/api\/v1\/courier\/orders\/[^/]+\/status$/ },
-  { commandType: "shift.open", aggregateType: "shifts", methods: ["POST"], pattern: /^\/api\/v1\/shifts\/open$/ },
-  { commandType: "shift.close", aggregateType: "shifts", methods: ["POST"], pattern: /^\/api\/v1\/shifts\/[^/]+\/close$/ },
-  { commandType: "cash.transaction.create", aggregateType: "shifts", methods: ["POST"], pattern: /^\/api\/v1\/shifts\/[^/]+\/cash-transactions$/ },
-  { commandType: "receipt.mark-printed", aggregateType: "receipts", methods: ["PATCH"], pattern: /^\/api\/v1\/receipts\/[^/]+\/print$/ },
+  {
+    commandType: "pos.order.create",
+    aggregateType: "orders",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/pos\/orders$/,
+  },
+  {
+    commandType: "payment.process",
+    aggregateType: "payments",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/payments\/process$/,
+  },
+  {
+    commandType: "shift.open",
+    aggregateType: "cash-register",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/cash-register\/shift\/open$/,
+  },
+  {
+    commandType: "shift.close",
+    aggregateType: "cash-register",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/cash-register\/shift\/[^/]+\/close$/,
+  },
+  {
+    commandType: "cash.transaction.create",
+    aggregateType: "cash-register",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/cash-register\/shift\/[^/]+\/transactions$/,
+  },
+  {
+    commandType: "courier-shift.open",
+    aggregateType: "cash-register",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/cash-register\/courier-shift\/open$/,
+  },
+  {
+    commandType: "cash.transfer.create",
+    aggregateType: "cash-register",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/cash-register\/(?:courier-shift\/)?transfers$/,
+  },
+  {
+    commandType: "order.status.update",
+    aggregateType: "orders",
+    methods: ["PATCH"],
+    pattern: /^\/api\/v1\/orders\/[^/]+\/status$/,
+  },
+  {
+    commandType: "order.action",
+    aggregateType: "orders",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/orders\/[^/]+\/actions\/accept$/,
+  },
+  {
+    commandType: "order.items.update",
+    aggregateType: "orders",
+    methods: ["POST", "PATCH"],
+    pattern: /^\/api\/v1\/orders\/[^/]+\/items(?:\/[^/]+)?$/,
+  },
+  {
+    commandType: "table.order.create",
+    aggregateType: "orders",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/tables\/[^/]+\/orders$/,
+  },
+  {
+    commandType: "kitchen.action",
+    aggregateType: "kitchen",
+    methods: ["PATCH"],
+    pattern:
+      /^\/api\/v1\/kitchen\/orders\/[^/]+\/(?:accept|start|ready|complete|cancel)$/,
+  },
+  {
+    commandType: "courier.status.update",
+    aggregateType: "courier",
+    methods: ["POST", "PATCH"],
+    pattern: /^\/api\/v1\/courier\/orders\/[^/]+\/status$/,
+  },
+  {
+    commandType: "shift.open",
+    aggregateType: "shifts",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/shifts\/open$/,
+  },
+  {
+    commandType: "shift.close",
+    aggregateType: "shifts",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/shifts\/[^/]+\/close$/,
+  },
+  {
+    commandType: "cash.transaction.create",
+    aggregateType: "shifts",
+    methods: ["POST"],
+    pattern: /^\/api\/v1\/shifts\/[^/]+\/cash-transactions$/,
+  },
+  {
+    commandType: "receipt.mark-printed",
+    aggregateType: "receipts",
+    methods: ["PATCH"],
+    pattern: /^\/api\/v1\/receipts\/[^/]+\/print$/,
+  },
 ];
 
 const onlineOnlyMutationPatterns = [
@@ -54,15 +140,10 @@ export function resolveOfflineCommand(
   return (
     registry.find(
       (definition) =>
-        definition.methods.includes(normalizedMethod) && definition.pattern.test(pathname),
+        definition.methods.includes(normalizedMethod) &&
+        definition.pattern.test(pathname),
     ) ?? null
   );
-}
-
-export function resolveOfflineCommandType(
-  commandType: string,
-): OfflineCommandDefinition | null {
-  return registry.find((definition) => definition.commandType === commandType) ?? null;
 }
 
 export function classifyOfflineMutation(

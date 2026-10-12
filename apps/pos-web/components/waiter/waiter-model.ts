@@ -14,9 +14,9 @@
 import type { OrderStatus } from "../../lib/order-display";
 
 export type TableStatus = "AVAILABLE" | "OCCUPIED" | "RESERVED" | "CLEANING";
-export type OrderItemState = "ACTIVE" | "CANCELLED";
+type OrderItemState = "ACTIVE" | "CANCELLED";
 
-export type ModifierSnapshotEntry = {
+type ModifierSnapshotEntry = {
   id: string;
   name: string;
   quantity: string;
@@ -76,6 +76,8 @@ export type MenuVariant = {
 
 export type MenuModifier = {
   isRequired: boolean;
+  minSelect?: number;
+  maxSelect?: number | null;
   modifier: { id: string; name: string; price: string };
 };
 
@@ -94,6 +96,7 @@ export type MenuCategory = { id: string; name: string };
 export type LineDraft = {
   variantId: string | null;
   modifierIds: string[];
+  modifierQuantities: Record<string, number>;
   quantity: number;
   notes: string;
 };
@@ -161,9 +164,12 @@ export function draftUnitPrice(
           product.sellingPrice,
       )
     : Number(fallbackUnitPrice);
-  const extras = (product?.modifiers ?? [])
-    .filter((entry) => draft.modifierIds.includes(entry.modifier.id))
-    .reduce((sum, entry) => sum + Number(entry.modifier.price), 0);
+  const extras = (product?.modifiers ?? []).reduce((sum, entry) => {
+    const quantity =
+      draft.modifierQuantities[entry.modifier.id] ??
+      (draft.modifierIds.includes(entry.modifier.id) ? 1 : 0);
+    return sum + Number(entry.modifier.price) * quantity;
+  }, 0);
 
   return (Number.isFinite(base) ? base : 0) + extras;
 }
@@ -171,7 +177,11 @@ export function draftUnitPrice(
 /** Qator tagidagi izoh satri: tur + qo'shimchalar. */
 export function lineSubtitle(line: OrderLine): string {
   const modifiers = (line.modifierSnapshot ?? [])
-    .map((entry) => entry.name)
+    .map((entry) => {
+      const quantity = Number(entry.quantity);
+      const count = Number.isFinite(quantity) ? quantity : 1;
+      return count > 1 ? `${entry.name} ×${count}` : entry.name;
+    })
     .filter(Boolean);
 
   return [line.variantName ?? null, ...modifiers]
@@ -181,6 +191,31 @@ export function lineSubtitle(line: OrderLine): string {
 
 export function lineModifierIds(line: OrderLine): string[] {
   return (line.modifierSnapshot ?? []).map((entry) => entry.id);
+}
+
+export function lineModifierQuantities(
+  line: OrderLine,
+): Record<string, number> {
+  return Object.fromEntries(
+    (line.modifierSnapshot ?? []).map((entry) => [
+      entry.id,
+      Number(entry.quantity) || 1,
+    ]),
+  );
+}
+
+export function modifierMinimum(entry: MenuModifier): number {
+  return Math.max(entry.minSelect ?? 0, entry.isRequired ? 1 : 0);
+}
+
+export function initialModifierQuantities(
+  modifiers: MenuModifier[],
+): Record<string, number> {
+  return Object.fromEntries(
+    modifiers
+      .map((entry) => [entry.modifier.id, modifierMinimum(entry)])
+      .filter(([, quantity]) => Number(quantity) > 0),
+  );
 }
 
 /**

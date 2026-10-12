@@ -15,7 +15,7 @@ import { hasRole, type AuthUser } from "./auth";
  * balki nima uchun mumkin emasligini oldindan ko'rishi.
  */
 
-export type StaffRoleRef = { code: string };
+type StaffRoleRef = { code: string };
 
 export type StaffLike = {
   id: string;
@@ -29,8 +29,9 @@ export function isSuperAdminStaff(staff: StaffLike): boolean {
   return staff.roles.some((role) => role.code === "SUPER_ADMIN");
 }
 
-export function countActiveSuperAdmins(allStaff: StaffLike[]): number {
-  return allStaff.filter((item) => item.isActive && isSuperAdminStaff(item)).length;
+function countActiveSuperAdmins(allStaff: StaffLike[]): number {
+  return allStaff.filter((item) => item.isActive && isSuperAdminStaff(item))
+    .length;
 }
 
 /**
@@ -63,7 +64,8 @@ export function resolveStaffActionBlock({
     return null;
   }
 
-  const isLastActiveSuperAdmin = target.isActive && countActiveSuperAdmins(allStaff) === 1;
+  const isLastActiveSuperAdmin =
+    target.isActive && countActiveSuperAdmins(allStaff) === 1;
 
   if (!isLastActiveSuperAdmin) {
     return null;

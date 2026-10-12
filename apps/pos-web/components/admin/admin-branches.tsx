@@ -37,7 +37,7 @@ import { useToast } from "../admin-ui/toast";
  * o'tadi va oyna aynan nima o'chayotganini sanab beradi.
  */
 
-export const weekDays = [
+const weekDays = [
   { key: "MONDAY", label: "Dushanba" },
   { key: "TUESDAY", label: "Seshanba" },
   { key: "WEDNESDAY", label: "Chorshanba" },
@@ -251,15 +251,28 @@ export function AdminBranchesPage() {
 
   async function permanentlyDeleteBranches(): Promise<void> {
     if (!selectedBranchIds.length) return;
-    if (!window.confirm(`${selectedBranchIds.length} ta filialni bazadan butunlay o'chirishni tasdiqlaysizmi? Bog'langan yoki tarixli filiallar o'chirilmaydi.`)) return;
+    if (
+      !window.confirm(
+        `${selectedBranchIds.length} ta filialni bazadan butunlay o'chirishni tasdiqlaysizmi? Bog'langan yoki tarixli filiallar o'chirilmaydi.`,
+      )
+    )
+      return;
     try {
-      await apiFetch("/branches/bulk/permanent", { method: "DELETE", body: JSON.stringify({ ids: selectedBranchIds }) });
+      await apiFetch("/branches/bulk/permanent", {
+        method: "DELETE",
+        body: JSON.stringify({ ids: selectedBranchIds }),
+      });
       showToast("Tanlangan filiallar o'chirildi.", "success");
       setSelectedBranchIds([]);
       load();
     } catch (caught) {
       if (caught instanceof SessionExpiredError) return;
-      showToast(caught instanceof Error ? caught.message : "Filiallarni o'chirib bo'lmadi.", "danger");
+      showToast(
+        caught instanceof Error
+          ? caught.message
+          : "Filiallarni o'chirib bo'lmadi.",
+        "danger",
+      );
     }
   }
 
@@ -341,7 +354,8 @@ export function AdminBranchesPage() {
           timeZone: draft.timezone.trim(),
         }).format();
       } catch {
-        next.timezone = "IANA vaqt mintaqasini kiriting, masalan Asia/Tashkent.";
+        next.timezone =
+          "IANA vaqt mintaqasini kiriting, masalan Asia/Tashkent.";
       }
     }
 
@@ -614,8 +628,9 @@ export function AdminBranchesPage() {
           <p className="text-[13px] text-mz-text-muted">
             Bu ekrandagi holat o&apos;zgarishlari mijoz saytida va Telegram
             botda <span className="font-semibold text-mz-text">darhol</span>{" "}
-            ko&apos;rinadi. Ishlatilgan filiallar arxivlanadi va tarixi saqlanadi;
-            faqat butunlay bo&apos;sh filialni permanent o&apos;chirish mumkin.
+            ko&apos;rinadi. Ishlatilgan filiallar arxivlanadi va tarixi
+            saqlanadi; faqat butunlay bo&apos;sh filialni permanent
+            o&apos;chirish mumkin.
           </p>
         </CardBody>
       </Card>
@@ -624,7 +639,14 @@ export function AdminBranchesPage() {
         <CardHeader
           actions={
             <div className="flex flex-wrap gap-2">
-              {canEdit && selectedBranchIds.length ? <Button onClick={() => void permanentlyDeleteBranches()} variant="danger">{selectedBranchIds.length} ta o'chirish</Button> : null}
+              {canEdit && selectedBranchIds.length ? (
+                <Button
+                  onClick={() => void permanentlyDeleteBranches()}
+                  variant="danger"
+                >
+                  {selectedBranchIds.length} ta o'chirish
+                </Button>
+              ) : null}
               {canCreate ? (
                 <Button onClick={openCreate} size="lg">
                   <Icon className="h-4 w-4" name="plus" />
