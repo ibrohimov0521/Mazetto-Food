@@ -2,7 +2,7 @@
 
 Audit snapshot: 2026-09-21
 
-Current production state: [2026-10-06 checkpoint](./PRODUCTION_CHECKPOINT_2026-10-06.md). Use that record for deployed-release status; the dated audit files below preserve earlier evidence.
+Current production state: [2026-10-14 acceptance matrix](./ACCEPTANCE_MATRIX_2026-10-14.md). The dated audit files below preserve earlier evidence; their old release-status statements are historical, not current gates.
 
 This directory is the current source of truth for the product-wide audit. Older
 phase notes in `docs/MAZETTO_WORK_STATUS.md` are historical and must not be used
@@ -10,6 +10,7 @@ as the current release status.
 
 ## Documents
 
+- [Current acceptance matrix](./ACCEPTANCE_MATRIX_2026-10-14.md) - one five-stage record per remaining requirement, with release identity and evidence.
 - [Function catalog](./FUNCTION_CATALOG_2026-09-21.md) - every user-facing and
   operational area, its owner, entry point, expected behavior, and current state.
 - [Operating guide](./OPERATING_GUIDE_2026-09-21.md) - how customer, staff,
