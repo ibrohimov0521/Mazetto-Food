@@ -174,3 +174,10 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - The new task is running the expected image. `/api/v1/health` returned HTTP 200 with PostgreSQL `ok` and Redis `connected`; `notification_dead_letters` contains 0 rows.
 - The post-rollout staging A/B harness passed: tenant membership/cache isolation, order event delivery/reconnect, customer logout revocation, verified/unknown host handling, report/audit scope, OTP sessions, and media isolation. Synthetic `.invalid` host fixtures were cleaned up; no real Telegram/SMS delivery occurred. After cleanup, health remained 200 and migrations remained 57/57.
 - The rollback image remains available locally. This rollout validates startup, schema compatibility, and health; it does not prove live Telegram delivery or all restaurant workflows. Production migration/deploy, public staging access, and second-tenant activation remain closed.
+
+## Staging A/B recheck (2026-10-13)
+
+- The staging API container was running image `mazetto-staging-api-crmkze:f6531fc` (revision `f6531fc35c9122e908f30175a563deb871e05fde`, built 2026-10-04). Its internal health endpoint returned HTTP 200; PostgreSQL was `ok` and Redis was connected.
+- The guarded `qa-tenant-ab-staging.mjs` harness passed on that deployed staging image: tenant membership/cache separation, live order delivery and reconnect, customer logout revocation, host/domain checks, reports/audit, OTP sessions and tenant media isolation.
+- The harness completed its synthetic fixture and media cleanup and verified the original staging baseline. No production service, database, DNS, real Telegram, SMS or customer data was used.
+- This result verifies the deployed `f6531fc` staging baseline, not the newer audit candidate. The audit branch has two pending migrations and must be deployed to staging, migrated and re-tested there before production release or second-tenant activation.

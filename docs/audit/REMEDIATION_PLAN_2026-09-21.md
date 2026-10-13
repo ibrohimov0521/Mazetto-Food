@@ -157,13 +157,39 @@ deployment remain separate gates; no production database, push, or deploy change
 6. Deployment health passes and the exact human smoke result is recorded.
 7. Documentation and operator recovery steps are updated in the same change.
 
-## Recommended first implementation batch
+## Current execution point (2026-10-13)
+
+The original implementation-first sequence below has been superseded by the
+completed audit work and the release gates recorded here. Do not restart those
+completed batches or treat automated acceptance as production approval.
+
+1. The current candidate is PR #296, head `b064d8e034b851b6d58f9b1b3a9d43a7d0a51773`.
+   Required GitHub checks `verify` and `windows-desktop-package` passed.
+2. The deployed staging API is still `f6531fc` from 2026-10-04. The live
+   staging A/B proof passed on that older image, not on this candidate.
+3. Before production, take and verify a fresh staging-only backup, deploy this
+   exact candidate to staging, apply its two pending migrations
+   (`20261013120000_product_kitchen_printer_routing` and
+   `20261013140000_tenant_scoped_order_numbers`) with `prisma migrate deploy`,
+   then verify migration status, API/PostgreSQL/Redis health, staging A/B, and
+   Mazetto Food order-to-kitchen/cash/receipt regression. Keep all fixtures
+   synthetic; do not send real Telegram/SMS or payment side effects.
+4. Only after candidate-specific staging and rollback/restore gates pass may the
+   approved production release procedure be considered. Production currently
+   remains at 59 migrations; the candidate has 61. Keep second-restaurant
+   activation disabled.
+5. Record the six restaurant workflow items AUD-164 through AUD-169 separately.
+   Their automated checks pass, but live workstation/settings refresh and
+   physical mixed-printer checks remain acceptance gates.
+6. The PR description still contains stale migration and test-count claims; fix
+   those before review/merge so the release record matches the candidate.
+
+### Historical implementation-first sequence
 
 Start with `AUD-101`, then `AUD-110` through `AUD-115`, then `AUD-120` through
 `AUD-122`. This order protects data first, makes receipts/printing truthful, and
 only then expands offline operation. Payment providers and wider feature work
 must wait until those foundations pass their acceptance tests.
-
 ## UI settings save/reload matrix (2026-10-13)
 
 - Extended the admin-settings browser check to save order-number start 1 and the Kitchen POS visibility toggle, reload the page, and assert both values persist in the UI.
