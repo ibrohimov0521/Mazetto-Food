@@ -28,3 +28,53 @@ test("only an explicit receipt reprint opts out of local replay deduplication", 
     __bestteamAllowLocalReprint: true,
   });
 });
+test("printer target is rechecked after the deletion lock", async () => {
+  const filters: Record<string, unknown>[] = [];
+  const jobs: { printerId: string | null }[] = [];
+  let printerReads = 0;
+  let lockCount = 0;
+  const tx = {
+    $executeRaw: async () => {
+      lockCount += 1;
+      return 1;
+    },
+    printer: {
+      findMany: async (args: { where: Record<string, unknown> }) => {
+        filters.push(args.where);
+        printerReads += 1;
+        return printerReads === 1
+          ? [
+              {
+                id: "printer-a",
+                type: "RECEIPT",
+                metadata: { printRoles: ["RECEIPT"] },
+              },
+            ]
+          : [];
+      },
+    },
+    printJob: {
+      create: async ({ data }: { data: { printerId: string | null } }) => {
+        jobs.push(data);
+      },
+    },
+  };
+  const receipt = {
+    id: "receipt-a",
+    branchId: "branch-a",
+    content: { documentType: "RECEIPT" },
+  };
+
+  await queuePrintJobsForReceipt(tx as never, receipt);
+
+  assert.equal(lockCount, 2, "receipt and printer queue locks are held");
+  assert.deepEqual(
+    jobs.map((job) => job.printerId),
+    [null],
+  );
+  assert.deepEqual(filters[1], {
+    branchId: "branch-a",
+    isActive: true,
+    id: { in: ["printer-a"] },
+  });
+});

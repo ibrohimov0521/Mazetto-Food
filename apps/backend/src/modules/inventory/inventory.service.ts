@@ -215,13 +215,13 @@ export class InventoryService {
         throw new NotFoundException("Active warehouse not found");
       }
 
-      const [nonZeroStock, activeWarehouseCount, recipeVariantCount] =
-        await Promise.all([
-          tx.stock.count({ where: { warehouseId: id, quantity: { not: 0 } } }),
-          tx.warehouse.count({
+      const nonZeroStock = await tx.stock.count({
+        where: { warehouseId: id, quantity: { not: 0 } },
+      });
+      const activeWarehouseCount = await tx.warehouse.count({
             where: { branchId: warehouse.branchId, isActive: true },
-          }),
-          tx.recipe.count({
+          });
+      const recipeVariantCount = await tx.recipe.count({
             where: {
               items: { some: {} },
               variant: {
@@ -233,8 +233,7 @@ export class InventoryService {
                 },
               },
             },
-          }),
-        ]);
+          });
 
       if (nonZeroStock > 0) {
         throw new BadRequestException(

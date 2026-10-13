@@ -68,23 +68,21 @@ export class CashRegisterService {
           return null;
         }
 
-        const [cashTransactionTotals, cashSales, shiftOrders] =
-          await Promise.all([
-            tx.cashTransaction.groupBy({
+        const cashTransactionTotals = await tx.cashTransaction.groupBy({
               by: ["type"],
               where: { shiftId: shift.id, branchId: shift.branchId },
               _sum: { amount: true },
               _count: { _all: true },
-            }),
-            tx.revenueRecord.aggregate({
+            });
+        const cashSales = await tx.revenueRecord.aggregate({
               where: {
                 shiftId: shift.id,
                 branchId: shift.branchId,
                 payment: { method: { code: "CASH" } },
               },
               _sum: { amount: true },
-            }),
-            tx.order.findMany({
+            });
+        const shiftOrders = await tx.order.findMany({
               where: {
                 branchId: shift.branchId,
                 OR: [
@@ -101,8 +99,7 @@ export class CashRegisterService {
               },
               select: { id: true },
               orderBy: { id: "asc" },
-            }),
-          ]);
+            });
         const shiftOrderIds = shiftOrders.map(({ id }) => id);
 
         return {

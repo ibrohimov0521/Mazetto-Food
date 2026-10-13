@@ -156,7 +156,7 @@ test("production startup migrates the print queue and restores old unprinted rec
 });
 test("receipt queues retain jobs for active offline printers too", async () => {
   const jobs: { printerId: string | null }[] = [];
-  let printerFilter: Record<string, unknown> | undefined;
+  const printerFilters: Record<string, unknown>[] = [];
   const printers = [
     {
       id: "front-online",
@@ -177,7 +177,7 @@ test("receipt queues retain jobs for active offline printers too", async () => {
     $executeRaw: async () => 1,
     printer: {
       findMany: async (args: { where: Record<string, unknown> }) => {
-        printerFilter = args.where;
+        printerFilters.push(args.where);
         return printers;
       },
     },
@@ -197,7 +197,14 @@ test("receipt queues retain jobs for active offline printers too", async () => {
     content: { documentType: "RECEIPT" },
   });
 
-  assert.deepEqual(printerFilter, { branchId: "branch-1", isActive: true });
+  assert.deepEqual(printerFilters, [
+    { branchId: "branch-1", isActive: true },
+    {
+      branchId: "branch-1",
+      isActive: true,
+      id: { in: ["front-offline", "front-online"] },
+    },
+  ]);
   assert.deepEqual(
     jobs.map((job) => job.printerId).sort(),
     ["front-offline", "front-online"],

@@ -52,6 +52,40 @@ const roles = [
     adminAllowed: false,
   },
 ];
+const kitchenHandoffTicket = {
+  id: "qa-kitchen-ticket",
+  ticketNumber: "QA-KITCHEN-1",
+  status: "READY",
+  priority: 0,
+  version: 1,
+  createdAt: "2026-10-13T06:00:00.000Z",
+  items: [{ id: "qa-kitchen-item", productName: "Lavash", quantity: "1" }],
+  order: {
+    id: "qa-kitchen-order",
+    orderNumber: "101",
+    displayOrderNumber: "QA-TAKEAWAY",
+    source: "WEB",
+    type: "TAKEAWAY",
+    total: "10000",
+    paymentStatus: "PAID",
+    payments: [],
+    customerOrder: null,
+    items: [{ id: "qa-kitchen-item", productName: "Lavash", quantity: "1" }],
+  },
+};
+const kitchenCancelTicket = {
+  ...kitchenHandoffTicket,
+  id: "qa-kitchen-cancel-ticket",
+  ticketNumber: "QA-KITCHEN-CANCEL",
+  status: "NEW",
+  version: 2,
+  order: {
+    ...kitchenHandoffTicket.order,
+    id: "qa-kitchen-cancel-order",
+    displayOrderNumber: "QA-CANCEL",
+    type: "DINE_IN",
+  },
+};
 const viewports = [
   { width: 1440, height: 900 },
   { width: 390, height: 844 },
@@ -85,7 +119,11 @@ try {
         const pathname = new URL(route.request().url()).pathname;
         let data = [];
         if (pathname.endsWith("/kitchen/orders")) {
-          data = { items: [], hasMore: false, limit: 250 };
+          data = { items: role.role === "KITCHEN" && viewport.width === 1440 ? [kitchenHandoffTicket, kitchenCancelTicket] : [], hasMore: false, limit: 250 };
+        } else if (pathname.endsWith("/kitchen/orders/qa-kitchen-ticket/complete")) {
+          data = { ...kitchenHandoffTicket, status: "COMPLETED" };
+        } else if (pathname.endsWith("/kitchen/orders/qa-kitchen-cancel-ticket/cancel")) {
+          data = { ...kitchenCancelTicket, status: "CANCELLED" };
         } else if (pathname.endsWith("/dashboard/summary")) {
           data = {
             todayRevenue: 0,
@@ -118,10 +156,34 @@ try {
       const pageErrors = [];
       const page = await context.newPage();
       page.on("pageerror", (error) => pageErrors.push(error.message));
+      const kitchenRequests = [];
+      page.on("request", (request) => {
+        const url = new URL(request.url());
+        if (url.pathname.startsWith("/api/v1/kitchen/orders/")) kitchenRequests.push(`${request.method()} ${url.pathname}`);
+      });
 
       await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
       await page.waitForURL(`**${role.expected}`, { timeout: 15_000 });
       assert.equal(new URL(page.url()).pathname, role.expected);
+      if (role.role === "KITCHEN" && viewport.width === 1440) {
+        const handoffRequestPromise = page.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/kitchen/orders/qa-kitchen-ticket/complete"), { timeout: 8000 }).catch(() => null);
+        await page.getByRole("button", { name: "Topshirish", exact: true }).click();
+        await page.getByText("Buyurtmani olgan shaxs (ixtiyoriy)").waitFor();
+        assert.equal(await page.getByPlaceholder("Ism-familiyasi").inputValue(), "");
+        await page.getByRole("button", { name: "Mijozga topshirildi" }).click();
+        const handoffRequest = await handoffRequestPromise;
+        assert.ok(handoffRequest, `blank Kitchen handoff reaches the API: ${JSON.stringify(kitchenRequests)}`);
+        assert.deepEqual(handoffRequest.postDataJSON(), { expectedVersion: 1 });
+        const cancelRequestPromise = page.waitForRequest((request) => new URL(request.url()).pathname.endsWith("/kitchen/orders/qa-kitchen-cancel-ticket/cancel"), { timeout: 8000 }).catch(() => null);
+        await page.getByRole("button", { name: "#QA-CANCEL buyurtmani bekor qilish", exact: true }).click();
+        const cancelReason = page.getByLabel("Sabab");
+        await cancelReason.waitFor();
+        assert.equal(await cancelReason.inputValue(), "");
+        await page.getByRole("button", { name: "Bekor qilish", exact: true }).click();
+        const cancelRequest = await cancelRequestPromise;
+        assert.ok(cancelRequest, "blank Kitchen cancellation reaches the API");
+        assert.deepEqual(cancelRequest.postDataJSON(), { expectedVersion: 2, reasonCode: "KITCHEN_OPERATOR_CANCELLED" });
+      }
       assert.ok(
         (await page.evaluate(() => document.documentElement.scrollWidth)) <=
           viewport.width + 1,

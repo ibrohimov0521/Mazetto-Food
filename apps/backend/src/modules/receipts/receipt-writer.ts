@@ -97,6 +97,13 @@ export async function lockReceiptPrintQueue(
   await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`receipt-print-jobs:${receiptId}`}))`;
 }
 
+export async function lockPrinterPrintQueue(
+  tx: TransactionClient,
+  printerId: string,
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`printer-print-jobs:${printerId}`}))`;
+}
+
 /** Creates one durable job per active printer configured for this document route. */
 export async function queuePrintJobsForReceipt(
   tx: TransactionClient,
@@ -116,7 +123,26 @@ export async function queuePrintJobsForReceipt(
     where: { branchId: receipt.branchId, isActive: true },
     select: { id: true, type: true, metadata: true },
   });
-  const targets = printers.filter((printer) => routeMatches(printer, route));
+  const candidateTargets = printers.filter((printer) =>
+    routeMatches(printer, route),
+  );
+  for (const printer of candidateTargets.sort((a, b) =>
+    a.id.localeCompare(b.id),
+  )) {
+    await lockPrinterPrintQueue(tx, printer.id);
+  }
+  const targets = candidateTargets.length
+    ? (
+        await tx.printer.findMany({
+          where: {
+            branchId: receipt.branchId,
+            isActive: true,
+            id: { in: candidateTargets.map((printer) => printer.id) },
+          },
+          select: { id: true, type: true, metadata: true },
+        })
+      ).filter((printer) => routeMatches(printer, route))
+    : [];
   if (targets.length === 0) {
     await tx.printJob.create({
       data: {

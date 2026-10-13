@@ -9,6 +9,7 @@ import { pipeline } from "node:stream/promises";
 import { createGunzip } from "node:zlib";
 import { createRequire } from "node:module";
 
+import { assertLocalPostgresAdminUrl } from "./isolated-db-target.mjs";
 const require = createRequire(new URL("../apps/backend/package.json", import.meta.url));
 const { Client } = require("pg");
 const archiveArg = process.argv.find((argument) => argument.startsWith("--archive="));
@@ -19,13 +20,9 @@ if (!archiveArg) {
 const archive = resolve(archiveArg.slice("--archive=".length));
 assert.ok(existsSync(archive), `Backup archive not found: ${archive}`);
 
-const adminUrl = new URL(
+const adminUrl = assertLocalPostgresAdminUrl(
   process.env.MAZETTO_REHEARSAL_ADMIN_DATABASE_URL ??
     "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
-);
-assert.ok(
-  ["127.0.0.1", "localhost", "::1"].includes(adminUrl.hostname),
-  "Restore rehearsal refuses non-local PostgreSQL hosts",
 );
 const pgToolContainer = process.env.MAZETTO_PG_TOOL_CONTAINER?.trim();
 if (pgToolContainer) {

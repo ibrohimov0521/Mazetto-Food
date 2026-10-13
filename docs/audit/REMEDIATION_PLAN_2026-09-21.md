@@ -14,6 +14,7 @@ is important completeness/security, and `P3` is improvement or cleanup.
 | AUD-102 | P1 | No single release acceptance suite covers customer, staff, Desktop, Telegram and printing | Add read-only smoke plus disposable isolated write E2E; production human checklist records actor/time/result without fake live orders |
 | AUD-103 | P2 | Historical status document mixes deployed, local-only and obsolete claims | Keep this audit directory current and archive/supersede stale status sections |
 | AUD-104 | P2 | Shift/Kassa DB smoke only searched for localhost text and left synthetic rows behind | Require exact loopback PostgreSQL port 5433/database shift_qa; reject host, port, hostaddr, and service query overrides; run only against a disposable DB. Resolved on the audit branch and validated after 61 migrations |
+| AUD-105 | P2 | Several DB smoke/rehearsal guards checked URL text or hostname but allowed connection-target query overrides | Parse PostgreSQL URLs; constrain loopback host, port and expected DB; reject host, hostaddr, port, service, database and dbname overrides across mutating validators and disposable runners |
 
 ### Gate B - receipts and printing
 
@@ -94,17 +95,25 @@ each ID separately in the release summary.
 | AUD-165 | P1 | Let an operator enable/disable POS-created orders in Kitchen; by default only online WEB/TELEGRAM orders are shown and managed, while kitchen-designated items still print | Toggle in System Settings; verify all POS orders (cashier and waiter table) are hidden by default while WEB/TELEGRAM orders stay visible; enabling includes POS; test list/history/detail, alerts, direct ticket reads/actions with known IDs, transaction recheck, and unchanged kitchen printing |
 | AUD-166 | P1 | Handoff recipient and cancellation note must be optional | Submit handoff and cancel with both fields blank from every supported UI/API path; verify status, audit/history text, and permissions remain correct |
 | AUD-167 | P2 | Configure the first displayed order number in System Settings | Test start at 1 and 101, independent tenant/source/date sequences and locks, concurrent creation, web/Telegram/Desktop offline paths, restart, changing the start while a terminal is offline, lowering without reusing prior numbers, and a queued sale crossing Tashkent midnight. Preserve terminal-bound labels; derive legacy dates only from queuedAt and reject ambiguous records for reconciliation. Verify printed labels on two physical terminals |
-| AUD-168 | P1 | Route products independently to kitchen, customer receipt only, or no printer | Confirm default route, product editor persistence, mixed-order receipt contents, kitchen suppression, Desktop offline parity, and that route policy is identical before USB, Windows-spooler, and network/IP printer transports; physically test configured printer outputs. Separate bar station remains out of scope |
-| AUD-169 | P2 | Provide predictable keyboard operation for primary actions throughout staff workflows | Verify normal Tab/Shift+Tab focus and native Enter/Space activation, Enter submits login and confirms the intended POS/payment/refund/shift action, Escape closes dismissible dialogs and menus, and text entry/IME/repeated keys never trigger unintended actions; record browser checks per workflow |
+| AUD-168 | P1 | Give every product an independently editable printer route; default all products to Kitchen | Confirm the product editor persists Kitchen, customer-receipt-only, or no-print choices; beverages can skip kitchen while other products in the same order still print there; verify Desktop/offline parity and routing before USB, Windows-spooler, and LAN/IP transports. Separate bar station remains out of scope |
+| AUD-169 | P2 | Make every primary action usable by keyboard across login, admin, POS, kitchen and Desktop workflows | Verify Tab/Shift+Tab focus and native Enter/Space activation; Enter submits login or activates only the focused/intended confirm action; Escape closes dismissible dialogs/menus; test cashier confirmation, sale continuation, payment, refund, shift close, text input, IME and repeated keys without accidental submission |
+| AUD-170 | P1 | Do not delete a receipt while durable printing is unresolved | Serialize against queue creation and job claims; preserve pending, processing, submitted, and dead-letter print history; verify tenant scope and operator feedback |
+| AUD-171 | P1 | Do not delete a printer while its print target is referenced by unresolved jobs | Serialize printer edits/deactivation/deletion against queue assignment; retain target identity for pending jobs; audit successful deletion; test concurrent queue/delete behavior |
+| AUD-172 | P1 | Keep queued print jobs bound to their intended target when printer settings change | Reject printer type/metadata edits while unresolved jobs exist; preserve safe name/status edits; merge concurrent metadata changes from the locked current row; verify tenant and DB behavior |
 
 Current evidence: automated backend/POS/Desktop tests, typecheck/lint, isolated
 database order-to-cash-to-print E2E, migration checksums, and repository
 validators pass on the audit branch. Offline order dates are now preserved when
 a queued sale is replayed after Tashkent midnight; an old queued sale can derive
 its date only from persisted queuedAt, otherwise it fails closed for operator
-reconciliation. Browser acceptance for these six flows, live setting/offline
-refresh acceptance, and physical mixed-printer acceptance remain pending;
-production migration/deploy must follow the controlled release gate and
+reconciliation. Mocked browser acceptance now covers settings save/reload,
+blank handoff/cancellation, cashier history, POS layout, keyboarded shift close,
+and the 205-order report (see the dated progress entries below). These checks
+do not prove live tenant persistence, offline-setting refresh, or physical
+printer output. A low-volume non-empty production backup was also restored and
+the 61 migrations/rollback verified in an isolated container; the latest
+staging backup itself was empty, and object-store recovery remains open.
+Production migration/deploy must follow the controlled release gate and
 verified-backup procedure.
 
 
@@ -140,9 +149,11 @@ Kitchen now hides all POS-origin orders by default; WEB and TELEGRAM remain visi
    USB, Windows-spooler, and LAN/IP physical printer behavior, plus live
    persistence, remain open acceptance tests.
 6. **AUD-169, keyboard:** Native button/form activation, guarded Enter, Escape,
-   and modal focus handling are implemented and tested. Real workstation login,
-   payment/refund, shift-close, and focus acceptance remains open; unsafe actions
-   are not globally triggered by Enter.
+   and modal focus handling are implemented. A mocked Playwright checkout now
+   confirms Enter from the cash field submits, Escape closes without another
+   order, and a retry keeps the idempotency key; shift-close Enter/Escape also
+   passes. Real login/refund, Desktop, full focus traversal, and workstation
+   acceptance remain open; unsafe actions are not globally triggered by Enter.
 
 The full automated pnpm release acceptance passed on 2026-10-13, including all
 app checks, validators, replay of 61 migrations in a disposable database, seed,
@@ -174,10 +185,16 @@ completed batches or treat automated acceptance as production approval.
 3. Staging backup, exact checksum, 716-entry restore-list validation, and all
    three staging migrations are recorded in the staging runbook. The old image
    remains available as `rollback-8b42159`.
-4. Still open before production: a candidate-specific full Mazetto Food
-   cashier-to-kitchen-to-cash/receipt regression, restore/rollback rehearsal,
-   and human workstation/physical-printer acceptance. No real external payment,
-   Telegram, or SMS side effect was sent.
+4. The candidate-specific backend cashier-to-kitchen-to-cash/receipt regression
+   now passes in the disposable database: it verifies POS cash/revenue/shift
+   linkage, both receipt records and durable print jobs, Kitchen's default POS
+   hiding and setting-enabled lifecycle, followed by the customer order E2E.
+   Still open before production: complete restore/rollback validation including
+   object-store recovery and a current representative backup, plus human
+   workstation/physical-printer acceptance. DB-only restore passed against both
+   the latest empty staging snapshot and a low-volume non-empty 2026-09-26
+   production snapshot; neither proves object-store recovery or current live
+   data. No real external payment, Telegram, or SMS side effect was sent.
 5. Production is unchanged at 59/61; candidate has 61 migrations. After all
    gates pass, production needs only the two 2026-10-13 migrations under the
    verified-backup release procedure. Keep second-restaurant activation off.
@@ -203,8 +220,8 @@ must wait until those foundations pass their acceptance tests.
 - Added a two-tenant regression test proving Kitchen visibility and order-number settings read current database values instead of stale Redis entries.
 - Targeted setting test, backend lint/typecheck, and the four-width mocked UI save/reload matrix pass. Real tenant database writes and Desktop offline refresh remain open acceptance gates.
 
-Latest verification: backend suite 719/719 and transient-HTTP retry suite 3/3
-pass after the settings-cache regression was added. This remains audit-branch
+Latest verification: backend suite 731/731 and transient-HTTP retry suite 3/3
+pass on the current audit branch. This remains audit-branch
 evidence only; production changes have not been made.
 
 ## Production migration audit (read-only, 2026-10-13)
@@ -215,3 +232,20 @@ evidence only; production changes have not been made.
 - Removed the pending printer migration's blanket NONE-to-KITCHEN update. New products still default to KITCHEN, while existing per-product choices are preserved.
 - A fresh verified production backup was restored to an isolated PostgreSQL 18 database; all 61 migrations applied twice, order/product counts and printer-route distribution were preserved, and the independent rollback restore matched.
 - Full automated release acceptance passed. No production migration, production write, push, or deploy was performed; real printer and workstation acceptance remain open.
+
+## AUD-170 status: durable print safety on receipt deletion
+
+- Implemented in the audit branch and covered by a tenant-scoped regression test. Backend suite 731/731, typecheck, targeted lint, and diff validation pass; the isolated 61-migration database E2E confirms deletion is blocked for a real pending print job.
+- Simultaneous claim/delete stress and real admin acceptance remain open before considering the item fully closed or deploying.
+
+## AUD-171 status: durable print safety on printer deletion
+
+- Printer update, deactivation, and deletion are serialized against queue assignment. The queue writer re-reads active candidates after acquiring printer locks, avoiding assignment to a printer deleted while a job is being prepared.
+- Hard deletion locks referenced jobs and is refused while any job is unresolved; successful deletion is audit logged. Unit regression tests and the isolated 61-migration order-to-cash-to-print E2E pass, including preservation of the pending job's printer ID.
+- A parallel claim-versus-delete run against isolated PostgreSQL confirmed the agent claims a job, deletion is rejected, and the printer target remains configured. Backend suite 731/731, typecheck, targeted ESLint, `git diff --check`, and transient HTTP retry suite 3/3 pass. Repeated production-like contention and real admin workflow acceptance remain open; no push, production mutation, or deploy occurred.
+
+## AUD-172 status: stable target during printer edits
+
+- Printer type and metadata/route changes now lock the printer and its print jobs, then fail with a conflict while any job is not printed or cancelled. Name/status changes remain available.
+- After acquiring the advisory lock, updates read the current database metadata before merging, preventing concurrent partial edits from overwriting one another.
+- Unit tests and the isolated 61-migration DB E2E verify blocked target edits leave printer configuration unchanged. Backend suite 731/731, targeted ESLint/typecheck, and DB E2E pass; live admin acceptance remains open. No push, production mutation, or deploy occurred.

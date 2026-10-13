@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
@@ -150,6 +150,24 @@ export class ReceiptsService {
     for (const receipt of receipts) resolveBranchScope(user, receipt.branchId);
     if (receipts.length !== uniqueIds.length) throw new NotFoundException("Tanlangan cheklarning biri topilmadi");
     await this.prisma.$transaction(async (tx) => {
+      for (const id of [...uniqueIds].sort()) await lockReceiptPrintQueue(tx, id);
+      await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "print_jobs"
+        WHERE "receiptId" IN (${Prisma.join(uniqueIds)})
+        FOR UPDATE
+      `;
+      const unfinishedJobs = await tx.printJob.findMany({
+        where: {
+          receiptId: { in: uniqueIds },
+          status: { notIn: ["PRINTED", "CANCELLED"] },
+        },
+        select: { receiptId: true },
+      });
+      if (unfinishedJobs.length > 0) {
+        throw new ConflictException(
+          "Chop navbatida yoki tekshiruvda turgan chekni o'chirib bo'lmaydi. Navbat yakunlanishini kuting yoki chop xatosini tekshiring.",
+        );
+      }
       await tx.receipt.deleteMany({
         where: { id: { in: uniqueIds }, ...scope },
       });

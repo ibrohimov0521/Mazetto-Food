@@ -104,7 +104,17 @@ try {
     await page.goto(base + "/shift", { waitUntil: "domcontentloaded" });
     await page.getByLabel("Haqiqiy naqd summa").fill("240000");
     await page.getByRole("button", { name: "Smenani yopish", exact: true }).click();
-    await page.getByRole("button", { name: "Yakunlash", exact: true }).click();
+    await page.keyboard.press("Escape");
+    await page.locator("dialog[open]").waitFor({ state: "hidden" });
+    assert.equal(closeCalls, 0, "Escape dismisses without closing the shift");
+    await page.getByRole("button", { name: "Smenani yopish", exact: true }).click();
+    const confirmButton = page.getByRole("button", { name: "Yakunlash", exact: true });
+    await page.waitForFunction(() => {
+      const button = document.querySelector('dialog[open] button[data-keyboard-primary]');
+      return Boolean(button && !button.disabled);
+    });
+    assert.equal(await confirmButton.isEnabled(), true, "dialog primary action is ready before Enter");
+    await page.keyboard.press("Enter");
     if (width === 768) {
       await page.waitForFunction(() => window.__queuedShiftReports.length === 1);
     } else {

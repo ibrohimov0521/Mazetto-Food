@@ -1,5 +1,16 @@
 # Audit remediation implementation progress
 
+## Follow-up request re-confirmation (2026-10-13)
+
+The six requirements reiterated by the user are tracked as AUD-164 through AUD-169 in Gate H; they remain six individually reported acceptance items, not one combined completion claim.
+- AUD-164: Uzbek labels instead of raw English order-type enums.
+- AUD-165: online WEB/TELEGRAM orders only in Kitchen by default; a System Settings switch controls whether POS-created cashier/waiter orders are also visible, without changing kitchen print routing.
+- AUD-166: handoff recipient name and cancellation reason/note are optional.
+- AUD-167: configurable first displayed order number, including 1 instead of 101.
+- AUD-168: product-level printer routing, default Kitchen, with a way to keep beverages off the kitchen printer.
+- AUD-169: keyboard access for primary actions; Enter confirms the intended action and Escape dismisses the current dialog/menu.
+Automated checks and real browser, offline refresh, enrolled-terminal, and physical-printer acceptance are reported separately for each ID.
+
 Last updated: 2026-10-13 Asia/Tashkent. The 2026-09-23 checkpoint below is historical.
 
 ## Continuation checkpoint: 2026-09-23
@@ -456,7 +467,7 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 
 - AUD-164: Uzbek order-type labels are used in POS/Kitchen history, receipts/reprints, Desktop offline receipts, and Telegram; raw enum names should not appear in user-facing views.
 - AUD-165: when disabled, Kitchen hides all POS-origin orders (cashier and waiter/table); WEB and TELEGRAM remain visible. The System Settings toggle, API detail/action guards, Desktop projection, and kitchen print path are covered by automated tests.
-- AUD-166: handoff recipient name and operator cancellation note are optional; the workflow still writes its internal audit reason. Blank-field acceptance across real role screens remains open.
+- AUD-166: handoff recipient name and operator cancellation note are optional; the workflow still writes its internal audit reason. Mocked UI submission passed for blank Kitchen handoff/cancellation and cashier item cancellation; live workstation acceptance remains open.
 - AUD-167: order-number start is configurable (default 101, supports 1) with tenant/source/date isolation. Enrolled terminal suffixes make offline provisional labels distinct; physical printer readability and workstation acceptance remain open.
 - AUD-168: per-product routing supports kitchen, customer receipt only, or no print; automated mixed-order and Desktop offline tests pass. Physical mixed-printer output remains open.
 - AUD-169: native keyboard activation, guarded Enter, Escape dismissal, and modal focus handling are tested. Real workstation login, sale/payment, refund, shift-close, and focus acceptance remain open.
@@ -567,3 +578,119 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Created shift_qa only after confirming it was absent in the loopback-only mazetto-dev-postgres container, applied all 61 migrations, ran the DB-backed cashier/shift validation successfully, then dropped only that temporary database. Existing QA, staging, and production databases were not modified.
 - Verification: guard tests 2/2, full backend tests passed, backend app and scripts typechecks passed, targeted ESLint passed, diff check clean.
 - The concurrency stress test emitted a non-failing pg 8.23 / Prisma PostgreSQL-adapter query-queue deprecation warning. The validation passed; retain this as an upstream compatibility warning to revisit before a pg 9 upgrade, not as a confirmed business-logic defect.
+
+## Audit continuation: DB smoke target isolation (2026-10-13)
+
+- Confirmed PostgreSQL URL parsing honors query-level host and port, so checking for localhost text or only URL.hostname is not an adequate safety boundary. There is no evidence that any earlier test wrote to a wrong target.
+- Added strict loopback PostgreSQL URL parsing and per-script database/port allowlists to 13 DB-backed validators, including order, kitchen, POS/cash, settings, staff, Telegram, maintenance, and tenant-migration checks. Query overrides for host, hostaddr, port, service, database, and dbname are rejected.
+- The disposable order E2E and backup-restore rehearsal now validate loopback PostgreSQL and use the local postgres admin database; delivery-location QA restricts its target to local mazetto_dev. The staging A/B harness now also checks protocol, internal port 5432, and route overrides.
+- Regression checks passed for the TypeScript and Node URL guards; backend application/scripts typechecks, targeted ESLint, the full backend and transient-HTTP test run, Node syntax checks, and git diff --check passed.
+- Full release acceptance initially lacked a PostgreSQL service at its default 5432 endpoint. It was rerun successfully using the verified dev-container loopback mapping `127.0.0.1:5433`; the E2E created and dropped one unique disposable database after applying 61 migrations. Existing databases, staging, and production data were not changed.
+- No push, merge, production migration, or deployment was made.
+- ensure-print-queue.mjs is unreferenced and duplicates an existing Prisma migration; it is intentionally retained pending confirmation that it has no manual recovery use.
+- This closes the test-target guard finding on the audit branch only. The broader business-flow, UI, offline, payment, Telegram, and physical-printer audit remains open; this change is not a production release.
+
+## Local UI acceptance continuation (2026-10-13)
+
+- The first browser run used a stale Next dev server on port 3103; it returned 404 for old chunk hashes, so login JavaScript never ran. The existing server was left untouched. A fresh production-mode server on 127.0.0.1:3104 resolved the harness issue.
+- `qa:role-matrix`: 8 roles at 1440px and 390px passed navigation, overflow, and page-error checks; blank Kitchen handoff and cancellation requests passed at 1440px.
+- `qa-admin-settings`: mocked save/reload of order-number start and Kitchen POS visibility passed at 1600, 768, 360, and 320px.
+- `qa-cashier-history`: blank item cancellation succeeded with the note omitted at 375px and 1280px; the input resets between items and the history view does not overflow.
+- `qa-pos-layout`: order creation and payment-panel layout passed at 1600, 768, 360, and 320px with no horizontal overflow.
+- `qa-shift-close-report`: all 205 fixture orders printed into the report; 80mm/A4 output, browser fallback, Desktop queue, and 375/768/1366px behavior passed.
+- These are mocked/browser acceptance checks, not live tenant persistence or physical printer proof. Offline-setting refresh, physical printer output, live cashier login/payment/refund, and production gate acceptance remain open.
+
+## Audit continuation: shift-close keyboard confirmation (2026-10-13)
+
+- Strengthened `qa-shift-close-report` to dismiss the confirmation with Escape, assert that the shift-close API was not called, wait until order loading enables the primary action, and confirm with Enter.
+- The initial version asserted primary-button focus while that button was disabled during order loading; this was a test timing assumption, not a product defect. The modal-level guarded Enter action works once the intended confirmation is ready.
+- Browser regression passed at 375, 768, and 1366px; the report included all 205 fixture orders, browser printing, offline fallback, Desktop queue, and 80mm/A4 output checks. Node syntax and targeted ESLint passed.
+- This updates only local automated browser evidence. Live workstation acceptance, physical printers, and release gates remain open; no push, migration, or deploy occurred.
+
+## Audit continuation: staging database restore rehearsal (2026-10-13)
+
+- Rechecked staging backup `mazetto-staging-before-audit-8b42159-20261013.dump`; SHA-256 matched the recorded `9ecb4ea5386007e7286954a1fa9c57f60810609fc84c597d34a264670af9d92d`.
+- Restored it into a new loopback-only PostgreSQL 18.6 container, applied all 61 migrations twice, and restored a second independent rollback copy. The second migration run had no pending migrations; restored row counts matched.
+- The dump contained zero branches, employees, orders, payments, receipts, and products. Therefore the routing-preservation assertion was vacuous and this does not validate a populated-data migration.
+- The temporary databases and ephemeral container were removed; staging and production were not written. Evidence: `.release-evidence/database-restore-rehearsal.json`.
+- Database restore mechanics passed, but the full release gate remains open for object-store restore, representative non-empty fixtures, candidate-specific order-to-cash/receipt regression, and human workstation/physical-printer acceptance.
+
+## Audit continuation: BestTeam owner panel isolated QA (2026-10-13)
+
+- `pnpm --filter backend qa:platform-isolated` passed against a uniquely named disposable database in the local `mazetto-dev-postgres` container.
+- Verified tenant domain resolution, login and refresh, unknown-host denial, membership onboarding and role isolation, monitoring, reports, activity/audit history, and owner web login plus site registration through the Next proxy.
+- The test cleaned up its isolated database successfully. No staging or production database was written, and no push, merge, migration release, or deployment occurred.
+- This closes isolated owner-panel QA only. At this checkpoint, populated-data restore and object-store recovery remained open; the later populated-backup SQL rehearsal is documented below. Object-store recovery, real tenant-user acceptance, and live restaurant workstation/printer gates remain open.
+
+## Audit continuation: populated database backup restore (2026-10-13)
+
+- Restored `/home/javohir/backups/mazetto/predeploy-5150e2b/mazetto-production.dump` (374,937 bytes; SHA-256 `31077340bddce327dbb4f76ffc1a2c2486ff00a3fc09096bc52adef483a926ca`) only into a disposable PostgreSQL 18.6 container bound to loopback.
+- The older 2026-09-26 snapshot had 78 products (74 `KITCHEN`, 4 `NONE`), one order, and one payment. No product names, customer details, or other row contents were inspected. The route breakdown remained unchanged after applying all 61 migrations twice; the rehearsal's independent rollback restore counts matched.
+- The isolated container, temporary databases, and its anonymous volume were removed. The earlier empty-staging rehearsal evidence file was preserved and restored; staging and live production were not written.
+- This validates SQL restore/migration mechanics against one older, low-volume non-empty backup. It does not establish current-backup freshness, object-store recovery, candidate-specific live order-to-cash behavior, or human workstation/physical-printer acceptance.
+
+## Audit continuation: POS keyboard checkout acceptance (2026-10-13)
+
+- A focused source review found the POS checkout's primary submit button was not marked as the intended Enter action. Pressing Enter from the received-cash field therefore did not confirm checkout.
+- Marked that button as the dialog's guarded keyboard-primary action. Extended `qa-staff-workspaces` to submit with Enter, dismiss a failed attempt with Escape without creating another request, reopen the checkout, and retry with Enter using the same idempotency key.
+- The full staff UI browser suite passed, including POS, Kitchen, courier, shift and view-only role flows; targeted ESLint, Node syntax, and `git diff --check` passed. A dedicated test server on port 3111 was stopped; pre-existing dev servers were untouched.
+- This closes the mocked POS Enter/Escape acceptance only. Login, refund, Desktop, complete focus/IME traversal, and live workstation acceptance remain open; no push, migration, or deployment occurred.
+
+## Audit continuation: receipt deletion and durable print safety (2026-10-13)
+
+- Found that hard-deleting a receipt cascaded to its durable print jobs and attempts, including jobs waiting, processing, submitted to the driver, or in dead-letter review.
+- Receipt deletion now uses the per-receipt queue advisory lock, row-locks existing print jobs against concurrent claims, and refuses deletion unless all jobs are already printed or cancelled.
+- Added a tenant-scoped regression test proving unresolved jobs are locked and the receipt is not deleted.
+- Verification: backend suite 731/731 plus transient HTTP retry 3/3, backend typecheck, targeted ESLint, and `git diff --check` pass. The 61-migration isolated database order-to-cash-to-print E2E also confirms the receipt and pending print job remain when hard-delete is refused.
+- No production mutation, push, or deploy occurred. Simultaneous claim/delete stress and live admin acceptance remain open.
+
+## Audit continuation: printer deletion and durable target safety (2026-10-13)
+
+- Found that deleting a printer could null the durable `printerId` on an unfinished print job, losing which physical target was intended.
+- Printer update, deactivation, and deletion now share queue serialization. Before assigning a job, the queue writer rechecks that the locked printer is still active; deletion locks associated jobs and is refused while any job is unresolved. Successful deletion is audit logged.
+- Added tenant-scoped delete protection and a queue/delete race regression test. The isolated 61-migration order-to-cash-to-print E2E confirms a pending job keeps its printer target and the printer cannot be deleted; a concurrent agent-claim/delete race on isolated PostgreSQL confirms deletion is refused after job claim.
+- Verification: backend suite 731/731, HTTP retry suite 3/3, backend typecheck, targeted ESLint, and `git diff --check` pass. Repeated production-like contention and real admin acceptance remain open.
+- No production mutation, push, or deploy occurred.
+
+## Audit continuation: stable printer configuration for queued jobs (2026-10-13)
+
+- Found that `PrintJob` stores the printer ID while the agent reads the current printer type/metadata. Updating the route or device metadata with unfinished jobs could silently redirect old jobs.
+- Printer type and metadata edits now acquire the printer queue lock, lock associated jobs, and reject the edit while any job is unresolved. Name/status changes remain available. Metadata is re-read after locking so concurrent partial edits merge against the latest value.
+- Added unit and database-backed regressions: pending jobs block target edits without changing printer config; isolated DB claim/delete race retains the target. Backend suite 731/731, transient HTTP retries 3/3, typecheck, lint, and 61-migration E2E pass. Real admin/device acceptance remains open.
+- No production mutation, push, or deploy occurred.
+
+## Full workspace verification after printer safeguards (2026-10-13)
+
+- The root `pnpm test` completed successfully across the workspace (exit code 0).
+- `pnpm verify` passed: 14 lint/typecheck tasks, 7 package builds, and 33 repository validators. The backend suite passed 731/731 with transient HTTP retries 3/3; isolated PostgreSQL E2E applied all 61 migrations and passed the order-to-cash-to-stock-to-print flow.
+- `git diff --check` passed and no rejected patch files remain in source, scripts, tests, or audit docs.
+- These are candidate-branch automated checks. Full source audit, live tenant setting/offline refresh, Windows workstation, physical printer transports, current object-store restore, and production release gates remain open. No production write, migration, push, or deploy occurred.
+
+## Final release acceptance rerun (2026-10-13)
+
+- After the receipt/printer queue safeguards, pnpm release:acceptance completed successfully: package typechecks, lint, builds and tests; 33/33 static validators; 85 media assets with zero unresolved product assets; and the disposable PostgreSQL order-to-cash-to-stock-to-print E2E using all 61 migrations.
+- The disposable database was dropped by the E2E cleanup path; a separate catalog check confirmed zero remaining mazetto_step8_release databases. The audit PostgreSQL container remained loopback-only at 127.0.0.1:15432.
+- E2E emitted a non-failing pg 8.23 / Prisma PostgreSQL adapter query-queue deprecation warning. The test passed; no application-level defect has been established from this warning. Keep it as an upstream compatibility follow-up before a pg 9 upgrade.
+- This run did not execute production smoke and did not change staging or production. Physical printer transports, real Windows/offline acceptance, current object-store restore, complete manual source review, and the production release gate remain open.
+
+## Read-only production smoke (2026-10-13)
+
+- Ran the production smoke against the configured live Mazetto Food API, customer web, POS web, BestTeam owner login, and media host. All 27/27 GET/HEAD checks passed, including database health, protected routes returning 401, customer checkout routes, admin login/settings routes, and catalog image assets.
+- The smoke script was reviewed before execution and uses GET/HEAD only. No order, payment, setting, database, or deployment mutation was performed.
+- This verifies public route and asset availability only; it does not prove authenticated user workflows, tenant-setting persistence, printer output, Telegram delivery, or offline workstation behavior.
+
+## Transaction query audit continuation (2026-10-13)
+
+- Removed explicit concurrent Prisma calls from interactive transactions in the current-shift summary, warehouse archive checks, shift-close snapshot, and Desktop bootstrap. Desktop bootstrap keeps the checked branch ID narrowed across its asynchronous snapshot loader.
+- Backend typecheck passed. Focused cash, inventory, bootstrap, and shift tests passed 29/29. The isolated order-to-cash-to-stock-to-print E2E passed again with all 61 migrations and cleaned up its disposable database.
+- The full backend suite then passed 731/731 plus shared HTTP retry tests 3/3; ESLint passed for all four changed services.
+- The non-failing pg 8.23 deprecation warning remains in Prisma's internal relation-query loading path (the trace showed related category/product-bundle and order graph queries queued on one client). It is not evidence of a failed business flow, but remains an adapter/pg compatibility follow-up; do not upgrade pg or mark it resolved without a supported Prisma fix and regression coverage.
+- The six user-requested requirements remain tracked individually as AUD-164..169. Automated checks are not a substitute for the remaining live UI/offline/physical-printer acceptance listed in the remediation plan. No production mutation, push, or deploy occurred.
+
+## Candidate POS-to-kitchen acceptance (2026-10-13)
+
+- Extended the isolated release E2E to run the POS/Kassa DB validator against its disposable database after seed. The validator now proves cash sale/revenue/shift linkage, one kitchen ticket, a persisted customer receipt plus kitchen receipt, and at least one durable print job for each receipt.
+- POS-origin orders are asserted hidden from the kitchen queue/actions by default; after the tenant setting is enabled, the same ticket becomes visible and can complete its kitchen lifecycle. The prior setting value is restored in `finally`, so later validators do not inherit test state.
+- Replaced a catch-and-fallback mixed-sale test with an explicit mismatched-variant rejection and a valid modifier + variant + set sale assertion. Also updated the validator's stale English cash-error expectation to the current Uzbek message.
+- The full isolated run passed: all 61 migrations, display-number validation, POS/Kassa flow, then customer online/Telegram ordering E2E. Backend typecheck and ESLint passed; the full backend suite remains 731/731 plus 3/3 shared HTTP retry tests.
+- The pg 8.23 / Prisma internal relation-query queue deprecation warning remains non-failing. No push, production migration, or deploy occurred. Manual physical-printer output, Windows offline/reconnect, object-store restore/rollback, and authenticated live acceptance remain open.

@@ -769,12 +769,26 @@ try {
     assert(await pay.isDisabled());
     await cash.fill("50000");
     state.failPos = true;
-    await pay.click();
+    await cash.press("Enter");
     await page.locator('main [role="alert"]').waitFor();
     const firstKey = state.posts.at(-1).body.idempotencyKey;
+    const postedBeforeEscape = state.posts.length;
+    await page.keyboard.press("Escape");
+    assert.equal(await page.getByRole("dialog").count(), 0);
+    assert.equal(
+      state.posts.length,
+      postedBeforeEscape,
+      "Escape closes checkout without submitting another order",
+    );
+    await page.getByRole("button", { name: /Jami/ }).click();
+    await page.getByRole("dialog", { name: "Zal buyurtmasi" }).waitFor();
+    const retryCash = page.getByRole("textbox", {
+      name: "Qabul qilingan naqd pul",
+    });
+    await retryCash.fill("50000");
     state.failPos = false;
     state.slowPos = true;
-    await pay.click();
+    await retryCash.press("Enter");
     assert(
       await receipt
         .getByRole("button", { name: "Big lavashni ko'paytirish" })

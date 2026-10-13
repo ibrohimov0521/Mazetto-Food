@@ -75,12 +75,16 @@ try {
     const page = await context.newPage();
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    const cancelRequests = [];
     await page.route("**/api/v1/**", async (route) => {
       const path = new URL(route.request().url()).pathname.replace(
         "/api/v1",
         "",
       );
       let data = [];
+      if (route.request().method() === "POST" && path.endsWith("/actions/cancel")) {
+        cancelRequests.push(route.request().postDataJSON());
+      }
       if (path === "/auth/me") data = user;
       else if (path === "/cash-register/shifts") data = [shift];
       else if (path.startsWith("/cash-register/shift/qa-shift/orders")) {
@@ -107,6 +111,13 @@ try {
       .getByRole("button", { name: "Ichimlik mahsulotini bekor qilish" })
       .click();
     assert.equal(await reason.inputValue(), "", "new cancellation starts blank");
+    const confirmCancel = page.getByRole("button", { name: "Bekor qilishni tasdiqlash" });
+    assert.equal(await confirmCancel.isEnabled(), true, "blank reason does not block cancellation");
+    await confirmCancel.click();
+    await page.getByText("Mahsulot bekor qilindi va buyurtma yangilandi.").waitFor();
+    assert.equal(cancelRequests.length, 1);
+    assert.equal(cancelRequests[0].reasonCode, "CASHIER_ITEM_CANCELLED");
+    assert.equal(cancelRequests[0].reason, undefined, "blank reason is omitted from request");
     assert.deepEqual(errors, []);
     assert.ok(
       await page.evaluate(
@@ -116,7 +127,7 @@ try {
     );
     await context.close();
   }
-  console.log("PASS: cancellation reason resets between items at 375px and 1280px");
+  console.log("PASS: blank cancellation succeeds without a reason at 375px and 1280px");
 } finally {
   await browser.close();
 }

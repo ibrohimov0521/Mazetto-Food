@@ -1,4 +1,5 @@
 import * as assert from "node:assert/strict";
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import { BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { RedisService } from "../src/redis/redis.service";
@@ -25,16 +26,11 @@ function assertIsolatedDatabase(): void {
     throw new Error("MAZETTO_SETTINGS_DB_SMOKE=1 is required");
   }
 
-  const databaseUrl = process.env.DATABASE_URL ?? "";
-
-  if (
-    !/localhost|127\.0\.0\.1/.test(databaseUrl) ||
-    /mazettofood|production|dokploy/i.test(databaseUrl)
-  ) {
-    throw new Error(
-      "Refusing to run settings DB smoke outside an isolated localhost database",
-    );
-  }
+  assertDisposableLoopbackDatabase(
+    process.env.DATABASE_URL,
+    /^bestteam_owner_qa_[0-9]+_[0-9a-f]{6}$/,
+    "5433",
+  );
 }
 
 async function main(): Promise<void> {

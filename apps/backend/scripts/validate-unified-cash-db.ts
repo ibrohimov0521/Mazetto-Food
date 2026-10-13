@@ -1,4 +1,5 @@
 import "reflect-metadata";
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -15,13 +16,11 @@ import { CustomerCourierService } from "../src/modules/customers/customer-courie
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 
 async function main() {
-  const url = new URL(process.env.DATABASE_URL || "http://invalid");
   assert.equal(process.env.MAZETTO_CASH_DB_SMOKE, "1");
-  assert.ok(["127.0.0.1", "localhost"].includes(url.hostname));
-  assert.equal(
-    url.pathname,
-    "/cash_qa",
-    "Only the disposable cash_qa database is allowed",
+  assertDisposableLoopbackDatabase(
+    process.env.DATABASE_URL,
+    "cash_qa",
+    ["5432", "5433", "15432"],
   );
   const prisma = new PrismaService();
   await prisma.$connect();

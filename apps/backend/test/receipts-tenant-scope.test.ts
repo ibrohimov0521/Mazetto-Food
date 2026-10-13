@@ -102,6 +102,46 @@ test("foreign receipt detail and bulk delete preflight return not found", async 
   assert.equal(transactionStarted, false);
 });
 
+test("bulk receipt deletion preserves unfinished print jobs", async () => {
+  let receiptDeleteCalled = false;
+  let printJobsLocked = false;
+  const service = new ReceiptsService({
+    ...activeTenant,
+    receipt: {
+      findMany: async () => [{
+        id: "receipt-a",
+        branchId: "branch-a",
+        receiptNumber: "RCPT-1",
+        documentType: "RECEIPT",
+      }],
+    },
+    $transaction: async (callback: (tx: object) => Promise<unknown>) => callback({
+      $executeRaw: async () => 1,
+      $queryRaw: async () => {
+        printJobsLocked = true;
+        return [{ id: "print-job-a" }];
+      },
+      printJob: {
+        findMany: async () => [{ receiptId: "receipt-a" }],
+      },
+      receipt: {
+        deleteMany: async () => {
+          receiptDeleteCalled = true;
+          return { count: 1 };
+        },
+      },
+      auditLog: { create: async () => ({}) },
+    }),
+  } as never);
+
+  await assert.rejects(
+    service.deleteReceipts(["receipt-a"], owner),
+    /Chop navbatida yoki tekshiruvda turgan chekni o'chirib bo'lmaydi/,
+  );
+  assert.equal(printJobsLocked, true);
+  assert.equal(receiptDeleteCalled, false);
+});
+
 test("foreign receipt cannot be reprinted by a global actor", async () => {
   let receiptWhere: unknown;
   let transactionStarted = false;

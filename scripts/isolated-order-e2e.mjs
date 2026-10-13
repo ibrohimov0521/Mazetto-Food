@@ -2,19 +2,16 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { assertLocalPostgresAdminUrl } from "./isolated-db-target.mjs";
 
 const require = createRequire(
   new URL("../apps/backend/package.json", import.meta.url),
 );
 const { Client } = require("pg");
-const adminUrl = new URL(
+const adminUrl = assertLocalPostgresAdminUrl(
   process.env.MAZETTO_E2E_ADMIN_DATABASE_URL ??
     process.env.DATABASE_URL ??
     "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
-);
-assert.ok(
-  ["127.0.0.1", "localhost", "::1"].includes(adminUrl.hostname),
-  "Isolated E2E refuses non-local PostgreSQL hosts",
 );
 const databaseName = `mazetto_step8_release_${process.pid}_${Date.now()}`;
 assert.match(databaseName, /^[a-z0-9_]+$/);
@@ -32,7 +29,9 @@ function run(args) {
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl.toString(),
+      MAZETTO_DURABLE_PRINT_JOBS: "true",
       MAZETTO_E2E_ISOLATED_DB: "1",
+      MAZETTO_POS_DB_SMOKE: "1",
     },
     stdio: "inherit",
   });
@@ -66,6 +65,13 @@ try {
     "scripts/validate-order-display-numbers.ts",
   ]);
   run(["--filter", "backend", "exec", "prisma", "db", "seed"]);
+  run([
+    "--filter",
+    "backend",
+    "exec",
+    "tsx",
+    "scripts/validate-pos-kassa-db.ts",
+  ]);
   run([
     "--filter",
     "backend",

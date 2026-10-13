@@ -1,3 +1,4 @@
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import {
   OrderSource,
   OrderStatus,
@@ -391,11 +392,11 @@ function dateInput(date: Date): string {
 }
 
 function assertIsolatedDatabase(): void {
-  const databaseUrl = process.env.DATABASE_URL ?? "";
-
-  if (!/localhost|127\.0\.0\.1/.test(databaseUrl) || !/mazetto_reports_isolated/i.test(databaseUrl)) {
-    throw new Error("Refusing to run Admin Sales Reports DB validation outside an isolated localhost database");
-  }
+  assertDisposableLoopbackDatabase(
+    process.env.DATABASE_URL,
+    /^mazetto_reports_isolated(?:_[a-z0-9]+)*$/i,
+    ["5432", "5433"],
+  );
 }
 
 main().catch((error) => {

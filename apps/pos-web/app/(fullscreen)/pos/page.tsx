@@ -1202,6 +1202,7 @@ function PosTerminal() {
               <button
                 className={styles.primary}
                 disabled={isSubmitting || !canSubmit}
+                data-keyboard-primary
                 onClick={() => void submitOrder()}
                 type="button"
               >

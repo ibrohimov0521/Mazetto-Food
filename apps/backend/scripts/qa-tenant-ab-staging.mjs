@@ -135,10 +135,28 @@ function requireStagingTarget() {
     "Run this check only inside the deployed staging API container.",
   );
   const databaseUrl = new URL(process.env.DATABASE_URL ?? "");
+  assert.ok(
+    ["postgres:", "postgresql:"].includes(databaseUrl.protocol),
+    "Refusing a non-PostgreSQL staging URL.",
+  );
   assert.equal(
     databaseUrl.hostname,
     EXPECTED_DATABASE_HOST,
     "Refusing an unknown database host.",
+  );
+  assert.equal(databaseUrl.port, "5432", "Refusing an unknown staging database port.");
+  const targetOverrideParams = new Set([
+    "database",
+    "dbname",
+    "host",
+    "hostaddr",
+    "port",
+    "service",
+  ]);
+  assert.equal(
+    [...databaseUrl.searchParams.keys()].some((key) => targetOverrideParams.has(key.toLowerCase())),
+    false,
+    "Refusing a staging URL with connection-target overrides.",
   );
   assert.equal(
     decodeURIComponent(databaseUrl.pathname.slice(1)),

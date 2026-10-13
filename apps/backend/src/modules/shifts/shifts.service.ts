@@ -2151,8 +2151,7 @@ export class ShiftsService {
     shift: { id: string; branchId: string; openingBalance: Prisma.Decimal },
   ) {
     const shiftRevenue = { shiftId: shift.id, branchId: shift.branchId };
-    const [payments, cashTransactions, orderCount] = await Promise.all([
-      tx.payment.findMany({
+    const payments = await tx.payment.findMany({
         where: {
           status: {
             in: [
@@ -2167,9 +2166,11 @@ export class ShiftsService {
           },
         },
         include: { method: true },
-      }),
-      tx.cashTransaction.findMany({ where: shiftRevenue }),
-      tx.order.count({
+      });
+    const cashTransactions = await tx.cashTransaction.findMany({
+      where: shiftRevenue,
+    });
+    const orderCount = await tx.order.count({
         where: {
           branchId: shift.branchId,
           AND: [
@@ -2181,8 +2182,7 @@ export class ShiftsService {
             },
           ],
         },
-      }),
-    ]);
+      });
     const totals = this.calculateShiftTotals(
       payments,
       cashTransactions,

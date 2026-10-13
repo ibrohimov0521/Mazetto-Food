@@ -56,6 +56,7 @@ export class RealtimeBootstrapService {
         if (!scope.branchId) {
           throw new BadRequestException("Filial tanlanishi shart.");
         }
+        const scopedBranchId = scope.branchId;
         const enabledCashierPaymentMethods = new Set(
           this.settings
             ? await this.settings.getCsv(
@@ -150,18 +151,18 @@ export class RealtimeBootstrapService {
             : null;
 
         const [categories, products, configuredPaymentMethods, tables, halls] =
-          await Promise.all([
+          await (async () => [
             canViewMenu
-              ? tx.category.findMany({
+              ? await tx.category.findMany({
                   where: {
                     isActive: true,
-                    OR: [{ branchId: scope.branchId }, { branchId: null }],
+                    OR: [{ branchId: scopedBranchId }, { branchId: null }],
                     products: {
                       some: {
                         ...customerVisibleProductWhere(),
                         isAvailable: true,
-                        OR: [{ branchId: scope.branchId }, { branchId: null }],
-                        ...unavailableProductWhere(scope.branchId),
+                        OR: [{ branchId: scopedBranchId }, { branchId: null }],
+                        ...unavailableProductWhere(scopedBranchId),
                       },
                     },
                   },
@@ -177,14 +178,14 @@ export class RealtimeBootstrapService {
                     sortOrder: true,
                   },
                 })
-              : Promise.resolve([]),
+              : [],
             canViewMenu
-              ? tx.product.findMany({
+              ? await tx.product.findMany({
                   where: {
                     ...customerVisibleProductWhere(),
                     isAvailable: true,
-                    OR: [{ branchId: scope.branchId }, { branchId: null }],
-                    ...unavailableProductWhere(scope.branchId),
+                    OR: [{ branchId: scopedBranchId }, { branchId: null }],
+                    ...unavailableProductWhere(scopedBranchId),
                   },
                   orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
                   select: {
@@ -254,11 +255,11 @@ export class RealtimeBootstrapService {
                     },
                   },
                 })
-              : Promise.resolve([]),
+              : [],
             canUsePosCatalog
-              ? tx.paymentMethod.findMany({
+              ? await tx.paymentMethod.findMany({
                   where: {
-                    OR: [{ branchId: scope.branchId }, { branchId: null }],
+                    OR: [{ branchId: scopedBranchId }, { branchId: null }],
                   },
                   orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
                   select: {
@@ -269,10 +270,10 @@ export class RealtimeBootstrapService {
                     isActive: true,
                   },
                 })
-              : Promise.resolve([]),
+              : [],
             canViewTables
-              ? tx.restaurantTable.findMany({
-                  where: { branchId: scope.branchId, isActive: true },
+              ? await tx.restaurantTable.findMany({
+                  where: { branchId: scopedBranchId, isActive: true },
                   orderBy: [
                     { hall: { sortOrder: "asc" } },
                     { sortOrder: "asc" },
@@ -328,10 +329,10 @@ export class RealtimeBootstrapService {
                       : {}),
                   },
                 })
-              : Promise.resolve([]),
+              : [],
             canViewTables
-              ? tx.hall.findMany({
-                  where: { branchId: scope.branchId, isActive: true },
+              ? await tx.hall.findMany({
+                  where: { branchId: scopedBranchId, isActive: true },
                   orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
                   select: {
                     id: true,
@@ -342,8 +343,8 @@ export class RealtimeBootstrapService {
                     sortOrder: true,
                   },
                 })
-              : Promise.resolve([]),
-          ]);
+              : [],
+          ])();
 
         const kitchenQueue = kitchenPanel
           ? trimKitchenQueue(

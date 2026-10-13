@@ -1,4 +1,5 @@
 import { JwtService } from "@nestjs/jwt";
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import * as assert from "node:assert/strict";
 import { randomInt } from "node:crypto";
 import { compare } from "bcryptjs";
@@ -320,15 +321,11 @@ function assertIsolatedDatabase(): void {
     throw new Error("MAZETTO_STAFF_RBAC_DB_SMOKE=1 is required");
   }
 
-  const url = process.env.DATABASE_URL;
-
-  if (!url) {
-    throw new Error("DATABASE_URL is required");
-  }
-
-  if (!/localhost|127\.0\.0\.1/.test(url)) {
-    throw new Error("Refusing to run staff RBAC DB smoke outside localhost");
-  }
+  assertDisposableLoopbackDatabase(
+    process.env.DATABASE_URL,
+    /^(?:staff_qa|mazetto_reports_isolated_[a-z0-9_]+)$/i,
+    ["5432", "5433"],
+  );
 }
 
 void main();

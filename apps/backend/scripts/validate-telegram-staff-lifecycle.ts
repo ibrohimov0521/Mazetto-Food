@@ -1,4 +1,5 @@
 import { CustomerOrderType, KitchenTicketStatus, OrderSource, OrderStatus, OrderType, Prisma } from "@prisma/client";
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import * as assert from "node:assert/strict";
 import { KitchenService } from "../src/modules/kitchen/kitchen.service";
 import { TelegramOrderNotificationService } from "../src/modules/telegram/telegram-order-notification.service";
@@ -479,22 +480,11 @@ function assertIsolatedDatabase(): void {
     throw new Error("MAZETTO_E2E_ISOLATED_DB=1 is required for this DB E2E script");
   }
 
-  const url = process.env.DATABASE_URL;
-
-  if (!url) {
-    throw new Error("DATABASE_URL is required");
-  }
-
-  const parsed = new URL(url);
-  const safeHosts = new Set(["127.0.0.1", "localhost"]);
-
-  if (!safeHosts.has(parsed.hostname)) {
-    throw new Error("Refusing to run DB E2E against a non-localhost database");
-  }
-
-  if (!parsed.pathname.includes("step16")) {
-    throw new Error("Refusing to run DB E2E without a step16 database name");
-  }
+  assertDisposableLoopbackDatabase(
+    process.env.DATABASE_URL,
+    /^mazetto_step16(?:_staff(?:_[0-9]+)?)?$/,
+    ["5432", "5433", "15432"],
+  );
 }
 
 void main().catch((error) => {

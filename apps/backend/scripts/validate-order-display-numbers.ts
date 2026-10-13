@@ -1,4 +1,5 @@
 import { OrderSource, OrderType, PrismaClient } from "@prisma/client";
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import { PrismaPg } from "@prisma/adapter-pg";
 import assert from "node:assert/strict";
 import { Pool } from "pg";
@@ -11,9 +12,11 @@ loadEnvironmentFile();
 
 const databaseUrl = process.env.DATABASE_URL;
 
-if (!databaseUrl) {
-  throw new Error("DATABASE_URL is required for order display number validation");
-}
+assertDisposableLoopbackDatabase(
+  databaseUrl,
+  /^(?:step8_qa|mazetto_step8_release_[0-9]+_[0-9]+)$/,
+  ["5432", "5433", "15432"],
+);
 
 const pool = new Pool({ connectionString: databaseUrl });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
