@@ -541,6 +541,6 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 ## Audit continuation: explicit keyboard confirmation actions (2026-10-13)
 
 - Found that Enter could fall through to the last enabled dialog button when no primary action was declared. That could trigger an unintended cancel, deletion, or other action depending on button order.
-- Enter now activates only an explicitly marked `data-keyboard-primary` button. Disabled or unmarked actions do nothing. Dialogs without a primary action no longer focus their last action by default; normal buttons remain keyboard-focusable, and Escape still dismisses dialogs.
+- Enter now activates only an explicitly marked `data-keyboard-primary` button. Disabled or unmarked actions do nothing. Dialogs without a primary action focus the dialog container rather than an arbitrary footer button, preventing native Enter activation; normal buttons remain keyboard-focusable, and Escape still dismisses dialogs.
 - Added explicit primary markers to cashier product add, post-sale continuation, payment completion, shift close/transfer, kitchen cancellation/handoff, waiter item removal, courier confirmation, and waiter item submission flows. Multiple receipt reprint buttons intentionally have no automatic Enter action.
 - Verification: POS tests 87/87; POS TypeScript, ESLint, and production build passed. This is automated UI evidence; physical workstation acceptance of login, payment/refund, shift close, and focus/Escape behavior remains open. No push, production migration, or deployment was performed.

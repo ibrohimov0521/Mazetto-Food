@@ -65,9 +65,7 @@ export function Modal({
     const initial =
       input ??
       primary ??
-      panelRef.current?.querySelector<HTMLElement>(
-        'a[href], button:not([disabled]):not([data-mz-modal-close]), [tabindex]:not([tabindex="-1"])',
-      );
+      panelRef.current;
     (initial ?? panelRef.current)?.focus();
 
     function handleKeyDown(event: KeyboardEvent): void {
