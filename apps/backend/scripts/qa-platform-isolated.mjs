@@ -460,7 +460,7 @@ SELECT "tenantId", "userId", "branchId" FROM eligible_memberships WHERE "tenantI
   });
   assert.match(visualState.backgroundImage, /bestteam-background\.webp/);
   assert.equal(visualState.backgroundPosition, "fixed");
-  assert.match(visualState.surfaceBackground, /0\.82\)/);
+  assert.match(visualState.surfaceBackground, /0\.72\)/);
   assert.equal(visualState.logoObjectFit, "contain");
   assert.ok(visualState.logoLoaded, "The complete BestTeam logo must load without cropping.");
   assert.equal(await page.locator(".metric-link").count(), 4, "Every overview metric must be actionable.");
@@ -642,7 +642,7 @@ SELECT "tenantId", "userId", "branchId" FROM eligible_memberships WHERE "tenantI
     const refreshedB = await refresh(tenantBHost, customerB.tokens.refreshToken);
     assert.equal(refreshedB.status, 201, JSON.stringify(refreshedB.body.error));
     assert.equal(refreshedB.body.data.customer.tenantId, tenantBId);
-    console.log("Staging A/B proof passed: verified domains isolate branches, same-phone OTP identities, access tokens, and refresh tokens.");
+    console.log("Isolated A/B proof passed: verified domains isolate branches, same-phone OTP identities, access tokens, and refresh tokens.");
   } finally {
     await qaPrisma.$disconnect();
     await qaPool.end();

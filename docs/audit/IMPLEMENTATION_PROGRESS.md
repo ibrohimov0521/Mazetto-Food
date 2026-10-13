@@ -544,3 +544,10 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Enter now activates only an explicitly marked `data-keyboard-primary` button. Disabled or unmarked actions do nothing. Dialogs without a primary action focus the dialog container rather than an arbitrary footer button, preventing native Enter activation; normal buttons remain keyboard-focusable, and Escape still dismisses dialogs.
 - Added explicit primary markers to cashier product add, post-sale continuation, payment completion, shift close/transfer, kitchen cancellation/handoff, waiter item removal, courier confirmation, and waiter item submission flows. Multiple receipt reprint buttons intentionally have no automatic Enter action.
 - Verification: POS tests 87/87; POS TypeScript, ESLint, and production build passed. This is automated UI evidence; physical workstation acceptance of login, payment/refund, shift close, and focus/Escape behavior remains open. No push, production migration, or deployment was performed.
+
+## Audit continuation: isolated tenant A/B and owner UI QA (2026-10-13)
+
+- Re-ran the isolated owner-platform QA against a fresh, randomly named database in the loopback-only `mazetto-dev-postgres` container. The first run correctly reached the owner UI but failed because its visual assertion still expected the prior `0.82` surface opacity while current CSS uses `0.72`.
+- Updated that assertion to match the current source design and corrected the result message so a local isolated run cannot be mistaken for a staging run.
+- The rerun passed verified-domain routing, same-phone OTP isolation, tenant-scoped branch/settings reads and writes, access/refresh-token isolation, unknown-host handling, membership backfill, role authorization, owner login, reports, diagnostics and site registration. The temporary QA database was dropped; the container's database list returned to its prior state.
+- This is isolated local integration evidence, not a test against the actual staging or production environment. Real staging A/B, live tenant membership/backfill and final migration release gates remain open.
