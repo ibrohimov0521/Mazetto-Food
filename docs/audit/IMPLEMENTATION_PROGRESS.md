@@ -694,3 +694,20 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Replaced a catch-and-fallback mixed-sale test with an explicit mismatched-variant rejection and a valid modifier + variant + set sale assertion. Also updated the validator's stale English cash-error expectation to the current Uzbek message.
 - The full isolated run passed: all 61 migrations, display-number validation, POS/Kassa flow, then customer online/Telegram ordering E2E. Backend typecheck and ESLint passed; the full backend suite remains 731/731 plus 3/3 shared HTTP retry tests.
 - The pg 8.23 / Prisma internal relation-query queue deprecation warning remains non-failing. No push, production migration, or deploy occurred. Manual physical-printer output, Windows offline/reconnect, object-store restore/rollback, and authenticated live acceptance remain open.
+## Audit continuation: payment, inventory, and desktop credentials (2026-10-13)
+
+- Current PR head is `24160e7` with 62 migrations; production remains at the verified 59-migration baseline. PR CI run #850 passed. The prior staging A/B evidence is for an earlier 61-migration candidate, not this head.
+- Desktop saved-login source review found Electron `safeStorage` in the main process and a saved-account picker/removal flow. Five credential tests and the Desktop build passed; packaged Windows restart/select/remove acceptance remains open.
+- Payment allowlist audit found disabled cashier methods are hidden and rejected by both POS checkout and existing-order payment writes. Focused config/payment/POS tests passed 36/36; this does not add Click/Payme provider callbacks.
+- Added four tests for inventory readiness: missing warehouse, inactive recipe ingredient, no-recipe branch, and foreign-branch rejection. Added three modifier lifecycle tests for duplicate IDs, referenced modifiers, and missing IDs. These seven tests passed; backend typecheck and targeted ESLint passed.
+- Corrected a stale modifier UI comment that claimed no delete endpoint existed; deletion is restricted to modifiers not assigned to products.
+- Payment/inventory code review in this batch found no confirmed money or tenant-scope defect. NBU SMS auto-matching, live Telegram group checks, Windows offline workflow, current object-store restore, and physical printer acceptance remain external gates.
+- No production write, migration, or deployment occurred during this audit batch. Untracked user/server backup files were preserved.
+## Kitchen ticket identifiers and 62-migration E2E (2026-10-13)
+
+- Source audit found KitchenService caught a ticket-number unique violation and retried the insert inside the same interactive PostgreSQL transaction. Since a database constraint error can leave that transaction aborted, this retry path was not reliable.
+- Kitchen ticket allocation now takes an advisory transaction lock for each candidate and checks the unique ticket number before insert; collisions move to a fresh candidate before the transaction is poisoned. Two focused tests cover a pre-existing collision and the bounded retry limit.
+- The isolated order-number validator now runs 12 separate Prisma transactions concurrently and asserts a unique 1–12 sequence. The fixture tenant, branch, and orders are removed in a finally block.
+- Targeted kitchen/order/printer tests passed 62/62. Full backend suite passed 740/740; shared HTTP retry tests passed 3/3. Backend application and script typechecks, plus targeted ESLint, passed.
+- The disposable release E2E applied all 62 migrations, then passed order-number validation, POS/Kassa validation, and customer WEB/TELEGRAM order E2E. Its cleanup path dropped the disposable DB. The pg 8.23 / Prisma query-queue deprecation warning remains non-failing.
+- This proves the current worktree against a disposable DB, not a staging A/B or production run. Production write, migration, and deployment remain unperformed pending release gates.

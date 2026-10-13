@@ -174,7 +174,68 @@ async function main() {
     }
   }
 
-  console.log("Order display number validation passed");
+  const concurrencyRunId = `${process.pid}_${Date.now()}`;
+  const concurrencyTenant = await prisma.restaurantTenant.create({
+    data: {
+      code: `DISPLAY_CONCURRENT_${concurrencyRunId}`,
+      name: "Concurrent Display Number Test",
+    },
+  });
+  let concurrencyBranchId: string | null = null;
+  try {
+    const concurrencyBranch = await prisma.branch.create({
+      data: {
+        tenantId: concurrencyTenant.id,
+        code: `DISPLAY_CONCURRENT_${concurrencyRunId}`,
+        name: "Concurrent Display Number Test",
+      },
+    });
+    concurrencyBranchId = concurrencyBranch.id;
+    const concurrentCount = 12;
+    const concurrentDate = new Date("2099-01-18T00:00:00.000Z");
+    const concurrentSequences = await Promise.all(
+      Array.from({ length: concurrentCount }, (_, index) =>
+        prisma.$transaction(async (tx) => {
+          const displayOrder = await allocateDisplayOrderNumber(
+            tx,
+            concurrencyTenant.id,
+            OrderSource.POS,
+            concurrentDate,
+            1,
+          );
+          await tx.order.create({
+            data: {
+              tenantId: concurrencyTenant.id,
+              branchId: concurrencyBranch.id,
+              orderNumber: `CONCURRENT-${concurrencyRunId}-${index}`,
+              ...displayOrder,
+              source: OrderSource.POS,
+              type: OrderType.TAKEAWAY,
+            },
+          });
+          return displayOrder.displayOrderSequence;
+        }),
+      ),
+    );
+    assert.deepEqual(
+      concurrentSequences.sort((left, right) => left - right),
+      Array.from({ length: concurrentCount }, (_, index) => index + 1),
+    );
+  } finally {
+    await prisma.order.deleteMany({
+      where: { tenantId: concurrencyTenant.id },
+    });
+    if (concurrencyBranchId) {
+      await prisma.branch.delete({ where: { id: concurrencyBranchId } });
+    }
+    await prisma.restaurantTenant.delete({
+      where: { id: concurrencyTenant.id },
+    });
+  }
+
+  console.log(
+    "Order display number validation passed, including 12 concurrent transactions",
+  );
 }
 
 main()

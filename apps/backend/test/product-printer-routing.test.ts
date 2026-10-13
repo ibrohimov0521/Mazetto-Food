@@ -62,8 +62,10 @@ test("new products default to kitchen routing unless explicitly changed", async 
 test("new kitchen tickets include kitchen products only", async () => {
   let createData: Record<string, unknown> | undefined;
   const tx = {
+    $executeRaw: async () => 1,
     kitchenTicket: {
       findFirst: async () => null,
+      findUnique: async () => null,
       create: async ({ data }: { data: Record<string, unknown> }) => {
         createData = data;
         return { id: "ticket-1" };

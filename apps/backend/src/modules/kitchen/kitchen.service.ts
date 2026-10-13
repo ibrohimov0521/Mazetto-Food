@@ -16,7 +16,7 @@ import {
   PaymentStatus,
   Prisma,
 } from "@prisma/client";
-import { randomUUID } from "node:crypto";
+import { allocateKitchenTicketNumber } from "./kitchen-ticket-number";
 import {
   resolveRestaurantScope,
   resolveSoleActiveTenantId,
@@ -294,53 +294,43 @@ export class KitchenService {
     const kitchenItems = kitchenRoutedItems(order.items);
     if (kitchenItems.length === 0) return null;
 
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      try {
-        return await tx.kitchenTicket.create({
-          data: {
-            orderId,
-            ticketNumber: this.createTicketNumber(),
-            revisionNumber: order.supplementNumber ?? 1,
-            isSupplement: order.isSupplemental,
-            sourceOrderVersion: order.version,
-            items: {
-              create: kitchenItems.map((item) => ({
-                orderItemId: item.id,
-                productName: item.productName,
-                variantName: item.variantName,
-                quantity: item.quantity,
-                notes: item.notes,
-                modifierSnapshot: item.modifierSnapshot ?? Prisma.JsonNull,
-                stationRouting: item.product?.printerRouting ?? "KITCHEN",
-                printerIdSnapshot: item.product?.printer?.id ?? null,
-                printerNameSnapshot: item.product?.printer?.name ?? null,
-                printerTypeSnapshot: item.product?.printer?.type ?? null,
-                status: item.status,
-              })),
-            },
-            events: {
-              create: {
-                eventType: order.isSupplemental
-                  ? "KitchenSupplementCreated"
-                  : "KitchenTicketCreated",
-                newStatus: KitchenTicketStatus.NEW,
-                reason: order.isSupplemental
-                  ? `Qo'shimcha #${order.supplementNumber ?? 1}`
-                  : "Asosiy buyurtma oshxonaga yuborildi",
-                version: 1,
-              },
-            },
+    return tx.kitchenTicket.create({
+      data: {
+        orderId,
+        ticketNumber: await this.createTicketNumber(tx),
+        revisionNumber: order.supplementNumber ?? 1,
+        isSupplement: order.isSupplemental,
+        sourceOrderVersion: order.version,
+        items: {
+          create: kitchenItems.map((item) => ({
+            orderItemId: item.id,
+            productName: item.productName,
+            variantName: item.variantName,
+            quantity: item.quantity,
+            notes: item.notes,
+            modifierSnapshot: item.modifierSnapshot ?? Prisma.JsonNull,
+            stationRouting: item.product?.printerRouting ?? "KITCHEN",
+            printerIdSnapshot: item.product?.printer?.id ?? null,
+            printerNameSnapshot: item.product?.printer?.name ?? null,
+            printerTypeSnapshot: item.product?.printer?.type ?? null,
+            status: item.status,
+          })),
+        },
+        events: {
+          create: {
+            eventType: order.isSupplemental
+              ? "KitchenSupplementCreated"
+              : "KitchenTicketCreated",
+            newStatus: KitchenTicketStatus.NEW,
+            reason: order.isSupplemental
+              ? `Qo'shimcha #${order.supplementNumber ?? 1}`
+              : "Asosiy buyurtma oshxonaga yuborildi",
+            version: 1,
           },
-          include: this.ticketInclude(),
-        });
-      } catch (error) {
-        if (!this.isUniqueTicketError(error) || attempt === 4) {
-          throw error;
-        }
-      }
-    }
-
-    throw new BadRequestException("Unable to create kitchen ticket");
+        },
+      },
+      include: this.ticketInclude(),
+    });
   }
 
   async acceptTicket(id: string, user: AuthenticatedUser) {
@@ -1204,17 +1194,7 @@ export class KitchenService {
     return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
   }
 
-  private createTicketNumber(): string {
-    const now = new Date();
-    const date = now.toISOString().slice(0, 10).replaceAll("-", "");
-    const suffix = randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
-    return `KDS-${date}-${suffix}`;
-  }
-
-  private isUniqueTicketError(error: unknown): boolean {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    );
+  private createTicketNumber(tx: TransactionClient): Promise<string> {
+    return allocateKitchenTicketNumber(tx);
   }
 }

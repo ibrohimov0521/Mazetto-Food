@@ -38,7 +38,7 @@ is important completeness/security, and `P3` is improvement or cleanup.
 | AUD-120 | P1 | Kitchen actions are PATCH in backend but Desktop registry allows POST only | Generate/validate registry from route contract; offline accept/start/ready/complete/cancel each replay once |
 | AUD-121 | P1 | Item cancel and cash transfer accept/reject paths do not match Desktop registry | Add exact typed commands and tests for nested action routes |
 | AUD-122 | P1 | Device guard validates only when client supplies `x-mazetto-device-id` | Enrollment issues a revocable device credential bound to device and branch; protected Desktop endpoints require it |
-| AUD-123 | P2 | Remembered Desktop login uses bundled browser storage, not OS credential protection | Store refresh secret with Windows secure credential mechanism; migrate/logout safely |
+| AUD-123 | P2 | Browser-storage finding is resolved in this branch: Desktop login credentials are saved encrypted by Electron safeStorage in the main process; login UI lists and removes saved accounts | Evidence: source review, 5/5 credential tests, Desktop build. Remaining: packaged Windows save/restart/select/remove acceptance; track migration to Electron's asynchronous safeStorage API separately. |
 | AUD-124 | P2 | No complete support bundle for branch troubleshooting | Export redacted version/device/connectivity/outbox/conflict/print diagnostics without tokens/customer secrets |
 | AUD-125 | P2 | Offline coverage is manually maintained and can drift again | Contract test every mutating staff route, explicitly classify online-only vs queueable, and fail CI on mismatch |
 
@@ -48,10 +48,10 @@ is important completeness/security, and `P3` is improvement or cleanup.
 | --- | --- | --- | --- |
 | AUD-130 | P1 | Click/Payme/Card providers, callbacks and reconciliation are absent | Implement provider-signed initiation/callback/idempotency, payment state, reconciliation and failure UX before enabling method |
 | AUD-131 | P1 | Cash refund is implemented; external provider refund/reconciliation remains disabled | Keep cash refund permissioned and idempotent with immutable reversal, cash ledger, refund receipt and audit/report treatment; add signed Click/Payme/Card provider refund only after provider contracts and reconciliation are available |
-| AUD-132 | P2 | Ingredient and warehouse master data lacks edit/deactivate lifecycle | Add branch-safe update/archive with reference protection and history |
-| AUD-133 | P2 | Automatic recipe deduction fails if no active warehouse exists | Add readiness check/dashboard and prevent enabling recipe deduction until warehouse mapping is valid |
-| AUD-134 | P2 | Modifier lifecycle has create/update but no explicit archive/delete action | Define archive policy, expose action and preserve historical orders |
-| AUD-135 | P2 | Some human-readable ticket/order/receipt identifiers use bounded random allocation | Add database-backed sequence or robust retry for every unique identifier; concurrency test collisions |
+| AUD-132 | P2 | Implementation exists: ingredient/warehouse edit, archive, and guarded permanent deletion are available; this is no longer an open code gap | Service tests cover tenant scope, reference/history guards, and archive conditions. Remaining: live tenant persistence and admin workflow acceptance. |
+| AUD-133 | P2 | Readiness API and admin warning exist. Recipe deduction is automatic rather than a separately enabled setting, and order confirmation fails closed if no active warehouse exists | Direct tests cover missing warehouse, inactive recipe ingredient, ready state, and branch scope. Remaining: live tenant/data acceptance; there is no separate deduction toggle to claim. |
+| AUD-134 | P2 | Implementation exists: modifiers can be edited and deactivated/reactivated; permanent deletion is restricted to unassigned modifiers | Tests cover duplicate IDs, refusal for assigned modifiers, and missing IDs; the UI offers deactivation and guarded deletion. Remaining: live admin acceptance. |
+| AUD-135 | P2 | Identifier allocation is collision-guarded: display numbers use a tenant/source/date advisory lock and unique index; opaque order IDs retry the enclosing transaction; receipt and kitchen ticket numbers lock/check candidates before insert | Added a 12-way PostgreSQL sequence test and candidate-collision tests. Remaining exact-head staging and live acceptance are tracked by Gate A and the printing gates. |
 
 ### Gate E - navigation, permissions and security
 
@@ -169,7 +169,20 @@ deployment remain separate gates; no production database, push, or deploy change
 6. Deployment health passes and the exact human smoke result is recorded.
 7. Documentation and operator recovery steps are updated in the same change.
 
-## Current execution point (2026-10-13)
+## Current release state (verified 2026-10-13)
+
+- PR #296 is on `audit/next-business-flows-20261011` at `24160e7a841ebc0f7d1b6141e8f66d119e5063a8`. Exact-head CI run #850 passed `verify` and `windows-desktop-package`.
+- Current branch has 62 migrations; the read-only production baseline has 59. The three pending migrations are `20261013120000_product_kitchen_printer_routing`, `20261013130000_order_tenant_legacy_writer_guard`, and `20261013140000_tenant_scoped_order_numbers`.
+- The current worktree (including uncommitted audit changes) passed a fresh disposable-DB E2E with all 62 migrations, POS/Kassa and customer WEB/TELEGRAM flows, plus 12 concurrent order-number allocations with no duplicates. This is not a staging A/B test.
+- The staging image and A/B proof at `8b42159` are for a 61-migration candidate, not this 62-migration head. No exact-head staging migration/A-B validation is recorded.
+- Earlier DB restore evidence used an empty staging snapshot and a low-volume 2026-09-26 production snapshot. Neither proves current production data or object-store recovery; current representative backup, object-store restore, and rollback rehearsal remain open.
+- Focused tests on the current checkout: shift report 8/8, backend shift/cash/refund/print 32/32, and Desktop receipt/print 62/62. The cashier-history mocked browser flow passed at 375px and 1280px.
+- The 205-order shift-close browser run did not complete: the isolated Next dev server stalled compiling `/shift`. This is neither a product pass nor a product failure; rerun it on a stable QA server.
+- Audit tests/docs and the Kitchen ticket allocator fix are part of the current PR worktree. No production write, migration, or deployment occurred. Exact-head staging and A/B validation remains open.
+
+## Superseded staging snapshot (2026-10-13; 61-migration candidate)
+
+The dated details below describe the earlier staging candidate only. They do not validate or authorize release of the current 62-migration PR head.
 
 The original implementation-first sequence below has been superseded by the
 completed audit work and the release gates recorded here. Do not restart those
