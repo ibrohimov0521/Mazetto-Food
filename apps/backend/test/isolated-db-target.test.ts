@@ -18,6 +18,10 @@ test("rejects missing, malformed, remote, wrong-port, and wrong-database URLs", 
     "postgresql://qa:localhost@db.example:5433/shift_qa",
     "postgresql://qa:qa@127.0.0.1:5432/shift_qa",
     "postgresql://qa:qa@localhost:5433/mazetto",
+    "postgresql://qa:qa@127.0.0.1:5433/shift_qa?host=remote.invalid",
+    "postgresql://qa:qa@127.0.0.1:5433/shift_qa?port=5432",
+    "postgresql://qa:qa@127.0.0.1:5433/shift_qa?hostaddr=203.0.113.8",
+    "postgresql://qa:qa@127.0.0.1:5433/shift_qa?service=production",
   ];
 
   for (const url of invalidUrls) {

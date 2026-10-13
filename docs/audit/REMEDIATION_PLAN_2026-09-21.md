@@ -13,7 +13,7 @@ is important completeness/security, and `P3` is improvement or cleanup.
 | AUD-101 | P0 | Production DB migration history is not reconciled with the restored schema; generic migration caused an outage | Create verified backup; restore into isolated DB; baseline `_prisma_migrations`; run all migrations twice; deploy and rollback rehearsal; document checksums |
 | AUD-102 | P1 | No single release acceptance suite covers customer, staff, Desktop, Telegram and printing | Add read-only smoke plus disposable isolated write E2E; production human checklist records actor/time/result without fake live orders |
 | AUD-103 | P2 | Historical status document mixes deployed, local-only and obsolete claims | Keep this audit directory current and archive/supersede stale status sections |
-| AUD-104 | P2 | Shift/Kassa DB smoke only searched for localhost text and left synthetic rows behind | Require exact loopback PostgreSQL port 5433/database shift_qa; reject all other targets and run only against a disposable DB. Resolved on the audit branch and validated after 61 migrations |
+| AUD-104 | P2 | Shift/Kassa DB smoke only searched for localhost text and left synthetic rows behind | Require exact loopback PostgreSQL port 5433/database shift_qa; reject host, port, hostaddr, and service query overrides; run only against a disposable DB. Resolved on the audit branch and validated after 61 migrations |
 
 ### Gate B - receipts and printing
 

@@ -563,7 +563,7 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 ## Audit continuation: isolated shift/kassa regression target (2026-10-13)
 
 - Found that the Shift/Kassa DB regression only searched for localhost text in DATABASE_URL and left synthetic fixtures behind. A URL containing localhost as a username or path could pass while targeting the wrong database.
-- Added a URL parser guard requiring PostgreSQL, exact host localhost or 127.0.0.1, port 5433, and database shift_qa. Added allow/deny tests for valid and malformed, remote, wrong-port, and wrong-database URLs.
+- Added a URL parser guard requiring PostgreSQL, exact host localhost or 127.0.0.1, port 5433, and database shift_qa; host, port, hostaddr, and service query overrides are rejected. Added allow/deny tests for malformed, remote, wrong-port/database, and query-override URLs.
 - Created shift_qa only after confirming it was absent in the loopback-only mazetto-dev-postgres container, applied all 61 migrations, ran the DB-backed cashier/shift validation successfully, then dropped only that temporary database. Existing QA, staging, and production databases were not modified.
 - Verification: guard tests 2/2, full backend tests passed, backend app and scripts typechecks passed, targeted ESLint passed, diff check clean.
 - The concurrency stress test emitted a non-failing pg 8.23 / Prisma PostgreSQL-adapter query-queue deprecation warning. The validation passed; retain this as an upstream compatibility warning to revisit before a pg 9 upgrade, not as a confirmed business-logic defect.
