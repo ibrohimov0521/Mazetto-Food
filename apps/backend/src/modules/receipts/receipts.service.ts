@@ -10,7 +10,10 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { ListReceiptsDto } from "./dto/list-receipts.dto";
 import type { ListPrintJobsDto } from "./dto/print-job.dto";
-import { queuePrintJobsForReceipt } from "./receipt-writer";
+import {
+  lockReceiptPrintQueue,
+  queuePrintJobsForReceipt,
+} from "./receipt-writer";
 import { writeAuditLog } from "../audit/audit-write";
 
 const AMBIGUOUS_RETRY_KEY = "__bestteamAllowAmbiguousRetry";
@@ -82,8 +85,7 @@ export class ReceiptsService {
         printedAt: true,
         printJobs: {
           orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { status: true, submittedAt: true },
+          select: { status: true, submittedAt: true, createdAt: true },
         },
         createdAt: true,
         orderId: true,
@@ -177,6 +179,7 @@ export class ReceiptsService {
 
     for (const receipt of receipts) {
       await this.prisma.$transaction(async (tx) => {
+        await lockReceiptPrintQueue(tx, receipt.id);
         const existingJob = await tx.printJob.findFirst({
           where: { receiptId: receipt.id },
           select: { id: true },
@@ -668,9 +671,9 @@ export class ReceiptsService {
     const displayOrderNumber = textValue(content.displayOrderNumber) ?? receipt.order.displayOrderNumber ?? orderNumber;
     const dateTime = formatReceiptDateTime(textValue(content.dateTime), receipt.createdAt);
     const total = textValue(content.total) ?? receipt.total.toFixed(2);
-    const snapshotItems = objectArray(content.items);
-    const snapshotPayments = objectArray(content.payments);
-    const itemCommands = snapshotItems.length > 0
+    const snapshotItems = Array.isArray(content.items) ? objectArray(content.items) : null;
+    const snapshotPayments = Array.isArray(content.payments) ? objectArray(content.payments) : null;
+    const itemCommands = snapshotItems !== null
       ? snapshotItems.map((item) => ({
           type: "item",
           name: [textValue(item.name), textValue(item.variant)].filter(Boolean).join(" "),
@@ -685,7 +688,7 @@ export class ReceiptsService {
           quantity: formatReceiptQuantity(item.quantity.toFixed(3)),
           total: item.totalPrice.toFixed(2),
         }));
-    const paymentCommands = snapshotPayments.length > 0
+    const paymentCommands = snapshotPayments !== null
       ? snapshotPayments.map((payment) => ({
           type: "payment",
           method: textValue(payment.method) ?? "To'lov",
@@ -750,7 +753,7 @@ function formatReceiptOrderType(value: string): string {
     case "PICKUP":
       return "Olib ketish";
     default:
-      return value;
+      return "Noma'lum";
   }
 }
 

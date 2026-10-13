@@ -42,6 +42,10 @@ import {
   kitchenHistoryModifiers,
   kitchenHistoryRange,
 } from "./kitchen-history-range";
+import {
+  kitchenPosOrderVisibilityWhere,
+  isKitchenPosOrder,
+} from "./kitchen-order-visibility";
 
 type TransactionClient = Prisma.TransactionClient;
 export type KitchenStaffAction =
@@ -53,6 +57,7 @@ export type KitchenStaffAction =
 type KitchenTransitionActor = {
   user?: AuthenticatedUser;
   reasonPrefix: string;
+  enforceKitchenPosVisibility?: boolean;
   cancellationReason?: string;
   expectedVersion?: number;
   correlationId?: string;
@@ -76,6 +81,7 @@ type KitchenTransitionOrder = {
   id: string;
   branchId: string;
   type: OrderType;
+  source: OrderSource;
   status: OrderStatus;
   orderState: OrderState;
   version: number;
@@ -119,7 +125,7 @@ export class KitchenService {
   async listOrdersWithOverflow(user: AuthenticatedUser) {
     this.requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
-    const showPosOrders =
+    const showCashierPosOrders =
       (await this.settings?.getBool(
         "kitchen_pos_orders_enabled",
         scope.tenantId,
@@ -130,7 +136,7 @@ export class KitchenService {
         ...(scope.branchId
           ? { branchId: scope.branchId }
           : { branch: { tenantId: scope.tenantId } }),
-        ...(!showPosOrders ? { source: { not: OrderSource.POS } } : {}),
+        ...kitchenPosOrderVisibilityWhere(showCashierPosOrders),
         status: {
           notIn: [
             OrderStatus.SERVED,
@@ -156,7 +162,7 @@ export class KitchenService {
     });
     return {
       ...trimKitchenQueue(tickets),
-      kitchenPosOrdersEnabled: showPosOrders,
+      kitchenPosOrdersEnabled: showCashierPosOrders,
     };
   }
 
@@ -173,7 +179,7 @@ export class KitchenService {
     user: AuthenticatedUser,
   ) {
     const scope = await resolveRestaurantScope(this.prisma, user);
-    const showPosOrders =
+    const showCashierPosOrders =
       (await this.settings?.getBool(
         "kitchen_pos_orders_enabled",
         scope.tenantId,
@@ -189,7 +195,7 @@ export class KitchenService {
           ...(scope.branchId
             ? { branchId: scope.branchId }
             : { branch: { tenantId: scope.tenantId } }),
-          ...(!showPosOrders ? { source: { not: OrderSource.POS } } : {}),
+          ...kitchenPosOrderVisibilityWhere(showCashierPosOrders),
           createdAt: { gte: range.start, lt: range.end },
           ...(search
             ? {
@@ -365,12 +371,20 @@ export class KitchenService {
   async getTicket(id: string, user: AuthenticatedUser) {
     this.requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
+    const showCashierPosOrders =
+      (await this.settings?.getBool(
+        "kitchen_pos_orders_enabled",
+        scope.tenantId,
+      )) ?? false;
     const ticket = await this.prisma.kitchenTicket.findFirst({
       where: {
         id,
-        order: scope.branchId
-          ? { branchId: scope.branchId }
-          : { branch: { tenantId: scope.tenantId } },
+        order: {
+          ...(scope.branchId
+            ? { branchId: scope.branchId }
+            : { branch: { tenantId: scope.tenantId } }),
+          ...kitchenPosOrderVisibilityWhere(showCashierPosOrders),
+        },
       },
       include: this.ticketInclude(),
     });
@@ -443,12 +457,20 @@ export class KitchenService {
     context?: KitchenTicketActionContext,
   ) {
     const scope = await resolveRestaurantScope(this.prisma, user);
+    const showCashierPosOrders =
+      (await this.settings?.getBool(
+        "kitchen_pos_orders_enabled",
+        scope.tenantId,
+      )) ?? false;
     const existingTicket = await this.prisma.kitchenTicket.findFirst({
       where: {
         id,
-        order: scope.branchId
-          ? { branchId: scope.branchId }
-          : { branch: { tenantId: scope.tenantId } },
+        order: {
+          ...(scope.branchId
+            ? { branchId: scope.branchId }
+            : { branch: { tenantId: scope.tenantId } }),
+          ...kitchenPosOrderVisibilityWhere(showCashierPosOrders),
+        },
       },
       select: { orderId: true },
     });
@@ -466,6 +488,7 @@ export class KitchenService {
 
     return this.applyOrderAction(existingTicket.orderId, action, {
       user,
+      enforceKitchenPosVisibility: true,
       reasonPrefix: "Kitchen UI",
       cancellationReason: trimmed
         ? `Oshxona bekor qildi: ${trimmed}`
@@ -510,6 +533,16 @@ export class KitchenService {
       const order = await this.findOrderForTransition(tx, orderId, scope);
       if (!order) {
         throw new NotFoundException("Order not found");
+      }
+
+      if (actor.enforceKitchenPosVisibility && isKitchenPosOrder(order)) {
+        const enabled =
+          (await this.settings?.getBool(
+            "kitchen_pos_orders_enabled",
+            scope.tenantId,
+            tx,
+          )) ?? false;
+        if (!enabled) throw new NotFoundException("Oshxona chiptasi topilmadi");
       }
 
       const storedTicket = order.kitchenTickets[0] ?? null;
@@ -942,6 +975,7 @@ export class KitchenService {
       select: {
         id: true,
         branchId: true,
+        source: true,
         type: true,
         status: true,
         orderState: true,

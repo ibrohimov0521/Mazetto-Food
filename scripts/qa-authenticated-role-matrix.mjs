@@ -4,6 +4,12 @@ import { chromium } from "playwright";
 const baseUrl = process.env.POS_WEB_URL ?? "http://127.0.0.1:3103";
 const roles = [
   {
+    role: "SUPER_ADMIN",
+    expected: "/admin/dashboard",
+    permissions: ["*"],
+    adminAllowed: true,
+  },
+  {
     role: "ADMIN",
     expected: "/admin/dashboard",
     permissions: ["ADMIN_ACCESS", "DASHBOARD_VIEW"],
@@ -75,19 +81,43 @@ try {
         },
         role,
       );
-      await context.route("**/api/v1/**", (route) =>
-        route.fulfill({
+      await context.route("**/api/v1/**", async (route) => {
+        const pathname = new URL(route.request().url()).pathname;
+        let data = [];
+        if (pathname.endsWith("/kitchen/orders")) {
+          data = { items: [], hasMore: false, limit: 250 };
+        } else if (pathname.endsWith("/dashboard/summary")) {
+          data = {
+            todayRevenue: 0,
+            todayOrdersCount: 0,
+            activeShifts: 0,
+            averageOrderValue: 0,
+            branchId: "qa-branch",
+          };
+        } else if (pathname.endsWith("/reports/sales")) {
+          data = {
+            period: { from: "2026-10-13", to: "2026-10-13" },
+            revenue: 0,
+            orderCount: 0,
+            averageOrderValue: 0,
+            cashSales: 0,
+            cancelledOrders: 0,
+            paymentBreakdown: [],
+            branchBreakdown: [],
+            shiftBreakdown: [],
+            topProducts: [],
+            timeSeries: { grain: "day", data: [] },
+          };
+        }
+        await route.fulfill({
           status: 200,
           contentType: "application/json",
-          body: JSON.stringify({
-            success: true,
-            data: new URL(route.request().url()).pathname.endsWith("/kitchen/orders")
-              ? { items: [], hasMore: false, limit: 250 }
-              : [],
-          }),
-        }),
-      );
+          body: JSON.stringify({ success: true, data }),
+        });
+      });
+      const pageErrors = [];
       const page = await context.newPage();
+      page.on("pageerror", (error) => pageErrors.push(error.message));
 
       await page.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
       await page.waitForURL(`**${role.expected}`, { timeout: 15_000 });
@@ -110,6 +140,8 @@ try {
         assert.equal(new URL(page.url()).pathname, "/admin/dashboard");
       }
       console.log(`${role.role} ${viewport.width}px: ${role.expected} ok`);
+      await page.waitForLoadState("networkidle", { timeout: 3_000 }).catch(() => undefined);
+      assert.deepEqual(pageErrors, [], `${role.role} ${viewport.width}px page errors: ${pageErrors.join("; ")}`);
       await context.close();
     }
   }

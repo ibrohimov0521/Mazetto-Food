@@ -181,57 +181,63 @@ export class TablesService {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
     await assertBranchBelongsToActor(this.prisma, user, branchId);
 
-    return this.prisma.hall.create({
-      data: {
-        branchId,
-        code: this.createCode(name),
-        name,
-        description: dto.description?.trim() || null,
-        sortOrder: dto.sortOrder,
-      },
-    });
+    return withUniqueConstraintRetry(() =>
+      this.prisma.hall.create({
+        data: {
+          branchId,
+          code: this.createCode(name),
+          name,
+          description: dto.description?.trim() || null,
+          sortOrder: dto.sortOrder,
+        },
+      }),
+    );
   }
 
   async createTable(dto: CreateTableDto, user: AuthenticatedUser) {
     const name = normalizeRequiredName(dto.name);
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
     await assertBranchBelongsToActor(this.prisma, user, branchId);
-    return this.prisma.$transaction(async (tx) => {
-      await assertBranchBelongsToActor(tx, user, branchId);
-      if (!(await this.lockHall(tx, dto.hallId, branchId))) {
-        throw new BadRequestException(
-          "Selected hall is not active in this branch",
-        );
-      }
-      const hall = await tx.hall.findFirst({
-        where: { id: dto.hallId, branchId, isActive: true },
-        select: { id: true },
-      });
-      if (!hall) {
-        throw new BadRequestException(
-          "Selected hall is not active in this branch",
-        );
-      }
-      const duplicate = await tx.restaurantTable.findFirst({
-        where: { hallId: dto.hallId, number: dto.number, isActive: true },
-        select: { id: true },
-      });
-      if (duplicate) {
-        throw new ConflictException("A table with this number already exists");
-      }
-      return tx.restaurantTable.create({
-        data: {
-          branchId,
-          hallId: dto.hallId,
-          code: `T${dto.number}-${randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase()}`,
-          number: dto.number,
-          name,
-          capacity: dto.capacity,
-          seats: dto.capacity,
-          sortOrder: dto.sortOrder ?? dto.number,
-        },
-      });
-    });
+    return withUniqueConstraintRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        await assertBranchBelongsToActor(tx, user, branchId);
+        if (!(await this.lockHall(tx, dto.hallId, branchId))) {
+          throw new BadRequestException(
+            "Selected hall is not active in this branch",
+          );
+        }
+        const hall = await tx.hall.findFirst({
+          where: { id: dto.hallId, branchId, isActive: true },
+          select: { id: true },
+        });
+        if (!hall) {
+          throw new BadRequestException(
+            "Selected hall is not active in this branch",
+          );
+        }
+        const duplicate = await tx.restaurantTable.findFirst({
+          where: { hallId: dto.hallId, number: dto.number, isActive: true },
+          select: { id: true },
+        });
+        if (duplicate) {
+          throw new ConflictException(
+            "A table with this number already exists",
+          );
+        }
+        return tx.restaurantTable.create({
+          data: {
+            branchId,
+            hallId: dto.hallId,
+            code: `T${dto.number}-${randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase()}`,
+            number: dto.number,
+            name,
+            capacity: dto.capacity,
+            seats: dto.capacity,
+            sortOrder: dto.sortOrder ?? dto.number,
+          },
+        });
+      }),
+    );
   }
 
   async updateStatus(
@@ -544,10 +550,7 @@ export class TablesService {
     const waiterId = this.requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
     const orderDisplayNumberStart = this.settings
-      ? await this.settings.getInt(
-          "order_display_number_start",
-          scope.tenantId,
-        )
+      ? await this.settings.getInt("order_display_number_start", scope.tenantId)
       : 101;
     const idempotencyKey = context?.idempotencyKey
       ? normalizeIdempotencyKey(context.idempotencyKey)
@@ -696,12 +699,14 @@ export class TablesService {
 
             const displayOrder = await allocateDisplayOrderNumber(
               tx,
+              scope.tenantId,
               OrderSource.POS,
               undefined,
               orderDisplayNumberStart,
             );
             const order = await tx.order.create({
               data: {
+                tenantId: scope.tenantId,
                 branchId: table.branchId,
                 tableId: id,
                 waiterId,

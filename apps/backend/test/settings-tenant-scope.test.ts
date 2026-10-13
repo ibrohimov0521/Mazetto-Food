@@ -214,3 +214,75 @@ test("cashier payment settings reuse an existing transaction client", async () =
     tenantId_key: { tenantId: "tenant-a", key: "cashier_payment_methods" },
   });
 });
+test("kitchen visibility and order numbering bypass stale Redis per tenant", async () => {
+  const cache = new Map([
+    [
+      "settings:tenant-a:all",
+      JSON.stringify({ kitchen_pos_orders_enabled: "false", order_display_number_start: "101" }),
+    ],
+    [
+      "settings:tenant-b:all",
+      JSON.stringify({ kitchen_pos_orders_enabled: "true", order_display_number_start: "1" }),
+    ],
+  ]);
+  const currentValues: Record<string, Record<string, string>> = {
+    "tenant-a": {
+      cashier_payment_methods: "CASH",
+      kitchen_pos_orders_enabled: "true",
+      order_display_number_start: "1",
+    },
+    "tenant-b": {
+      cashier_payment_methods: "CASH",
+      kitchen_pos_orders_enabled: "false",
+      order_display_number_start: "101",
+    },
+  };
+  const reads: string[] = [];
+  const service = new SettingsService(
+    {
+      restaurantTenant: {
+        findFirst: async ({ where }: { where: { id: string } }) => ({
+          id: where.id,
+        }),
+      },
+      setting: {
+        findMany: async () => [],
+        findUnique: async ({
+          where,
+        }: { where: { tenantId_key: { tenantId: string; key: string } } }) => {
+          const { tenantId, key } = where.tenantId_key;
+          reads.push(`${tenantId}:${key}`);
+          const value = currentValues[tenantId]?.[key];
+          return value === undefined ? null : { value };
+        },
+      },
+    } as never,
+    {
+      getClient: () => ({
+        get: async (key: string) => cache.get(key) ?? null,
+        set: async (key: string, value: string) => {
+          cache.set(key, value);
+          return "OK";
+        },
+        del: async (key: string) => cache.delete(key),
+      }),
+    } as never,
+  );
+
+  assert.equal(await service.getBool("kitchen_pos_orders_enabled", "tenant-a"), true);
+  assert.equal(await service.getInt("order_display_number_start", "tenant-a"), 1);
+  assert.equal(await service.getBool("kitchen_pos_orders_enabled", "tenant-b"), false);
+  assert.equal(await service.getInt("order_display_number_start", "tenant-b"), 101);
+
+  const listed = await service.listSettings(owner);
+  assert.equal(
+    listed.find((setting) => setting.key === "kitchen_pos_orders_enabled")?.value,
+    "true",
+  );
+  assert.equal(
+    listed.find((setting) => setting.key === "order_display_number_start")?.value,
+    "1",
+  );
+  assert.ok(reads.includes("tenant-a:kitchen_pos_orders_enabled"));
+  assert.ok(reads.includes("tenant-a:order_display_number_start"));
+});

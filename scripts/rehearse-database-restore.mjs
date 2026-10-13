@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { once } from "node:events";
 import { createReadStream, existsSync, mkdirSync, statSync, writeFileSync } from "node:fs";
@@ -27,6 +27,24 @@ assert.ok(
   ["127.0.0.1", "localhost", "::1"].includes(adminUrl.hostname),
   "Restore rehearsal refuses non-local PostgreSQL hosts",
 );
+const pgToolContainer = process.env.MAZETTO_PG_TOOL_CONTAINER?.trim();
+if (pgToolContainer) {
+  assert.match(pgToolContainer, /^mazetto-audit-[a-z0-9-]+$/, "Restore tools must run in a dedicated audit container");
+  const portBindings = JSON.parse(
+    execFileSync(
+      "docker",
+      ["inspect", "--format", "{{json .NetworkSettings.Ports}}", pgToolContainer],
+      { encoding: "utf8" },
+    ),
+  );
+  const localBindings = Object.values(portBindings)
+    .flatMap((bindings) => bindings ?? [])
+    .filter((binding) => ["127.0.0.1", "::1"].includes(binding.HostIp));
+  assert.ok(
+    localBindings.some((binding) => binding.HostPort === (adminUrl.port || "5432")),
+    "Restore tool container must expose the loopback PostgreSQL port used by the rehearsal URL",
+  );
+}
 const suffix = `${process.pid}_${Date.now()}`;
 const migrationDatabase = `mazetto_restore_migrate_${suffix}`;
 const rollbackDatabase = `mazetto_restore_rollback_${suffix}`;
@@ -42,7 +60,7 @@ const candidates = (tool) => [
 const executable = (tool) => candidates(tool).find((candidate) => candidate === tool || existsSync(candidate));
 const psql = executable("psql");
 const pgRestore = executable("pg_restore");
-assert.ok(psql, "psql was not found; set MAZETTO_PG_BIN");
+assert.ok(pgToolContainer || psql, "psql was not found; set MAZETTO_PG_BIN or MAZETTO_PG_TOOL_CONTAINER");
 
 const pnpmCli = process.env.npm_execpath;
 if (!pnpmCli) throw new Error("Run this command through pnpm");
@@ -74,8 +92,12 @@ async function runRestore(database) {
   const args = custom
     ? ["--exit-on-error", "--no-owner", "--no-privileges", "-d", database]
     : ["--set", "ON_ERROR_STOP=on", "-d", database];
-  const child = spawn(tool, args, {
-    env: pgEnvironment(database),
+  const command = pgToolContainer ? "docker" : tool;
+  const commandArgs = pgToolContainer
+    ? ["exec", "-i", pgToolContainer, tool, "-h", "/var/run/postgresql", "-U", decodeURIComponent(adminUrl.username), ...args]
+    : args;
+  const child = spawn(command, commandArgs, {
+    env: pgToolContainer ? process.env : pgEnvironment(database),
     stdio: ["pipe", "inherit", "inherit"],
   });
   const input = createReadStream(archive);
@@ -88,13 +110,22 @@ function runMigrations(database) {
   const target = new URL(adminUrl);
   target.pathname = `/${database}`;
   return new Promise((resolvePromise, reject) => {
+    const pnpmIsScript = /\.(?:cjs|mjs|js)$/i.test(pnpmCli);
+    const pnpmCommand = pnpmIsScript ? process.execPath : pnpmCli;
+    const pnpmArguments = [
+      ...(pnpmIsScript ? [pnpmCli] : []),
+      "--filter",
+      "backend",
+      "prisma:migrate:deploy",
+    ];
     const child = spawn(
-      process.execPath,
-      [pnpmCli, "--filter", "backend", "prisma:migrate:deploy"],
+      pnpmCommand,
+      pnpmArguments,
       {
         cwd: new URL("..", import.meta.url),
         env: { ...process.env, DATABASE_URL: target.toString() },
         stdio: "inherit",
+        shell: process.platform === "win32" && /\.(?:cmd|bat)$/i.test(pnpmCli),
       },
     );
     child.once("error", reject);
@@ -116,6 +147,15 @@ async function counts(database) {
         ? Number((await client.query(`SELECT count(*)::bigint AS count FROM "${table}"`)).rows[0].count)
         : null;
     }
+    const productRoutes = await client.query(
+      `SELECT "printerRouting"::text AS route, count(*)::bigint AS count
+       FROM "products"
+       GROUP BY "printerRouting"
+       ORDER BY "printerRouting"`
+    );
+    result.productPrinterRouting = Object.fromEntries(
+      productRoutes.rows.map(({ route, count }) => [route, Number(count)]),
+    );
     return result;
   } finally {
     await client.end();
@@ -133,6 +173,7 @@ const evidence = {
   preMigrationCounts: null,
   migratedCounts: null,
   rollbackCounts: null,
+  productPrinterRoutingPreserved: false,
   migrationsIdempotent: false,
   rollbackRestoreMatches: false,
 };
@@ -144,6 +185,13 @@ try {
   await runMigrations(migrationDatabase);
   evidence.migrationsIdempotent = true;
   evidence.migratedCounts = await counts(migrationDatabase);
+  evidence.productPrinterRoutingPreserved =
+    JSON.stringify(evidence.preMigrationCounts.productPrinterRouting) ===
+    JSON.stringify(evidence.migratedCounts.productPrinterRouting);
+  assert.ok(
+    evidence.productPrinterRoutingPreserved,
+    "Migrations must preserve existing product printer routing choices",
+  );
 
   await admin.query(`CREATE DATABASE "${rollbackDatabase}"`);
   await runRestore(rollbackDatabase);

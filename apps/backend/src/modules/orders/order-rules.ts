@@ -247,6 +247,9 @@ export function createPosCheckoutRequestHash(
   const normalized = {
     branchId,
     employeeId,
+    offlineDisplayOrderDate: dto.offlineDisplayOrderDate ?? null,
+    offlineDisplayOrderNumber: dto.offlineDisplayOrderNumber ?? null,
+    offlineDisplayOrderSequence: dto.offlineDisplayOrderSequence ?? null,
     type: dto.type ?? OrderType.TAKEAWAY,
     payLater: dto.payLater === true,
     tableId: dto.tableId ?? null,

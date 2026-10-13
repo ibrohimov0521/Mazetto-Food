@@ -16,6 +16,31 @@ const activeTenant = {
   },
 };
 
+function receiptWithOrderFallback(content: Record<string, unknown>) {
+  return {
+    id: "receipt-a",
+    branchId: "branch-a",
+    receiptNumber: "RCPT-1",
+    documentType: "REFUND:refund-a",
+    content,
+    total: { toFixed: () => "-12000.00" },
+    createdAt: new Date("2026-10-10T06:00:00Z"),
+    branch: { name: "Sergeli" },
+    order: {
+      orderNumber: "M-104",
+      displayOrderNumber: "M-104",
+      items: [{
+        productName: "Lavash",
+        variantName: null,
+        quantity: { toFixed: () => "1.000" },
+        totalPrice: { toFixed: () => "36000.00" },
+      }],
+      payments: [{ method: { code: "CASH" }, amount: { toFixed: () => "36000.00" } }],
+      closedBy: null,
+    },
+  };
+}
+
 test("receipt and print queue listing plus repair stay inside tenant", async () => {
   const filters = new Map<string, Record<string, unknown>>();
   const service = new ReceiptsService({
@@ -192,6 +217,7 @@ test("manual receipt reprint queues a job that bypasses local replay deduplicati
     },
     $transaction: async (callback: (tx: object) => Promise<unknown>) =>
       callback({
+        $executeRaw: async () => 1,
         receipt: { updateMany: async () => ({ count: 1 }) },
         printer: { findMany: async () => [] },
         printJob: {
@@ -207,4 +233,27 @@ test("manual receipt reprint queues a job that bypasses local replay deduplicati
   assert.deepEqual(queuedPayloads, [
     { ...content, __bestteamAllowLocalReprint: true },
   ]);
+});
+test("receipt snapshots preserve explicit empty arrays and legacy fallback remains", async () => {
+  const getCommands = async (content: Record<string, unknown>) => {
+    const service = new ReceiptsService({
+      ...activeTenant,
+      receipt: { findFirst: async () => receiptWithOrderFallback(content) },
+    } as never);
+    const receipt = await service.getReceipt("receipt-a", owner);
+    return receipt.escpos.commands as Array<Record<string, unknown>>;
+  };
+  const refundCommands = await getCommands({ documentType: "REFUND", items: [], payments: [] });
+  assert.deepEqual(refundCommands.filter((command) => command.type === "item"), []);
+  assert.deepEqual(refundCommands.filter((command) => command.type === "payment"), []);
+  const legacyCommands = await getCommands({ documentType: "RECEIPT" });
+  assert.deepEqual(legacyCommands.filter((command) => command.type === "item").map((command) => command.name), ["Lavash"]);
+  assert.deepEqual(legacyCommands.filter((command) => command.type === "payment").map((command) => command.method), ["CASH"]);
+  const issuedSnapshotCommands = await getCommands({
+    documentType: "RECEIPT",
+    items: [{ name: "Issued item", quantity: "1", total: "12000.00" }],
+    payments: [{ method: "CARD", amount: "12000.00" }],
+  });
+  assert.deepEqual(issuedSnapshotCommands.filter((command) => command.type === "item").map((command) => command.name), ["Issued item"]);
+  assert.deepEqual(issuedSnapshotCommands.filter((command) => command.type === "payment").map((command) => command.method), ["CARD"]);
 });

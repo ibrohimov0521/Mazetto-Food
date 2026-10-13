@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BadRequestException } from "@nestjs/common";
-import { PaymentStatus, Prisma } from "@prisma/client";
+import { CashTransactionType, PaymentStatus, Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { PaymentsService } from "../src/modules/payments/payments.service";
 import type { PrismaService } from "../src/prisma/prisma.service";
@@ -14,7 +14,7 @@ const actor: AuthenticatedUser = {
   permissions: ["PAYMENT_REFUND"],
 };
 
-function fixture(methodCode = "CASH", orderTotal = 74000) {
+function fixture(methodCode = "CASH", orderTotal = 74000, cashOnHand = 74000) {
   const calls: string[] = [];
   const auditEntries: Record<string, unknown>[] = [];
   const refundEmployeeIds: string[] = [];
@@ -93,9 +93,17 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
         employeeIsActive ? { id: "employee-1" } : null,
     },
     shift: {
-      findFirst: async () => ({ id: "shift-1", employeeId: shiftEmployeeId }),
+      findFirst: async () => ({
+        id: "shift-1",
+        employeeId: shiftEmployeeId,
+        openingBalance: new Prisma.Decimal(0),
+      }),
       updateMany: async () => ({ count: 1 }),
-      findUnique: async () => ({ id: "shift-1", employeeId: shiftEmployeeId }),
+      findUnique: async () => ({
+        id: "shift-1",
+        employeeId: shiftEmployeeId,
+        openingBalance: new Prisma.Decimal(0),
+      }),
     },
     revenueRecord: {
       create: async ({ data }: { data: { amount: Prisma.Decimal; employeeId: string } }) => {
@@ -105,6 +113,15 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
       },
     },
     cashTransaction: {
+      findMany: async () =>
+        cashOnHand > 0
+          ? [
+              {
+                type: CashTransactionType.SALE,
+                amount: new Prisma.Decimal(cashOnHand),
+              },
+            ]
+          : [],
       create: async ({ data }: { data: Record<string, unknown> }) => {
         refundEmployeeIds.push("cash:" + String(data.employeeId));
         calls.push("cash:REFUND");
@@ -126,6 +143,7 @@ function fixture(methodCode = "CASH", orderTotal = 74000) {
           branchId: "branch-1",
           content: data.content,
         };
+
       },
     },
     printer: { findMany: async () => [] },
@@ -358,4 +376,22 @@ test("provider payment refund stays disabled until provider reconciliation exist
       error instanceof BadRequestException &&
       error.message === "CLICK refund provider is not enabled",
   );
+});
+
+test("cash refund cannot overdraw the open shift drawer", async () => {
+  const { calls, service } = fixture("CASH", 74000, 0);
+
+  await assert.rejects(
+    service.refundPayment(
+      "payment-1",
+      {
+        shiftId: "shift-1",
+        reason: "Mijoz qaytardi",
+        idempotencyKey: "refund-insufficient-cash",
+      },
+      actor,
+    ),
+    /Kassada yetarli naqd pul yo'q/,
+  );
+  assert.equal(calls.includes("refund"), false);
 });

@@ -129,8 +129,8 @@ const SETTING_LABELS: Record<
     group: "cashier-payments",
   },
   kitchen_pos_orders_enabled: {
-    title: "Kassa buyurtmalarini oshxonada ko'rsatish",
-    hint: "O'chirilsa, POS buyurtmasi oshxona navbatida ko'rinmaydi; oshxona cheki printerga baribir yuboriladi. Sayt va Telegram buyurtmalari ko'rinishda qoladi.",
+    title: "Ichki buyurtmalarni oshxonada ko'rsatish",
+    hint: "O'chirilsa, kassa va ofitsiant panelida yaratilgan buyurtmalar oshxona navbati va tarixida ko'rinmaydi. Sayt va Telegram buyurtmalari qoladi. Chop etish sozlamasi o'zgarmaydi: oshxona uchun belgilangan mahsulotlar printerga yuboriladi.",
     group: "kitchen-orders",
   },
   order_display_number_start: {

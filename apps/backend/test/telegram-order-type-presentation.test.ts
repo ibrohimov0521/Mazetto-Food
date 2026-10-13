@@ -45,3 +45,10 @@ test("Telegram labels takeaway without rendering a fake address", () => {
   assert.match(message, /Turi:<\/b> Olib ketish/);
   assert.doesNotMatch(message, /Manzil:/);
 });
+
+test("Telegram never exposes an internal enum for an unknown order type", () => {
+  const message = messageFor("DINE_IN_UNKNOWN");
+
+  assert.match(message, /Turi:<\/b> Noma'lum/);
+  assert.doesNotMatch(message, /DINE_IN_UNKNOWN/);
+});

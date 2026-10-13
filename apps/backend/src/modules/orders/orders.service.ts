@@ -64,7 +64,10 @@ import {
   ensureKitchenReceipt,
   ensureOrderReceipt,
 } from "../receipts/receipt-writer";
-import { allocateDisplayOrderNumber } from "./order-display-number";
+import {
+  allocateDisplayOrderNumber,
+  parseDisplayOrderDate,
+} from "./order-display-number";
 import {
   assertOrderCanChange,
   assertPosCheckoutQuantities,
@@ -169,7 +172,7 @@ export class OrdersService {
     );
   }
 
-  async listPosCatalog(user: AuthenticatedUser) {
+  async listPosCatalog(user: AuthenticatedUser, deviceHardwareId?: string) {
     const branchId = resolveRequiredBranchScope(user);
 
     await assertBranchBelongsToActor(this.prisma, user, branchId);
@@ -277,6 +280,18 @@ export class OrdersService {
      * tayanilmaydi.
      */
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
+    const device = deviceHardwareId?.trim()
+      ? await this.prisma.device.findFirst({
+          where: {
+            hardwareId: deviceHardwareId.trim(),
+            branchId,
+            isActive: true,
+            enrolledAt: { not: null },
+            branch: { tenantId },
+          },
+          select: { id: true },
+        })
+      : null;
     const orderDisplayNumberStart = this.settings
       ? await this.settings.getInt("order_display_number_start", tenantId)
       : 101;
@@ -337,6 +352,7 @@ export class OrdersService {
     return {
       branchId,
       orderDisplayNumberStart,
+      offlineDisplayNumberSuffix: device ? `D${device.id.toUpperCase()}` : null,
       categories,
       products,
       paymentMethods,
@@ -348,6 +364,7 @@ export class OrdersService {
     dto: CreatePosCheckoutDto,
     user: AuthenticatedUser,
     correlationId?: string,
+    deviceHardwareId?: string,
   ) {
     const branchId = resolveRequiredBranchScope(user);
     const employeeId = requireEmployee(user);
@@ -386,6 +403,44 @@ export class OrdersService {
               );
             }
 
+            const offlineDisplayDate = dto.offlineDisplayOrderDate
+              ? parseDisplayOrderDate(dto.offlineDisplayOrderDate.trim())
+              : null;
+            const offlineDisplayNumber = dto.offlineDisplayOrderNumber?.trim();
+            const hasOfflineDisplaySequence =
+              dto.offlineDisplayOrderSequence !== undefined;
+            if (hasOfflineDisplaySequence || offlineDisplayNumber || dto.offlineDisplayOrderDate !== undefined) {
+              const offlineSequence = dto.offlineDisplayOrderSequence;
+              if (
+                !Number.isInteger(offlineSequence) ||
+                offlineSequence! < 1 ||
+                !offlineDisplayNumber ||
+                !offlineDisplayDate ||
+                !deviceHardwareId?.trim()
+              ) {
+                throw new BadRequestException(
+                  "Oflayn chek raqami uchun sana va ro'yxatdan o'tgan terminal kerak.",
+                );
+              }
+              const device = await tx.device.findFirst({
+                where: {
+                  hardwareId: deviceHardwareId.trim(),
+                  branchId,
+                  isActive: true,
+                  enrolledAt: { not: null },
+                  branch: { tenantId },
+                },
+                select: { id: true },
+              });
+              const expectedOfflineDisplayNumber = device
+                ? `${offlineSequence}-D${device.id.toUpperCase()}`
+                : null;
+              if (offlineDisplayNumber !== expectedOfflineDisplayNumber) {
+                throw new BadRequestException(
+                  "Oflayn chek raqami ushbu filialning ro'yxatdan o'tgan terminaliga mos emas.",
+                );
+              }
+            }
             if (!dto.payLater) {
               const enabledPaymentMethods =
                 await this.enabledCashierPaymentMethods(tenantId, tx);
@@ -421,36 +476,45 @@ export class OrdersService {
               : 101;
             const displayOrder = await allocateDisplayOrderNumber(
               tx,
+              tenantId,
               OrderSource.POS,
-              undefined,
+              offlineDisplayDate ?? undefined,
               orderDisplayNumberStart,
             );
             const offlineSequence = dto.offlineDisplayOrderSequence;
+            const offlineNumberToPersist =
+              offlineDisplayNumber ??
+              (Number.isInteger(offlineSequence)
+                ? String(offlineSequence)
+                : null);
             const offlineNumberAvailable = Number.isInteger(offlineSequence)
-              ? !(await tx.order.findFirst({
+              ? offlineNumberToPersist !== null &&
+                !(await tx.order.findFirst({
                   where: {
+                    tenantId,
                     source: OrderSource.POS,
                     displayOrderDate: displayOrder.displayOrderDate,
-                    displayOrderNumber: String(offlineSequence),
+                    displayOrderNumber: offlineNumberToPersist,
                   },
                   select: { id: true },
                 }))
               : false;
+            if (offlineDisplayNumber && !offlineNumberAvailable) {
+              throw new ConflictException(
+                "Oflayn chek raqami ushbu sana uchun oldin ishlatilgan.",
+              );
+            }
             const persistedDisplayOrder =
-              offlineNumberAvailable &&
-              offlineSequence! >= orderDisplayNumberStart
+              offlineNumberAvailable
                 ? {
                     ...displayOrder,
-                    displayOrderSequence: Math.max(
-                      displayOrder.displayOrderSequence,
-                      offlineSequence!,
-                    ),
-                    displayOrderNumber: String(offlineSequence),
+                    displayOrderNumber: offlineNumberToPersist!,
                   }
                 : displayOrder;
 
             const order = await tx.order.create({
               data: {
+                tenantId,
                 branchId,
                 orderNumber: createOrderNumber(),
                 ...persistedDisplayOrder,
@@ -778,12 +842,14 @@ export class OrdersService {
 
         const displayOrder = await allocateDisplayOrderNumber(
           tx,
+          tenantId,
           OrderSource.POS,
           undefined,
           orderDisplayNumberStart,
         );
         const order = await tx.order.create({
           data: {
+            tenantId,
             branchId,
             tableId: dto.tableId ?? null,
             orderNumber: createOrderNumber(),
@@ -1680,9 +1746,7 @@ export class OrdersService {
               refunds: { select: { amount: true } },
             },
           });
-          if (
-            sumNetCollectedPayments(collectedPayments).greaterThan(0)
-          ) {
+          if (sumNetCollectedPayments(collectedPayments).greaterThan(0)) {
             throw new BadRequestException(
               "Buyurtmada qaytarilmagan to'lov bor. Avval tegishli to'lovni qaytaring, keyin buyurtmani bekor qiling.",
             );

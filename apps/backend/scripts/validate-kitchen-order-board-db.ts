@@ -265,8 +265,13 @@ async function createKitchenOrder(
   fixture: Fixture,
   scenario: string,
 ): Promise<{ orderId: string; ticketId: string }> {
+  const branch = await prisma.branch.findUniqueOrThrow({
+    where: { id: fixture.branchId },
+    select: { tenantId: true },
+  });
   const order = await prisma.order.create({
     data: {
+      tenantId: branch.tenantId,
       branchId: fixture.branchId,
       orderNumber: `KITCHEN-${fixture.runId}-${scenario}`,
       source: OrderSource.TELEGRAM,

@@ -96,6 +96,9 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
             findFirst: async (args: { select: Record<string, boolean> }) =>
               "realtimeRevision" in args.select ? branch : { id: "branch-a" },
           },
+          device: {
+            findFirst: async () => ({ id: "device-cuid" }),
+          },
           category: {
             findMany: async (args: { where: Record<string, unknown> }) => {
               reads.categories += 1;
@@ -162,7 +165,12 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
     } as never,
   );
 
-  const snapshot = await service.create("branch-a", owner);
+  const snapshot = await service.create(
+    "branch-a",
+    owner,
+    undefined,
+    "hardware-a",
+  );
   const waiterSnapshot = await service.create("branch-a", {
     ...owner,
     permissions: ["TABLE_VIEW", "MENU_VIEW"],
@@ -195,6 +203,7 @@ test("POS bootstrap returns a branch-bound safe catalog in a repeatable-read sna
     { code: "CASH", name: "Naqd filial", active: true },
   ]);
   assert.equal(snapshot.catalog.orderDisplayNumberStart, 101);
+  assert.equal(snapshot.catalog.offlineDisplayNumberSuffix, "DDEVICE-CUID");
   assert.deepEqual(paymentMethodWhere, {
     OR: [{ branchId: "branch-a" }, { branchId: null }],
   });
@@ -329,6 +338,7 @@ test("kitchen bootstrap returns a bounded, branch-scoped queue without customer 
       orderNumber: "A-101",
       displayOrderNumber: "101",
       source: "POS",
+      shiftId: "shift-cashier",
       type: "DINE_IN",
       isSupplemental: false,
       supplementNumber: null,
@@ -389,10 +399,12 @@ test("kitchen bootstrap returns a bounded, branch-scoped queue without customer 
   assert.equal(snapshot.kitchenPosOrdersEnabled, false);
   assert.equal(kitchenQuery?.take, 251);
   const where = kitchenQuery?.where as {
-    order: { branchId: string; source?: unknown };
+    order: { branchId: string; NOT?: unknown };
   };
   assert.equal(where.order.branchId, "branch-a");
-  assert.deepEqual(where.order.source, { not: OrderSource.POS });
+  assert.deepEqual(where.order.NOT, {
+    source: OrderSource.POS,
+  });
   const select = kitchenQuery?.select as {
     order: { select: Record<string, unknown> };
   };
@@ -410,7 +422,7 @@ test("kitchen bootstrap returns a bounded, branch-scoped queue without customer 
   const enabledSnapshot = await service.create("branch-a", cook, "kitchen");
   assert.equal(enabledSnapshot.kitchenPosOrdersEnabled, true);
   assert.equal(
-    "source" in (kitchenQuery?.where as { order: Record<string, unknown> }).order,
+    "NOT" in (kitchenQuery?.where as { order: Record<string, unknown> }).order,
     false,
   );
   assert.equal(

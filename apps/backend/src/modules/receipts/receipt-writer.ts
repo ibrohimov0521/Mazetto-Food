@@ -20,6 +20,7 @@ export type ReceiptPrintRoute =
   | "CANCELLATION"
   | "REFUND";
 const RECEIPT_NUMBER_ATTEMPTS = 5;
+const RECEIPT_CONTENT_SCHEMA_VERSION = 1;
 // Explicit opt-in remains supported: MAZETTO_DURABLE_PRINT_JOBS === "true". Only an explicit false disables durable jobs.
 const durablePrintJobsEnabled = () =>
   process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
@@ -89,6 +90,13 @@ function routeMatches(
   );
 }
 
+export async function lockReceiptPrintQueue(
+  tx: TransactionClient,
+  receiptId: string,
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`receipt-print-jobs:${receiptId}`}))`;
+}
+
 /** Creates one durable job per active printer configured for this document route. */
 export async function queuePrintJobsForReceipt(
   tx: TransactionClient,
@@ -96,6 +104,7 @@ export async function queuePrintJobsForReceipt(
   options: { allowLocalReprint?: boolean } = {},
 ): Promise<void> {
   if (!durablePrintJobsEnabled()) return;
+  await lockReceiptPrintQueue(tx, receipt.id);
   const route = receiptPrintRoute(receipt.content);
   const payload = options.allowLocalReprint
     ? {
@@ -149,6 +158,7 @@ export async function writeReceiptRow(
       receiptNumber,
       total: order.total,
       content: {
+        schemaVersion: RECEIPT_CONTENT_SCHEMA_VERSION,
         title: "MAZETTO FOOD",
         documentType,
         statusLabel:
@@ -301,6 +311,7 @@ export async function ensureRefundReceipt(
       receiptNumber: await allocateReceiptNumber(tx),
       total: amount.negated(),
       content: {
+        schemaVersion: RECEIPT_CONTENT_SCHEMA_VERSION,
         title: "MAZETTO FOOD",
         documentType: "REFUND",
         statusLabel: "TO'LOV QAYTARILDI",
@@ -328,7 +339,7 @@ function orderTypeLabel(type: OrderType): string {
     case OrderType.TAKEAWAY:
       return "Olib ketish";
     default:
-      return String(type);
+      return "Noma'lum";
   }
 }
 

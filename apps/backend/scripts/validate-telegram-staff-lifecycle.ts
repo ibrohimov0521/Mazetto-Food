@@ -25,6 +25,7 @@ type SentTelegramPayload = {
 };
 type StaffLifecycleFixture = {
   branchId: string;
+  tenantId: string;
   customerId: string;
   customerChatId: string;
   runId: string;
@@ -130,7 +131,7 @@ async function createFixture(prisma: PrismaService): Promise<StaffLifecycleFixtu
     },
   });
 
-  return { branchId: branch.id, customerChatId, customerId: customer.id, runId };
+  return { branchId: branch.id, tenantId: branch.tenantId, customerChatId, customerId: customer.id, runId };
 }
 
 async function proveNewOrderNotification(
@@ -358,6 +359,7 @@ async function createStaffOrder(
   const orderNumber = `STEP16-${fixture.runId}-${scenario}`;
   const order = await prisma.order.create({
     data: {
+      tenantId: fixture.tenantId,
       branchId: fixture.branchId,
       orderNumber,
       source: OrderSource.TELEGRAM,

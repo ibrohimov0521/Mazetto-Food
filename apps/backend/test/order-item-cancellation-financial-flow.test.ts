@@ -4,6 +4,7 @@ import {
   OrderItemStatus,
   OrderState,
   OrderStatus,
+  CashTransactionType,
   PaymentStatus,
   Prisma,
 } from "@prisma/client";
@@ -26,6 +27,7 @@ function createHarness(
   options: {
     paymentCode?: string;
     paymentAmount?: number;
+    cashOnHand?: number;
     previousRefundAmount?: number;
     shiftOpen?: boolean;
     noPayments?: boolean;
@@ -36,6 +38,7 @@ function createHarness(
   const refunds: Record<string, unknown>[] = [];
   const revenues: Record<string, unknown>[] = [];
   const cashTransactions: Record<string, unknown>[] = [];
+  const shiftLedgerTransactions: { type: CashTransactionType; amount: Prisma.Decimal }[] = [];
   const receipts: Record<string, unknown>[] = [];
   const payment = {
     id: "payment-1",
@@ -53,6 +56,29 @@ function createHarness(
       ? [{ amount: new Prisma.Decimal(options.previousRefundAmount) }]
       : ([] as { amount: Prisma.Decimal }[]),
   };
+  const defaultCashSale =
+    options.paymentCode === "CLICK" || options.noPayments
+      ? 0
+      : options.paymentAmount ?? 10000;
+  if (options.cashOnHand !== undefined) {
+    if (options.cashOnHand > 0) {
+      shiftLedgerTransactions.push({
+        type: CashTransactionType.OPENING_BALANCE,
+        amount: new Prisma.Decimal(options.cashOnHand),
+      });
+    }
+  } else if (defaultCashSale > 0) {
+    shiftLedgerTransactions.push({
+      type: CashTransactionType.SALE,
+      amount: new Prisma.Decimal(defaultCashSale),
+    });
+  }
+  if (options.cashOnHand === undefined && options.previousRefundAmount) {
+    shiftLedgerTransactions.push({
+      type: CashTransactionType.REFUND,
+      amount: new Prisma.Decimal(options.previousRefundAmount),
+    });
+  }
   const item = {
     id: "item-1",
     orderId: "order-1",
@@ -113,11 +139,17 @@ function createHarness(
     employee: { findFirst: async () => ({ id: "employee-1" }) },
     shift: {
       updateMany: async () => ({ count: options.shiftOpen === false ? 0 : 1 }),
+      findFirst: async () => ({
+        id: "shift-1",
+        branchId: "branch-1",
+        openingBalance: new Prisma.Decimal(0),
+      }),
       findUnique: async () => ({
         id: "shift-1",
         branchId: "branch-1",
         employeeId: "employee-1",
         status: "OPEN",
+        openingBalance: new Prisma.Decimal(0),
       }),
     },
     order: {
@@ -190,8 +222,13 @@ function createHarness(
       },
     },
     cashTransaction: {
+      findMany: async () => shiftLedgerTransactions,
       create: async (args: { data: Record<string, unknown> }) => {
         cashTransactions.push(args.data);
+        shiftLedgerTransactions.push({
+          type: args.data.type as CashTransactionType,
+          amount: args.data.amount as Prisma.Decimal,
+        });
         return args.data;
       },
     },
@@ -372,4 +409,13 @@ test("item cancellation refuses non-cash refunds and closed shifts before mutati
   await assert.rejects(cancelItem(closedShift.service), /smenasi yopilgan/);
   assert.equal(closedShift.item.status, OrderItemStatus.ACTIVE);
   assert.equal(closedShift.refunds.length, 0);
+});
+
+test("item cancellation refuses a cash refund that would overdraw the shift", async () => {
+  const state = createHarness({ cashOnHand: 2000 });
+
+  await assert.rejects(cancelItem(state.service), /Kassada yetarli naqd pul yo'q/);
+  assert.equal(state.item.status, OrderItemStatus.ACTIVE);
+  assert.equal(state.refunds.length, 0);
+  assert.equal(state.cashTransactions.length, 0);
 });

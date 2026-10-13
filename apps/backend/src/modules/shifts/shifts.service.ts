@@ -40,6 +40,7 @@ import type {
   OpenShiftDto,
 } from "./dto/shift.dto";
 import { countOrdersForShifts } from "./shift-order-count";
+import { calculateCashBalance } from "../cash-register/cash-balance";
 
 @Injectable()
 export class ShiftsService {
@@ -126,7 +127,7 @@ export class ShiftsService {
       orderCount: orderCounts.get(shift.id) ?? 0,
       currentCash:
         shift.status === ShiftStatus.OPEN
-          ? this.calculateCashBalance(
+          ? calculateCashBalance(
               shift.openingBalance,
               transactionsByShift.get(shift.id) ?? [],
             )
@@ -212,7 +213,7 @@ export class ShiftsService {
           where: { shiftId: source.id, branchId: source.branchId },
           select: { amount: true, type: true },
         });
-        const balance = this.calculateCashBalance(
+        const balance = calculateCashBalance(
           source.openingBalance,
           transactions,
         );
@@ -949,7 +950,7 @@ export class ShiftsService {
           where: { shiftId, branchId: shift.branchId },
           select: { amount: true, type: true },
         });
-        const currentCash = this.calculateCashBalance(
+        const currentCash = calculateCashBalance(
           shift.openingBalance,
           cashTransactions,
         );
@@ -1064,7 +1065,7 @@ export class ShiftsService {
     );
     return {
       ...shift,
-      currentCash: this.calculateCashBalance(
+      currentCash: calculateCashBalance(
         shift.openingBalance,
         cashTransactions,
       ),
@@ -1235,7 +1236,7 @@ export class ShiftsService {
         where: { shiftId: current.id, branchId: current.branchId },
         select: { amount: true, type: true },
       });
-      const balance = this.calculateCashBalance(
+      const balance = calculateCashBalance(
         current.openingBalance,
         transactions,
       );
@@ -1837,33 +1838,6 @@ export class ShiftsService {
     }
   }
 
-  private calculateCashBalance(
-    openingBalance: Prisma.Decimal,
-    transactions: { amount: Prisma.Decimal; type: CashTransactionType }[],
-  ) {
-    const hasOpeningTransaction = transactions.some(
-      (transaction) =>
-        transaction.type === CashTransactionType.OPENING ||
-        transaction.type === CashTransactionType.OPENING_BALANCE,
-    );
-    const startingBalance = hasOpeningTransaction
-      ? new Prisma.Decimal(0)
-      : openingBalance;
-
-    return transactions.reduce((balance, transaction) => {
-      const outgoingTypes: CashTransactionType[] = [
-        CashTransactionType.EXPENSE,
-        CashTransactionType.REFUND,
-        CashTransactionType.WITHDRAW,
-        CashTransactionType.CASH_OUT,
-      ];
-      const outgoing = outgoingTypes.includes(transaction.type);
-      return outgoing
-        ? balance.sub(transaction.amount)
-        : balance.add(transaction.amount);
-    }, startingBalance);
-  }
-
   /**
    * Free cash is reconstructed as FIFO source buckets. Every debit consumes
    * the oldest remaining source; the new handover snapshots the exact buckets
@@ -2222,7 +2196,7 @@ export class ShiftsService {
         totals,
         cashTransactions,
       ),
-      currentCash: this.calculateCashBalance(
+      currentCash: calculateCashBalance(
         shift.openingBalance,
         cashTransactions,
       ),

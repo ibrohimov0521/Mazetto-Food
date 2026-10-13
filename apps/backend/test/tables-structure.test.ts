@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BadRequestException, ConflictException } from "@nestjs/common";
+import { Prisma } from "@prisma/client";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { TablesService } from "../src/modules/tables/tables.service";
 
@@ -159,6 +160,30 @@ test("bir vaqtda yaratilgan zallar uchun kodlar bir-biridan farq qiladi", async 
   assert.equal(created[0]?.name, "Asosiy zal");
   assert.notEqual(created[0]?.code, created[1]?.code);
 });
+test("zal kodi unique to'qnashuvida yangi kod bilan qayta urinadi", async () => {
+  const duplicate = new Prisma.PrismaClientKnownRequestError("duplicate", {
+    code: "P2002",
+    clientVersion: "test",
+  });
+  const codes: string[] = [];
+  const service = createService({
+    hall: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        codes.push(String(data.code));
+        if (codes.length === 1) throw duplicate;
+        return data;
+      },
+    },
+  });
+
+  await service.createHall(
+    { branchId: "branch-1", name: "Asosiy zal", sortOrder: 0 },
+    branchManager,
+  );
+
+  assert.equal(codes.length, 2);
+  assert.notEqual(codes[0], codes[1]);
+});
 
 test("stol yaratilganda zal, filial va ko'rsatilgan tartib saqlanadi", async () => {
   const created = { data: undefined as Record<string, unknown> | undefined };
@@ -196,6 +221,37 @@ test("stol yaratilganda zal, filial va ko'rsatilgan tartib saqlanadi", async () 
   assert.equal(createdData.capacity, 6);
   assert.equal(createdData.seats, 6);
   assert.equal(createdData.sortOrder, 9);
+});
+test("stol kodi unique to'qnashuvida tranzaksiyani qayta bajaradi", async () => {
+  const duplicate = new Prisma.PrismaClientKnownRequestError("duplicate", {
+    code: "P2002",
+    clientVersion: "test",
+  });
+  const codes: string[] = [];
+  const service = createService({
+    restaurantTable: {
+      findFirst: async () => null,
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        codes.push(String(data.code));
+        if (codes.length === 1) throw duplicate;
+        return data;
+      },
+    },
+  });
+
+  await service.createTable(
+    {
+      branchId: "branch-1",
+      hallId: "hall-1",
+      name: "Stol 3",
+      number: 3,
+      capacity: 4,
+    },
+    branchManager,
+  );
+
+  assert.equal(codes.length, 2);
+  assert.notEqual(codes[0], codes[1]);
 });
 
 test("buyurtma tarixi bor stol permanent o'chirilmaydi", async () => {

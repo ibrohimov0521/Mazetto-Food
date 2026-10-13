@@ -25,9 +25,9 @@ is important completeness/security, and `P3` is improvement or cleanup.
 | AUD-114 | P1 | Desktop UI supports one fallback host/port while product requires multiple printers | Add discovery/manual multiple printers, roles, readiness, per-printer test and branch assignment |
 | AUD-115 | P1 | Receipt queue shows server errors without an operator-safe recovery explanation | Normalize error responses, job state labels, retry/reassign controls and dead-letter reason; test stale lease recovery |
 | AUD-116 | P2 | Standalone print-agent and Desktop overlap; print-agent defaults to dry run | Make Desktop canonical and deprecate/remove agent, or define exclusive deployment ownership and health |
-| AUD-117 | P1 | No physical printer acceptance has been performed | Test 58/80mm ESC/POS, Uzbek text, long items, cut, duplicate prevention, offline recovery, cancellation and reprint |
-| AUD-118 | P1 | Receipt detail/reprint builds ESC/POS from current order items/payments instead of the immutable `Receipt.content` snapshot | Version the document payload and render only from it; edit an order after issue and prove reprint remains byte-equivalent |
-| AUD-119 | P2 | Completing one of several printer jobs marks the whole receipt `printed=true` | Derive document print state from required route/job outcomes or store per-route status; test one success plus one failure |
+| AUD-117 | P1 | User reports a printer now prints correctly, but exact model/media/interface and mixed-printer acceptance are not recorded | Record device and connection; test 58/80mm ESC/POS, Uzbek text, long items, cut, duplicate prevention, offline recovery, cancellation, reprint, and mixed routes on the actual hardware |
+| AUD-118 | P1 | Receipt details previously showed mutable live order data instead of the immutable `Receipt.content` snapshot | Snapshot schema v1 is now written and detail prefers saved order/items/modifiers/notes/payments; automated tests cover edits, empty refund items, and legacy fallback; retain physical reprint verification |
+| AUD-119 | P2 | Receipt status can misrepresent one of several printer outcomes | Summarize the latest enqueue batch across all targeted printers; surface mixed/failing outcomes, distinguish driver acceptance from physical paper, and test stale earlier reprints |
 
 ### Gate C - Desktop identity and offline completeness
 
@@ -76,32 +76,77 @@ is important completeness/security, and `P3` is improvement or cleanup.
 
 | ID | Priority | Confirmed gap | Required result and acceptance test |
 | --- | --- | --- | --- |
-| AUD-160 | P2 | No automated authenticated browser matrix across roles and responsive sizes | Add Playwright journeys for customer, admin, manager, accountant, cashier, waiter, kitchen and courier |
-| AUD-161 | P2 | Current tests do not include a full isolated order-to-cash-to-print journey | Seed disposable branch/device/printer, execute lifecycle, assert ledger/stock/receipt/jobs/audit, then destroy isolated DB |
+| AUD-160 | P2 | Authenticated browser matrix was missing | Initial Playwright matrix covers SUPER_ADMIN, ADMIN, manager, accountant, cashier, waiter, kitchen and courier at 1440px/390px with mocked APIs, overflow checks and page-error assertions; customer and workflow-specific persistence/keyboard journeys remain open |
+| AUD-161 | P2 | Full isolated order lifecycle acceptance was missing | Disposable 61-migration DB E2E now exercises customer WEB/TELEGRAM and POS order/payment/stock/receipt/print paths, including idempotency and recovery; actual printer output and full browser transaction flows remain separate gates |
 | AUD-162 | P3 | Customer web is not installable/offline | Decided online-only: browsing may use its short in-memory cache, but checkout blocks offline submission with a visible reason and never queues an order locally |
 | AUD-163 | P3 | Courier flow has status/assignment but no routing optimization/proof-of-delivery | Add only after core accounting/printing gates; define photo/signature/privacy retention first |
 
 ### Gate H - restaurant order workflow controls (2026-10-13 request)
 
-These six requirements are implemented in the current audit branch; they remain
-release candidates until the browser/UI acceptance and applicable printer tests
-below are complete. Report each ID separately in the release summary.
+Implementation work for these six requirements is in the current audit branch;
+completion is not certified until each acceptance gate below passes. Report
+each ID separately in the release summary.
 
 | ID | Priority | Requirement | Acceptance test / remaining gate |
 | --- | --- | --- | --- |
 | AUD-164 | P2 | Show order types in Uzbek, not internal English enum names | Verify Zal, Olib ketish, and Yetkazib berish in staff history, kitchen history, Desktop/offline receipts, and Telegram; no raw `DINE_IN` in user-facing output |
-| AUD-165 | P1 | Let an operator enable/disable cashier POS orders in Kitchen; online orders remain managed there, while POS orders still print kitchen tickets | Toggle in System Settings; verify Kitchen list and alerts online/offline, and verify kitchen print remains unchanged |
+| AUD-165 | P1 | Let an operator enable/disable POS-created orders in Kitchen; by default only online WEB/TELEGRAM orders are shown and managed, while kitchen-designated items still print | Toggle in System Settings; verify all POS orders (cashier and waiter table) are hidden by default while WEB/TELEGRAM orders stay visible; enabling includes POS; test list/history/detail, alerts, direct ticket reads/actions with known IDs, transaction recheck, and unchanged kitchen printing |
 | AUD-166 | P1 | Handoff recipient and cancellation note must be optional | Submit handoff and cancel with both fields blank from every supported UI/API path; verify status, audit/history text, and permissions remain correct |
-| AUD-167 | P2 | Configure the first displayed order number in System Settings | Test start at 1 and 101, concurrent creation, web/Telegram/Desktop offline paths, restart, and lowering the value without reusing prior numbers |
-| AUD-168 | P1 | Route products independently to kitchen, customer receipt only, or no printer | Confirm default route, product editor persistence, mixed-order receipt contents, kitchen suppression, Desktop offline parity, and actual printer output; separate bar station remains out of scope |
-| AUD-169 | P2 | Provide predictable keyboard operation for primary actions | Verify Enter confirms only the intended primary action, Escape closes dismissible dialogs, focus order is usable, and text entry/IME/buttons are not hijacked across login, POS, payment, and dialogs |
+| AUD-167 | P2 | Configure the first displayed order number in System Settings | Test start at 1 and 101, independent tenant/source/date sequences and locks, concurrent creation, web/Telegram/Desktop offline paths, restart, changing the start while a terminal is offline, lowering without reusing prior numbers, and a queued sale crossing Tashkent midnight. Preserve terminal-bound labels; derive legacy dates only from queuedAt and reject ambiguous records for reconciliation. Verify printed labels on two physical terminals |
+| AUD-168 | P1 | Route products independently to kitchen, customer receipt only, or no printer | Confirm default route, product editor persistence, mixed-order receipt contents, kitchen suppression, Desktop offline parity, and that route policy is identical before USB, Windows-spooler, and network/IP printer transports; physically test configured printer outputs. Separate bar station remains out of scope |
+| AUD-169 | P2 | Provide predictable keyboard operation for primary actions throughout staff workflows | Verify normal Tab/Shift+Tab focus and native Enter/Space activation, Enter submits login and confirms the intended POS/payment/refund/shift action, Escape closes dismissible dialogs and menus, and text entry/IME/repeated keys never trigger unintended actions; record browser checks per workflow |
 
 Current evidence: automated backend/POS/Desktop tests, typecheck/lint, isolated
 database order-to-cash-to-print E2E, migration checksums, and repository
-validators pass on the audit branch. Browser acceptance for these six flows and
-physical mixed-printer acceptance remain pending; production migration/deploy
-must follow the controlled release gate and verified-backup procedure.
+validators pass on the audit branch. Offline order dates are now preserved when
+a queued sale is replayed after Tashkent midnight; an old queued sale can derive
+its date only from persisted queuedAt, otherwise it fails closed for operator
+reconciliation. Browser acceptance for these six flows, live setting/offline
+refresh acceptance, and physical mixed-printer acceptance remain pending;
+production migration/deploy must follow the controlled release gate and
+verified-backup procedure.
 
+
+## Status of user-requested items (2026-10-13)
+
+This is the current status for AUD-164 through AUD-169 and supersedes older
+progress notes, especially the claim that waiter POS orders remain visible.
+Kitchen now hides all POS-origin orders by default; WEB and TELEGRAM remain visible.
+
+1. **AUD-164, Uzbek order types:** POS/Kitchen history, receipts and reprints,
+   Desktop offline receipts, and Telegram use Uzbek labels. Unknown values use
+   an Uzbek fallback. Automated tests pass; full rendered-screen crawl remains open.
+2. **AUD-165, Kitchen visibility:** System Settings toggles inclusion of POS
+   orders. Off hides cashier and waiter/table POS orders from queue, history,
+   detail, actions, and Desktop projections. WEB/TELEGRAM remain visible and
+   kitchen print routing is unchanged. Backend tests pass; live persistence and
+   offline cache-refresh acceptance remain open.
+3. **AUD-166, optional handoff/cancel text:** Recipient name and operator note
+   are optional; the workflow still records its audit reason code. API tests
+   pass; blank-field live UI acceptance across roles remains open.
+4. **AUD-167, starting number:** Setting supports 1 (default 101), with tenant,
+   source, and Tashkent-date isolation. Migration and concurrency tests pass; a
+   two-terminal offline test asserts distinct provisional labels and replay-once.
+   Registered terminal ID is embedded and backend-validated; unregistered devices
+   cannot sell offline. A server start change from 1 to 101 does not invalidate
+   a previously printed terminal-bound label; a late replay also keeps its
+   original Tashkent date. Legacy commands derive dates from stored queuedAt;
+   commands without trustworthy date metadata fail closed for reconciliation. Physical
+   printer and live workstation verification remain.
+5. **AUD-168, printer routing:** Product default is Kitchen; alternatives are
+   customer receipt only or no print. Backend/Desktop mixed-order and offline
+   tests pass, with routing selected before the configured printer transport.
+   USB, Windows-spooler, and LAN/IP physical printer behavior, plus live
+   persistence, remain open acceptance tests.
+6. **AUD-169, keyboard:** Native button/form activation, guarded Enter, Escape,
+   and modal focus handling are implemented and tested. Real workstation login,
+   payment/refund, shift-close, and focus acceptance remains open; unsafe actions
+   are not globally triggered by Enter.
+
+The full automated pnpm release acceptance passed on 2026-10-13, including all
+app checks, validators, replay of 61 migrations in a disposable database, seed,
+and order-to-cash-to-stock-to-print E2E. Browser/device acceptance and production
+deployment remain separate gates; no production database, push, or deploy changed.
 ## Definition of done for every item
 
 1. Business behavior and permissions are written before implementation.
@@ -118,3 +163,28 @@ Start with `AUD-101`, then `AUD-110` through `AUD-115`, then `AUD-120` through
 `AUD-122`. This order protects data first, makes receipts/printing truthful, and
 only then expands offline operation. Payment providers and wider feature work
 must wait until those foundations pass their acceptance tests.
+
+## UI settings save/reload matrix (2026-10-13)
+
+- Extended the admin-settings browser check to save order-number start 1 and the Kitchen POS visibility toggle, reload the page, and assert both values persist in the UI.
+- The current branch passed Playwright at 1600, 768, 360, and 320px widths.
+- The script uses an isolated mocked API; this verifies the UI request and reload state, not production tenant persistence or Desktop offline-cache propagation.
+- Keep actual tenant/database, permission, offline refresh, workstation, and physical-printer acceptance gates open.
+
+## Immediate setting cache isolation check (2026-10-13)
+
+- Added a two-tenant regression test proving Kitchen visibility and order-number settings read current database values instead of stale Redis entries.
+- Targeted setting test, backend lint/typecheck, and the four-width mocked UI save/reload matrix pass. Real tenant database writes and Desktop offline refresh remain open acceptance gates.
+
+Latest verification: backend suite 719/719 and transient-HTTP retry suite 3/3
+pass after the settings-cache regression was added. This remains audit-branch
+evidence only; production changes have not been made.
+
+## Production migration audit (read-only, 2026-10-13)
+
+- Production has 59 completed migrations, with no failed, unfinished, or rolled-back rows. All 59 checksums match local migration files; there are no production-only migrations.
+- The audit branch has 61 migrations. Only 20261013120000_product_kitchen_printer_routing and 20261013140000_tenant_scoped_order_numbers are pending in production.
+- Read-only migration preconditions found zero orders without a branch tenant and zero duplicate tenant/source/date/display-sequence tuples. Existing printer routes are KITCHEN: 74 and NONE: 4; all four NONE products are beverages.
+- Removed the pending printer migration's blanket NONE-to-KITCHEN update. New products still default to KITCHEN, while existing per-product choices are preserved.
+- A fresh verified production backup was restored to an isolated PostgreSQL 18 database; all 61 migrations applied twice, order/product counts and printer-route distribution were preserved, and the independent rollback restore matched.
+- Full automated release acceptance passed. No production migration, production write, push, or deploy was performed; real printer and workstation acceptance remain open.

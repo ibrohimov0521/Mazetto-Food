@@ -7,7 +7,6 @@ import {
 import {
   KitchenTicketStatus,
   OrderItemStatus,
-  OrderSource,
   OrderStatus,
   Prisma,
 } from "@prisma/client";
@@ -21,6 +20,7 @@ import {
   MAX_ACTIVE_KITCHEN_TICKETS,
   trimKitchenQueue,
 } from "../kitchen/kitchen-queue-window";
+import { kitchenPosOrderVisibilityWhere } from "../kitchen/kitchen-order-visibility";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { SettingsService } from "../settings/settings.service";
@@ -40,6 +40,7 @@ export class RealtimeBootstrapService {
     branchId: string | undefined,
     user: AuthenticatedUser,
     panel?: string,
+    deviceHardwareId?: string,
   ) {
     if (panel !== undefined && panel !== "kitchen") {
       throw new BadRequestException("Snapshot panel noto'g'ri.");
@@ -134,6 +135,19 @@ export class RealtimeBootstrapService {
           },
         });
         if (!branch) throw new NotFoundException("Branch not found");
+        const device =
+          canUsePosCatalog && deviceHardwareId?.trim()
+            ? await tx.device.findFirst({
+                where: {
+                  hardwareId: deviceHardwareId.trim(),
+                  branchId: branch.id,
+                  isActive: true,
+                  enrolledAt: { not: null },
+                  branch: { tenantId: scope.tenantId },
+                },
+                select: { id: true },
+              })
+            : null;
 
         const [categories, products, configuredPaymentMethods, tables, halls] =
           await Promise.all([
@@ -337,9 +351,7 @@ export class RealtimeBootstrapService {
                 where: {
                   order: {
                     branchId: scope.branchId,
-                    ...(!kitchenPosOrdersEnabled
-                      ? { source: { not: OrderSource.POS } }
-                      : {}),
+                    ...kitchenPosOrderVisibilityWhere(kitchenPosOrdersEnabled),
                     status: {
                       notIn: [
                         OrderStatus.SERVED,
@@ -432,10 +444,7 @@ export class RealtimeBootstrapService {
         )
           .filter((method) => {
             const code = method.code.trim().toUpperCase();
-            return (
-              method.isActive &&
-              enabledCashierPaymentMethods.has(code)
-            );
+            return method.isActive && enabledCashierPaymentMethods.has(code);
           })
           .sort((left, right) => left.sortOrder - right.sortOrder)
           .map(({ code, name }) => ({
@@ -462,14 +471,15 @@ export class RealtimeBootstrapService {
           },
           ...(canViewMenu ? { menu: { categories, products } } : {}),
           ...(canViewTables ? { halls, tables } : {}),
-          ...(kitchenQueue
-            ? { kitchenQueue, kitchenPosOrdersEnabled }
-            : {}),
+          ...(kitchenQueue ? { kitchenQueue, kitchenPosOrdersEnabled } : {}),
           ...(canUsePosCatalog
             ? {
                 catalog: {
                   branchId: branch.id,
                   orderDisplayNumberStart,
+                  offlineDisplayNumberSuffix: device
+                    ? `D${device.id.toUpperCase()}`
+                    : null,
                   categories: categories.map(({ id, name }) => ({ id, name })),
                   products,
                   paymentMethods,

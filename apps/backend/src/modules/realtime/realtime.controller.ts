@@ -1,4 +1,4 @@
-import { Controller, Get, Query } from "@nestjs/common";
+import { Controller, Get, Headers, Query } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { PermissionsAny } from "../../common/decorators/permissions.decorator";
@@ -22,8 +22,14 @@ export class RealtimeController {
     @Query("branchId") branchId: string | undefined,
     @Query("panel") panel: string | undefined,
     @CurrentUser() user: AuthenticatedUser,
+    @Headers("x-mazetto-device-id") deviceHardwareId?: string,
   ) {
-    return this.bootstrapService.create(branchId, user, panel);
+    return this.bootstrapService.create(
+      branchId,
+      user,
+      panel,
+      deviceHardwareId,
+    );
   }
 
   @Get("events")

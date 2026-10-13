@@ -487,7 +487,12 @@ export class DesktopGateway {
         url.pathname === "/api/v1/pos/orders" &&
         upstream.ok
       ) {
-        rememberOnlinePosSequence(this.store, responseBody);
+        rememberOnlinePosSequence(
+          this.store,
+          responseBody,
+          identity?.tenantId,
+          identity?.branchId,
+        );
       }
       if (authorization) {
         this.trackBackgroundTask(
@@ -1029,14 +1034,32 @@ export class DesktopGateway {
       localAggregateId &&
       parsedBody
     ) {
+      const offlineDisplayOrderDate = tashkentDateKey(new Date());
       const offlineDisplayOrderSequence = nextOfflineDisplayOrderSequence(
+        this.store,
+        input.cacheScope,
+        context?.tenantId,
+        context?.branchId,
+        offlineDisplayOrderDate,
+      );
+      const offlineCatalog = cachedCatalog(
         this.store,
         input.cacheScope,
         context?.branchId,
       );
+      const offlineDisplayNumberSuffix = stringField(
+        offlineCatalog,
+        "offlineDisplayNumberSuffix",
+      );
       parsedBody = {
         ...parsedBody,
         offlineDisplayOrderSequence,
+        offlineDisplayOrderDate,
+        ...(offlineDisplayNumberSuffix
+          ? {
+              offlineDisplayOrderNumber: `${offlineDisplayOrderSequence}-${offlineDisplayNumberSuffix}`,
+            }
+          : {}),
       };
     }
     const bodyText = parsedBody
@@ -1075,14 +1098,13 @@ export class DesktopGateway {
         : null;
     const localPrintJobs: LocalPrintJobInput[] = [];
     if (offlineOrderSnapshot && localAggregateId) {
-      const documentTypes: Array<"RECEIPT" | "KITCHEN"> =
-        [
-          ...(parsedBody?.payLater === true ? [] : (["RECEIPT"] as const)),
-          ...(Array.isArray(offlineOrderSnapshot.items) &&
-          offlineOrderSnapshot.items.some(isKitchenPrintItem)
-            ? (["KITCHEN"] as const)
-            : []),
-        ];
+      const documentTypes: Array<"RECEIPT" | "KITCHEN"> = [
+        ...(parsedBody?.payLater === true ? [] : (["RECEIPT"] as const)),
+        ...(Array.isArray(offlineOrderSnapshot.items) &&
+        offlineOrderSnapshot.items.some(isKitchenPrintItem)
+          ? (["KITCHEN"] as const)
+          : []),
+      ];
       for (const documentType of documentTypes) {
         localPrintJobs.push({
           logicalKey: localAggregateId + ":" + documentType,
@@ -1238,6 +1260,7 @@ export class DesktopGateway {
         pathname?: string;
         targetUrl?: string;
         localAggregateId?: string;
+        queuedAt?: string;
         queuedEmployeeId?: string | null;
       };
       const hasEmployeeBinding = Object.prototype.hasOwnProperty.call(
@@ -1314,11 +1337,33 @@ export class DesktopGateway {
         );
         return;
       }
+      let replayBody = resolvedBody.value;
+      const replayDto = replayBody ? parseJsonObject(replayBody) : null;
+      if (
+        command.commandType === "pos.order.create" &&
+        replayDto &&
+        numberField(replayDto, "offlineDisplayOrderSequence") !== null &&
+        !stringField(replayDto, "offlineDisplayOrderDate")
+      ) {
+        const queuedAt = stringField(payload, "queuedAt");
+        const queuedDate = queuedAt ? new Date(queuedAt) : null;
+        if (!queuedDate || !Number.isFinite(queuedDate.getTime())) {
+          this.store.markMutationConflict(
+            command.id,
+            "OFFLINE_ORDER_DATE_UNKNOWN: Offline buyurtma sanasini aniqlab bo'lmadi; sotuvni qo'lda tekshiring.",
+          );
+          return;
+        }
+        replayBody = JSON.stringify({
+          ...replayDto,
+          offlineDisplayOrderDate: tashkentDateKey(queuedDate),
+        });
+      }
 
       const response = await this.fetchImpl(resolvedTarget.value, {
         method: payload.method,
         headers,
-        ...(resolvedBody.value ? { body: resolvedBody.value } : {}),
+        ...(replayBody ? { body: replayBody } : {}),
         signal: AbortSignal.timeout(10_000),
       });
       const responseText = await response.text();
@@ -1493,22 +1538,19 @@ export class DesktopGateway {
         : null;
     const printBranchId =
       identity && !identity.isGlobalScope ? identity.branchId : undefined;
-    if (
-      url.pathname === "/desktop/prints/shift-report" &&
-      method === "POST"
-    ) {
+    if (url.pathname === "/desktop/prints/shift-report" && method === "POST") {
       if (!identity || !authScope) {
         this.sendJson(response, 401, {
           success: false,
-          error: { message: "Smena hisobotini chop etish uchun tizimga kiring." },
+          error: {
+            message: "Smena hisobotini chop etish uchun tizimga kiring.",
+          },
         });
         return;
       }
 
       const body = await readBodyLimited(request, 8 * 1024 * 1024);
-      const payload = body
-        ? parseJsonObject(body.toString("utf8"))
-        : null;
+      const payload = body ? parseJsonObject(body.toString("utf8")) : null;
       const shift =
         payload?.shift &&
         typeof payload.shift === "object" &&
@@ -1555,13 +1597,16 @@ export class DesktopGateway {
       ) {
         this.sendJson(response, body ? 400 : 413, {
           success: false,
-          error: { message: "Smena hisobotining chop etish ma'lumoti noto'g'ri." },
+          error: {
+            message: "Smena hisobotining chop etish ma'lumoti noto'g'ri.",
+          },
         });
         return;
       }
       const hasEveryPermission = identity.permissions.includes("*");
       const canViewBranchShifts =
-        hasEveryPermission || identity.permissions.includes("SHIFT_VIEW_BRANCH");
+        hasEveryPermission ||
+        identity.permissions.includes("SHIFT_VIEW_BRANCH");
       const canPrintOwnShift =
         hasEveryPermission ||
         identity.permissions.some((permission) =>
@@ -1570,7 +1615,9 @@ export class DesktopGateway {
       if (!canViewBranchShifts && !canPrintOwnShift) {
         this.sendJson(response, 403, {
           success: false,
-          error: { message: "Smena hisobotini ko'rish yoki chop etish ruxsati kerak." },
+          error: {
+            message: "Smena hisobotini ko'rish yoki chop etish ruxsati kerak.",
+          },
         });
         return;
       }
@@ -3296,7 +3343,9 @@ function optimisticOrder(
     ...(source === "POS"
       ? {
           displayOrderNumber:
-            numberField(body, "offlineDisplayOrderSequence") ?? 101,
+            stringField(body, "offlineDisplayOrderNumber") ??
+            numberField(body, "offlineDisplayOrderSequence") ??
+            101,
         }
       : {}),
     version: numberField(body, "expectedVersion") ?? 0,
@@ -3719,14 +3768,16 @@ function queuedResponseData(
   );
   const total =
     parsedBody?.payLater === true
-      ? finiteAmount(offlineOrderSnapshot?.total) ?? paymentTotal(parsedBody)
+      ? (finiteAmount(offlineOrderSnapshot?.total) ?? paymentTotal(parsedBody))
       : paymentTotal(parsedBody);
   const cashReceived = numberField(parsedBody, "cashReceived") ?? total;
   const offlineNumber =
     stringField(offlineOrderSnapshot, "orderNumber") ??
     offlinePosInternalOrderNumber(command.aggregateId ?? command.id);
   const displayNumber =
-    numberField(parsedBody, "offlineDisplayOrderSequence") ?? 101;
+    stringField(parsedBody, "offlineDisplayOrderNumber") ??
+    numberField(parsedBody, "offlineDisplayOrderSequence") ??
+    101;
   const base = {
     offlineQueued: true,
     queued: true,
@@ -3942,7 +3993,9 @@ function hasConfiguredSystemPrinterRole(
   role: string,
 ): boolean {
   try {
-    const printers = JSON.parse(store.getSetting("system_printers") ?? "[]") as unknown;
+    const printers = JSON.parse(
+      store.getSetting("system_printers") ?? "[]",
+    ) as unknown;
     return (
       Array.isArray(printers) &&
       printers.some(
@@ -3950,7 +4003,9 @@ function hasConfiguredSystemPrinterRole(
           printer &&
           typeof printer === "object" &&
           Array.isArray((printer as Record<string, unknown>).roles) &&
-          ((printer as Record<string, unknown>).roles as unknown[]).includes(role),
+          ((printer as Record<string, unknown>).roles as unknown[]).includes(
+            role,
+          ),
       )
     );
   } catch {
@@ -4904,6 +4959,9 @@ function offlinePosOrderQueueError(
   if (!catalog) {
     return "Oflayn savdo uchun shu filial katalogi keshda yo'q. Internet borida POS menyusini yangilang.";
   }
+  if (!stringField(catalog, "offlineDisplayNumberSuffix")) {
+    return "Oflayn chek raqamlari noyob bo'lishi uchun terminalni ro'yxatdan o'tkazing va POS oynasini internetda yangilang.";
+  }
   const products = Array.isArray(catalog.products) ? catalog.products : [];
   const tables = Array.isArray(catalog.tables) ? catalog.tables : [];
   const source = parseJsonObject(Buffer.from(body).toString("utf8"));
@@ -4958,10 +5016,16 @@ function offlinePosOrderQueueError(
     return "Buyurtma izohi 500 belgidan oshmasligi kerak.";
   }
   if (source.tableId != null) {
-    if (typeof source.tableId !== "string" || !source.tableId || type !== "DINE_IN") {
+    if (
+      typeof source.tableId !== "string" ||
+      !source.tableId ||
+      type !== "DINE_IN"
+    ) {
       return "Stol faqat zal buyurtmasida tanlanadi.";
     }
-    if (!tables.some((table) => isRecord(table) && table.id === source.tableId)) {
+    if (
+      !tables.some((table) => isRecord(table) && table.id === source.tableId)
+    ) {
       return "Tanlangan stol faol filial katalogida topilmadi.";
     }
   }
@@ -4969,7 +5033,8 @@ function offlinePosOrderQueueError(
     if (
       (typeof value !== "number" && typeof value !== "string") ||
       (typeof value === "string" && !value.trim())
-    ) return null;
+    )
+      return null;
     const amount = Number(value);
     if (!Number.isFinite(amount) || amount < 0) return null;
     const raw = amount * 100;
@@ -4985,8 +5050,14 @@ function offlinePosOrderQueueError(
     const productId = item ? stringField(item, "productId") : null;
     const quantity = item ? finiteAmount(item.quantity) : null;
     const fail = (message: string) =>
-      (index + 1) + "-mahsulot " + message + " Oflayn savdo navbatga olinmadi.";
-    if (!item || !productId || quantity === null || quantity <= 0 || quantity > 99) {
+      index + 1 + "-mahsulot " + message + " Oflayn savdo navbatga olinmadi.";
+    if (
+      !item ||
+      !productId ||
+      quantity === null ||
+      quantity <= 0 ||
+      quantity > 99
+    ) {
       return fail("ma'lumoti yaroqsiz.");
     }
     if (
@@ -5006,17 +5077,18 @@ function offlinePosOrderQueueError(
       product.isAvailable === false ||
       !stringField(product, "name")
     ) {
-      return fail("faol filial katalogida topilmadi. Internet borida menyuni yangilang.");
+      return fail(
+        "faol filial katalogida topilmadi. Internet borida menyuni yangilang.",
+      );
     }
     const variantId = stringField(item, "variantId");
     const variants = Array.isArray(product.variants) ? product.variants : [];
     const variant = variantId
-      ? variants.find((candidate) => isRecord(candidate) && candidate.id === variantId)
+      ? variants.find(
+          (candidate) => isRecord(candidate) && candidate.id === variantId,
+        )
       : null;
-    if (
-      variantId &&
-      (!isRecord(variant) || variant.isAvailable === false)
-    ) {
+    if (variantId && (!isRecord(variant) || variant.isAvailable === false)) {
       return fail("varianti katalogda topilmadi.");
     }
     const unitCents = cents(
@@ -5032,7 +5104,8 @@ function offlinePosOrderQueueError(
     }
     const links = Array.isArray(product.modifiers) ? product.modifiers : [];
     const requested = Array.isArray(item.modifiers) ? item.modifiers : [];
-    if (requested.length > 12) return fail("12 tadan ortiq qo'shimcha tanlab bo'lmaydi.");
+    if (requested.length > 12)
+      return fail("12 tadan ortiq qo'shimcha tanlab bo'lmaydi.");
 
     const selected = new Map<string, number>();
     let modifierCents = 0;
@@ -5048,9 +5121,10 @@ function offlinePosOrderQueueError(
             ? finiteAmount(rawQuantity)
             : null;
       const link = modifierId
-        ? links.find((candidate) =>
-            isRecord(candidate) &&
-            recordField(candidate, "modifier")?.id === modifierId,
+        ? links.find(
+            (candidate) =>
+              isRecord(candidate) &&
+              recordField(candidate, "modifier")?.id === modifierId,
           )
         : null;
       const modifier = isRecord(link) ? recordField(link, "modifier") : null;
@@ -5080,8 +5154,7 @@ function offlinePosOrderQueueError(
       if (!isRecord(link)) return fail("qo'shimcha sozlamalari yaroqsiz.");
       const modifier = recordField(link, "modifier");
       const modifierId = stringField(modifier, "id");
-      const minimum =
-        link.minSelect == null ? 0 : finiteAmount(link.minSelect);
+      const minimum = link.minSelect == null ? 0 : finiteAmount(link.minSelect);
       const maximum =
         link.maxSelect == null ? null : finiteAmount(link.maxSelect);
       if (
@@ -5103,7 +5176,9 @@ function offlinePosOrderQueueError(
         selectedQuantity < requiredMinimum ||
         (maximum !== null && selectedQuantity > maximum)
       ) {
-        return fail("majburiy yoki ruxsat etilgan qo'shimcha miqdoriga mos emas.");
+        return fail(
+          "majburiy yoki ruxsat etilgan qo'shimcha miqdoriga mos emas.",
+        );
       }
     }
 
@@ -5232,8 +5307,7 @@ function buildOfflineOrderSnapshot(
       id: `${localOrderId}-item-${index + 1}`,
       productId,
       productName: stringField(productRecord, "name") ?? "Mahsulot",
-      printerRouting:
-        stringField(productRecord, "printerRouting") ?? "KITCHEN",
+      printerRouting: stringField(productRecord, "printerRouting") ?? "KITCHEN",
       variantName: stringField(isRecord(variant) ? variant : null, "name"),
       quantity: quantity.toString(),
       ...(unitPrice !== null ? { unitPrice: unitPrice.toFixed(2) } : {}),
@@ -5257,7 +5331,10 @@ function buildOfflineOrderSnapshot(
   const table = tables.find(
     (candidate) => isRecord(candidate) && candidate.id === tableId,
   );
-  const offlineNumber = numberField(body, "offlineDisplayOrderSequence") ?? 101;
+  const offlineNumber =
+    stringField(body, "offlineDisplayOrderNumber") ??
+    numberField(body, "offlineDisplayOrderSequence") ??
+    101;
   return {
     id: localOrderId,
     orderNumber: offlinePosInternalOrderNumber(localOrderId),
@@ -5335,8 +5412,7 @@ function buildOfflinePrintDocument(
   const items = Array.isArray(order.items)
     ? order.items
         .filter(
-          (value) =>
-            documentType !== "KITCHEN" || isKitchenPrintItem(value),
+          (value) => documentType !== "KITCHEN" || isKitchenPrintItem(value),
         )
         .map((value) => {
           const item = isRecord(value) ? value : {};
@@ -5415,7 +5491,7 @@ function offlineOrderTypeLabel(type: string | null): string {
     case "DELIVERY":
       return "Yetkazib berish";
     default:
-      return type ?? "";
+      return "Noma'lum";
   }
 }
 
@@ -5433,9 +5509,10 @@ function offlinePosInternalOrderNumber(localOrderId: string): string {
 function nextOfflineDisplayOrderSequence(
   store: DesktopStore,
   authScope: string,
+  tenantId?: string,
   branchId?: string,
+  today = tashkentDateKey(new Date()),
 ): number {
-  const today = tashkentDateKey(new Date());
   const catalog = cachedCatalog(store, authScope, branchId);
   const configuredStart = numberField(catalog, "orderDisplayNumberStart");
   const startingSequence =
@@ -5446,7 +5523,7 @@ function nextOfflineDisplayOrderSequence(
       ? configuredStart
       : 101;
   const baseline = startingSequence - 1;
-  const settingKey = `pos-sequence:${today}`;
+  const settingKey = posSequenceSettingKey(tenantId, branchId, today);
   const savedValue = store.getSetting(settingKey);
   const parsedSavedSequence = Number(savedValue ?? baseline);
   const savedSequence =
@@ -5468,6 +5545,8 @@ function nextOfflineDisplayOrderSequence(
 function rememberOnlinePosSequence(
   store: DesktopStore,
   responseBody: string,
+  tenantId?: string,
+  branchId?: string,
 ): void {
   const response = parseJsonObject(responseBody);
   const data = recordField(response, "data") ?? response;
@@ -5481,12 +5560,25 @@ function rememberOnlinePosSequence(
   const sequence =
     numberField(order, "displayOrderSequence") ?? numberFromLabel;
   if (!Number.isInteger(sequence) || sequence < 1) return;
-  const key = `pos-sequence:${dateKey}`;
+  const key = posSequenceSettingKey(tenantId, branchId, dateKey);
   const savedValue = store.getSetting(key);
   const saved = savedValue === null ? null : Number(savedValue);
   if (saved === null || !Number.isInteger(saved) || sequence > saved) {
     store.setSetting(key, String(sequence));
   }
+}
+
+function posSequenceSettingKey(
+  tenantId: string | undefined,
+  branchId: string | undefined,
+  dateKey: string,
+): string {
+  const scope = tenantId
+    ? `tenant:${tenantId}`
+    : branchId
+      ? `branch:${branchId}`
+      : "global";
+  return `pos-sequence:${scope}:${dateKey}`;
 }
 
 function maxPosDisplaySequence(

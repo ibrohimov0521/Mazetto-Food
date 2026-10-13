@@ -94,6 +94,7 @@ test("kitchen ticket goes only to printers explicitly assigned the kitchen role"
     { id: "kitchen", type: "THERMAL", metadata: { printRoles: ["KITCHEN"] } },
   ];
   const tx = {
+    $executeRaw: async () => 1,
     printer: { findMany: async () => printers },
     printJob: {
       create: async ({ data }: { data: { printerId: string | null } }) =>
@@ -173,6 +174,7 @@ test("receipt queues retain jobs for active offline printers too", async () => {
     },
   ];
   const tx = {
+    $executeRaw: async () => 1,
     printer: {
       findMany: async (args: { where: Record<string, unknown> }) => {
         printerFilter = args.where;

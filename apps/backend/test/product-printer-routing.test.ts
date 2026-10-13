@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import "reflect-metadata";
 import { Prisma } from "@prisma/client";
@@ -213,4 +214,13 @@ test("kitchen receipt omits receipt-only products while keeping kitchen items", 
     (receiptContent.items as Array<{ name: string }>).map(({ name }) => name),
     ["Lavash"],
   );
+});
+
+test("printer routing migration changes the default without rewriting existing selections", () => {
+  const migration = readFileSync(
+    new URL("../prisma/migrations/20261013120000_product_kitchen_printer_routing/migration.sql", import.meta.url),
+    "utf8",
+  );
+  assert.match(migration, /ALTER COLUMN "printerRouting" SET DEFAULT 'KITCHEN'/);
+  assert.doesNotMatch(migration, /UPDATE\s+"products"/i);
 });

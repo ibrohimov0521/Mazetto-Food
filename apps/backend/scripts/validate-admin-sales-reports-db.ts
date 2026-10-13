@@ -298,8 +298,13 @@ async function createPaidOrder(
   },
 ): Promise<void> {
   const status = input.status ?? OrderStatus.CONFIRMED;
+  const branch = await prisma.branch.findUniqueOrThrow({
+    where: { id: input.branchId },
+    select: { tenantId: true },
+  });
   const order = await prisma.order.create({
     data: {
+      tenantId: branch.tenantId,
       branchId: input.branchId,
       shiftId: input.shiftId ?? null,
       orderNumber: input.orderNumber,
@@ -341,8 +346,13 @@ async function createPaidOrder(
 }
 
 async function createPendingOrder(prisma: PrismaService, branchId: string, orderNumber: string): Promise<void> {
+  const branch = await prisma.branch.findUniqueOrThrow({
+    where: { id: branchId },
+    select: { tenantId: true },
+  });
   await prisma.order.create({
     data: {
+      tenantId: branch.tenantId,
       branchId,
       orderNumber,
       source: OrderSource.WEB,

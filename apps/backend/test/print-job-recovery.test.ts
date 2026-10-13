@@ -396,3 +396,70 @@ test("driver-submitted print jobs cannot be automatically retried", async () => 
     /Completed print job cannot be retried/,
   );
 });
+
+test("parallel print queue recovery creates only one job per receipt", async () => {
+  const lockTails = new Map<string, Promise<void>>();
+  let createdJobs = 0;
+
+  const acquire = async (key: string): Promise<() => void> => {
+    const previous = lockTails.get(key) ?? Promise.resolve();
+    let release!: () => void;
+    const current = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    lockTails.set(key, current);
+    await previous;
+    return () => {
+      release();
+      if (lockTails.get(key) === current) lockTails.delete(key);
+    };
+  };
+
+  const service = new ReceiptsService({
+    branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    receipt: {
+      findMany: async () => [
+        {
+          id: "receipt-recovery-race",
+          branchId: "branch-1",
+          content: { documentType: "RECEIPT" },
+        },
+      ],
+    },
+    printJob: { findMany: async () => [] },
+    $transaction: async (callback: (tx: Record<string, unknown>) => Promise<unknown>) => {
+      const held = new Set<string>();
+      const releases: Array<() => void> = [];
+      const tx = {
+        $executeRaw: async (_strings: TemplateStringsArray, ...values: unknown[]) => {
+          const key = String(values[0]);
+          if (!held.has(key)) {
+            held.add(key);
+            releases.push(await acquire(key));
+          }
+          return 1;
+        },
+        printJob: {
+          findFirst: async () =>
+            createdJobs > 0 ? { id: "recovered-job" } : null,
+          create: async () => {
+            createdJobs += 1;
+          },
+        },
+        printer: { findMany: async () => [] },
+      };
+      try {
+        return await callback(tx);
+      } finally {
+        releases.reverse().forEach((release) => release());
+      }
+    },
+  } as never);
+
+  await Promise.all([
+    service.listPrintJobs({} as never, actor),
+    service.listPrintJobs({} as never, actor),
+  ]);
+
+  assert.equal(createdJobs, 1);
+});

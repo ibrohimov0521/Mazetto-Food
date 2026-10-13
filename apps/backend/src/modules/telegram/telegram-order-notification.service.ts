@@ -1110,7 +1110,7 @@ export class TelegramOrderNotificationService {
       return "Olib ketish";
     }
 
-    return this.escapeHtml(type);
+    return "Noma'lum";
   }
 
   private paymentMethodLabel(paymentMethod: string | null): string {

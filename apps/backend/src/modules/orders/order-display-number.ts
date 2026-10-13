@@ -13,8 +13,25 @@ type SequenceRow = {
 
 const tashkentTimeZone = "Asia/Tashkent";
 
+export function parseDisplayOrderDate(
+  dateText: string,
+  now = new Date(),
+): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) return null;
+  const date = new Date(`${dateText}T12:00:00.000Z`);
+  if (
+    Number.isNaN(date.getTime()) ||
+    date.toISOString().slice(0, 10) !== dateText ||
+    dateText > formatTashkentDate(now)
+  ) {
+    return null;
+  }
+  return date;
+}
+
 export async function allocateDisplayOrderNumber(
   tx: TransactionClient,
+  tenantId: string,
   source: OrderSource,
   now = new Date(),
   startingSequence = 101,
@@ -22,12 +39,13 @@ export async function allocateDisplayOrderNumber(
   const displayDateText = formatTashkentDate(now);
   const displayOrderDate = new Date(`${displayDateText}T00:00:00.000Z`);
 
-  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`order-display:${source}:${displayDateText}`}))`;
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`order-display:${tenantId}:${source}:${displayDateText}`}))`;
 
   const rows = await tx.$queryRaw<SequenceRow[]>`
     SELECT COALESCE(MAX("displayOrderSequence"), ${startingSequence - 1}) AS "sequence"
     FROM "orders"
-    WHERE "source" = CAST(${source} AS "OrderSource")
+    WHERE "tenantId" = ${tenantId}
+      AND "source" = CAST(${source} AS "OrderSource")
       AND "displayOrderDate" = ${displayOrderDate}
   `;
   const currentSequence = Math.max(

@@ -58,6 +58,13 @@ try {
   await admin.query(`CREATE DATABASE "${databaseName}"`);
   run(["--filter", "backend", "prisma:generate"]);
   run(["--filter", "backend", "prisma:migrate:deploy"]);
+  run([
+    "--filter",
+    "backend",
+    "exec",
+    "tsx",
+    "scripts/validate-order-display-numbers.ts",
+  ]);
   run(["--filter", "backend", "exec", "prisma", "db", "seed"]);
   run([
     "--filter",

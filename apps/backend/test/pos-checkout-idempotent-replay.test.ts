@@ -10,6 +10,106 @@ import {
   createPosIdempotencyKey,
 } from "../src/modules/orders/order-rules";
 
+test("offline POS display labels are bound to the enrolled branch device", async () => {
+  const actor: AuthenticatedUser = {
+    id: "user-1",
+    employeeId: "employee-1",
+    branchId: "branch-1",
+    roles: ["CASHIER"],
+    permissions: ["POS_USE"],
+  };
+  let deviceLookups = 0;
+  const transaction = {
+    branch: {
+      findUnique: async () => ({ tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "branch-1" }),
+    },
+    employee: { findFirst: async () => ({ id: "employee-1" }) },
+    paymentOperation: { findUnique: async () => null },
+    device: {
+      findFirst: async () => {
+        deviceLookups += 1;
+        return { id: "device-cuid" };
+      },
+    },
+  };
+  const prisma = {
+    $transaction: async (
+      callback: (tx: typeof transaction) => Promise<unknown>,
+    ) => callback(transaction),
+  };
+  const service = new OrdersService(prisma as never, {} as never, {} as never);
+
+  await assert.rejects(
+    service.createPosCheckout(
+      {
+        idempotencyKey: "offline-device-label",
+        offlineDisplayOrderSequence: 5,
+        offlineDisplayOrderDate: "2026-10-13",
+        offlineDisplayOrderNumber: "5-DFOREIGN-DEVICE",
+        items: [{ productId: "product-1", quantity: 1 }],
+      },
+      actor,
+      undefined,
+      "registered-hardware-id",
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof BadRequestException);
+      assert.match(error.message, /ro'yxatdan o'tgan terminaliga mos emas/);
+      return true;
+    },
+  );
+  assert.equal(deviceLookups, 1);
+});
+
+test("legacy unsuffixed offline POS numbers are rejected", async () => {
+  const actor: AuthenticatedUser = {
+    id: "user-1",
+    employeeId: "employee-1",
+    branchId: "branch-1",
+    roles: ["CASHIER"],
+    permissions: ["POS_USE"],
+  };
+  let deviceLookups = 0;
+  const transaction = {
+    branch: {
+      findUnique: async () => ({ tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "branch-1" }),
+    },
+    employee: { findFirst: async () => ({ id: "employee-1" }) },
+    paymentOperation: { findUnique: async () => null },
+    device: {
+      findFirst: async () => {
+        deviceLookups += 1;
+        return { id: "device-cuid" };
+      },
+    },
+  };
+  const prisma = {
+    $transaction: async (
+      callback: (tx: typeof transaction) => Promise<unknown>,
+    ) => callback(transaction),
+  };
+  const service = new OrdersService(prisma as never, {} as never, {} as never);
+
+  await assert.rejects(
+    service.createPosCheckout(
+      {
+        idempotencyKey: "legacy-offline-label",
+        offlineDisplayOrderSequence: 5,
+        items: [{ productId: "product-1", quantity: 1 }],
+      },
+      actor,
+    ),
+    (error: unknown) => {
+      assert.ok(error instanceof BadRequestException);
+      assert.match(error.message, /ro'yxatdan o'tgan terminal kerak/);
+      return true;
+    },
+  );
+  assert.equal(deviceLookups, 0);
+});
+
 test("disabled payment methods are rejected before a new POS order is created", async () => {
   const actor: AuthenticatedUser = {
     id: "user-1",

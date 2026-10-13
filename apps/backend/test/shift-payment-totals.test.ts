@@ -1,19 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CashTransactionType, Prisma } from "@prisma/client";
+import { calculateCashBalance } from "../src/modules/cash-register/cash-balance";
 import { ShiftsService } from "../src/modules/shifts/shifts.service";
 
 test("legacy OPENING ledger rows are included once in the current cash balance", () => {
-  const service = new ShiftsService({} as never);
-  const calculate = (
-    service as unknown as {
-      calculateCashBalance: (
-        openingBalance: Prisma.Decimal,
-        cashTransactions: { amount: Prisma.Decimal; type: CashTransactionType }[],
-      ) => Prisma.Decimal;
-    }
-  ).calculateCashBalance.bind(service);
-  const currentCash = calculate(new Prisma.Decimal(100000), [
+  const currentCash = calculateCashBalance(new Prisma.Decimal(100000), [
     { amount: new Prisma.Decimal(100000), type: CashTransactionType.OPENING },
     { amount: new Prisma.Decimal(25000), type: CashTransactionType.SALE },
     { amount: new Prisma.Decimal(10000), type: CashTransactionType.EXPENSE },

@@ -48,6 +48,24 @@ type SentTelegramPayload = {
   };
 };
 
+function tashkentDateKey(value: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const part = (type: string) =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function shiftTashkentDateKey(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 const sentTelegramPayloads: SentTelegramPayload[] = [];
 
 globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
@@ -287,7 +305,21 @@ function createServices(prisma: PrismaService) {
   };
   const branchesService = new BranchesService(prisma);
   const inventoryService = new InventoryService(prisma);
-  const kitchenService = new KitchenService(prisma, gateway as never);
+  const kitchenSettings = {
+    getBool: async (key: string, tenantId: string, client = prisma) => {
+      if (key !== "kitchen_pos_orders_enabled") return false;
+      const setting = await client.setting.findUnique({
+        where: { tenantId_key: { tenantId, key } },
+        select: { value: true },
+      });
+      return setting?.value === "true";
+    },
+  };
+  const kitchenService = new KitchenService(
+    prisma,
+    gateway as never,
+    kitchenSettings as never,
+  );
   const ordersService = new OrdersService(
     prisma,
     inventoryService,
@@ -364,6 +396,20 @@ async function createFixture(prisma: PrismaService) {
       sortOrder: -Number(runId.slice(-8)),
     },
   });
+  const offlineDevices = await Promise.all(
+    [1, 2].map((index) =>
+      prisma.device.create({
+        data: {
+          branchId: branch.id,
+          name: `STEP 8 POS terminal ${index}`,
+          type: "POS_TERMINAL",
+          hardwareId: `STEP8-${runId}-${index}`,
+          enrolledAt: new Date(),
+          isActive: true,
+        },
+      }),
+    ),
+  );
   const warehouse = await prisma.warehouse.create({
     data: {
       branchId: branch.id,
@@ -590,6 +636,7 @@ async function createFixture(prisma: PrismaService) {
 
   return {
     branch,
+    offlineDevices,
     warehouse,
     burger,
     configurable,
@@ -701,11 +748,24 @@ async function provePosDineInPayLaterSettlement(
       "KITCHEN_STATUS_UPDATE",
     ],
   };
+  // The terminal cached start=1 before the server setting moved to its default 101.
+  const offlineSequence = 1;
+  const firstOfflineDevice = fixture.offlineDevices[0]!;
+  const secondOfflineDevice = fixture.offlineDevices[1]!;
+  const offlineDate = tashkentDateKey(new Date());
+  const previousOfflineDate = shiftTashkentDateKey(offlineDate, -1);
+  const firstOfflineLabel =
+    `${offlineSequence}-D${firstOfflineDevice.id.toUpperCase()}`;
+  const secondOfflineLabel =
+    `${offlineSequence}-D${secondOfflineDevice.id.toUpperCase()}`;
   const checkout = await ordersService.createPosCheckout(
     {
       idempotencyKey: `step8-pos-dine-in-pay-later-${fixture.runId}`,
       type: "DINE_IN",
       payLater: true,
+      offlineDisplayOrderSequence: offlineSequence,
+      offlineDisplayOrderDate: offlineDate,
+      offlineDisplayOrderNumber: firstOfflineLabel,
       items: [
         {
           productId: fixture.lavash.id,
@@ -715,6 +775,96 @@ async function provePosDineInPayLaterSettlement(
       ],
     },
     actor,
+    undefined,
+    firstOfflineDevice.hardwareId!,
+  );
+  const firstDisplaySequence = checkout.order.displayOrderSequence;
+  if (firstDisplaySequence === null) {
+    throw new Error("POS order did not receive a display sequence");
+  }
+  assert.equal(checkout.order.displayOrderNumber, firstOfflineLabel);
+  await assert.rejects(
+    () =>
+      ordersService.createPosCheckout(
+        {
+          idempotencyKey: `step8-pos-same-terminal-duplicate-${fixture.runId}`,
+          type: "DINE_IN",
+          payLater: true,
+          offlineDisplayOrderSequence: offlineSequence,
+          offlineDisplayOrderDate: offlineDate,
+          offlineDisplayOrderNumber: firstOfflineLabel,
+          items: [
+            {
+              productId: fixture.lavash.id,
+              variantId: fixture.lavash.variants[0]!.id,
+              quantity: 1,
+            },
+          ],
+        },
+        actor,
+        undefined,
+        firstOfflineDevice.hardwareId!,
+      ),
+    /Oflayn chek raqami ushbu sana uchun oldin ishlatilgan/,
+  );
+  const otherTerminalOrder = await ordersService.createPosCheckout(
+    {
+      idempotencyKey: `step8-pos-duplicate-offline-number-${fixture.runId}`,
+      type: "DINE_IN",
+      payLater: true,
+      offlineDisplayOrderSequence: offlineSequence,
+      offlineDisplayOrderNumber: secondOfflineLabel,
+      offlineDisplayOrderDate: offlineDate,
+      items: [
+        {
+          productId: fixture.lavash.id,
+          variantId: fixture.lavash.variants[0]!.id,
+          quantity: 1,
+        },
+      ],
+    },
+    actor,
+    undefined,
+    secondOfflineDevice.hardwareId!,
+  );
+  assert.ok(
+    otherTerminalOrder.order.displayOrderSequence! >
+      firstDisplaySequence,
+    "two enrolled terminals with the same local sequence must receive distinct server sequences",
+  );
+  assert.notEqual(
+    otherTerminalOrder.order.displayOrderSequence,
+    firstDisplaySequence,
+  );
+  assert.equal(otherTerminalOrder.order.displayOrderNumber, secondOfflineLabel);
+  assert.notEqual(
+    checkout.order.displayOrderNumber,
+    otherTerminalOrder.order.displayOrderNumber,
+  );
+  const nextDayOfflineOrder = await ordersService.createPosCheckout(
+    {
+      idempotencyKey: `step8-pos-next-day-terminal-${fixture.runId}`,
+      type: "DINE_IN",
+      payLater: true,
+      offlineDisplayOrderSequence: offlineSequence,
+      offlineDisplayOrderDate: previousOfflineDate,
+      offlineDisplayOrderNumber: firstOfflineLabel,
+      items: [
+        {
+          productId: fixture.lavash.id,
+          variantId: fixture.lavash.variants[0]!.id,
+          quantity: 1,
+        },
+      ],
+    },
+    actor,
+    undefined,
+    firstOfflineDevice.hardwareId!,
+  );
+  assert.equal(nextDayOfflineOrder.order.displayOrderNumber, firstOfflineLabel);
+  assert.equal(
+    nextDayOfflineOrder.order.displayOrderDate?.toISOString().slice(0, 10),
+    previousOfflineDate,
   );
   const orderId = checkout.order.id;
   assert.equal(checkout.payment.method, "PENDING");
@@ -752,6 +902,23 @@ async function provePosDineInPayLaterSettlement(
   const ticket = await prisma.kitchenTicket.findFirstOrThrow({
     where: { orderId },
     select: { id: true },
+  });
+  await assert.rejects(
+    () => kitchenService.acceptTicket(ticket.id, actor),
+    /Oshxona chiptasi topilmadi/,
+    "POS ticket must stay hidden from kitchen management by default",
+  );
+  assert.equal(
+    (await prisma.kitchenTicket.findUniqueOrThrow({ where: { id: ticket.id } }))
+      .status,
+    KitchenTicketStatus.NEW,
+  );
+  await prisma.setting.create({
+    data: {
+      tenantId: fixture.branch.tenantId,
+      key: "kitchen_pos_orders_enabled",
+      value: "true",
+    },
   });
   await kitchenService.acceptTicket(ticket.id, actor);
   await kitchenService.startTicket(ticket.id, actor);
@@ -1033,6 +1200,52 @@ async function proveOrderCashStockPrint(
     0,
     "rejected shifts must not create refunds",
   );
+
+  await prisma.cashTransaction.create({
+    data: {
+      branchId: fixture.branch.id,
+      shiftId: fixture.shift.id,
+      employeeId: fixture.employee.id,
+      orderId: paidOrder.id,
+      createdById: refundActor.id,
+      type: "CASH_OUT",
+      amount: paidOrder.total,
+      reason: "Step 8 exhaust drawer before refund test",
+    },
+  });
+  await assert.rejects(
+    ordersService.updateItem(
+      paidOrder.id,
+      item.id,
+      cancellationDto,
+      refundActor,
+      cancellationContext(fixture.shift.id, "insufficient-cash"),
+    ),
+    /Kassada yetarli naqd pul yo'q/,
+    "cash refund must be rejected when the open shift drawer is empty",
+  );
+  assert.equal(
+    (await prisma.orderItem.findUniqueOrThrow({ where: { id: item.id } }))
+      .status,
+    OrderItemStatus.ACTIVE,
+    "insufficient drawer cash must not cancel the item",
+  );
+  assert.equal(
+    await prisma.paymentRefund.count({ where: { orderItemId: item.id } }),
+    0,
+    "insufficient drawer cash must not create a refund",
+  );
+  await prisma.cashTransaction.create({
+    data: {
+      branchId: fixture.branch.id,
+      shiftId: fixture.shift.id,
+      employeeId: fixture.employee.id,
+      createdById: refundActor.id,
+      type: "CASH_IN",
+      amount: paidOrder.total,
+      reason: "Step 8 restore drawer after refund test",
+    },
+  });
 
   await ordersService.updateItem(
     paidOrder.id,

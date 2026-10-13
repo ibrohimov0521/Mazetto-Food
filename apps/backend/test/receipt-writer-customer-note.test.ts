@@ -52,6 +52,7 @@ async function writeOrderNote(
   } as unknown as OrderForReceipt;
 
   await writeReceiptRow(tx as never, order);
+  assert.equal(receiptContent?.schemaVersion, 1);
   return receiptContent?.orderNotes;
 }
 

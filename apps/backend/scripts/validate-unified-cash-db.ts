@@ -231,6 +231,7 @@ async function main() {
     ) => {
       const order = await prisma.order.create({
         data: {
+          tenantId: branch.tenantId,
           branchId: branch.id,
           source: OrderSource.WEB,
           type,
@@ -290,6 +291,7 @@ async function main() {
     assert.equal(await balance(), 10000);
     const unpaidHallOrder = await prisma.order.create({
       data: {
+        tenantId: branch.tenantId,
         branchId: branch.id,
         shiftId: sourceShift.id,
         orderNumber: "QA" + crypto.randomUUID(),
@@ -823,6 +825,7 @@ async function main() {
     assert.ok(receiver.employeeId);
     const diningOrder = await prisma.order.create({
       data: {
+        tenantId: branch.tenantId,
         branchId: branch.id,
         source: OrderSource.POS,
         type: "DINE_IN",

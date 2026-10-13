@@ -153,12 +153,14 @@ export class CustomerOrderEngineService {
             const orderSource = options?.source ?? OrderSource.WEB;
             const displayOrder = await allocateDisplayOrderNumber(
               tx,
+              customer.tenantId,
               orderSource,
               undefined,
               orderDisplayNumberStart,
             );
             const order = await tx.order.create({
               data: {
+                tenantId: customer.tenantId,
                 branchId: dto.branchId,
                 orderNumber: createBusinessOrderNumber(
                   options?.orderNumberPrefix ?? "WEB",

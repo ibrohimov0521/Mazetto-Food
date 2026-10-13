@@ -26,7 +26,9 @@ loadEnvironmentFile();
 type Fixture = {
   runId: string;
   branchId: string;
+  tenantId: string;
   otherBranchId: string;
+  otherTenantId: string;
   cashier: AuthenticatedUser;
   otherCashier: AuthenticatedUser;
   productId: string;
@@ -92,6 +94,7 @@ async function main(): Promise<void> {
 
     const legacyOrder = await prisma.order.create({
       data: {
+        tenantId: fixture.tenantId,
         branchId: fixture.branchId,
         orderNumber: `SHIFT_LEGACY_${fixture.runId}`,
         source: OrderSource.WEB,
@@ -141,6 +144,7 @@ async function main(): Promise<void> {
     assert.ok(cashierEmployeeId);
     const foreignOrder = await prisma.order.create({
       data: {
+        tenantId: fixture.otherTenantId,
         branchId: fixture.otherBranchId,
         shiftId: opened.id,
         orderNumber: `SHIFT_FOREIGN_${fixture.runId}`,
@@ -309,7 +313,9 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
   return {
     runId,
     branchId: branch.id,
+    tenantId: branch.tenantId,
     otherBranchId: otherBranch.id,
+    otherTenantId: otherBranch.tenantId,
     productId: product.id,
     cashier: {
       id: user.id,

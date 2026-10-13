@@ -5,6 +5,7 @@ import { queuePrintJobsForReceipt } from "../src/modules/receipts/receipt-writer
 test("only an explicit receipt reprint opts out of local replay deduplication", async () => {
   const payloads: unknown[] = [];
   const tx = {
+    $executeRaw: async () => 1,
     printer: { findMany: async () => [] },
     printJob: {
       create: async ({ data }: { data: { payload: unknown } }) => {

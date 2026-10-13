@@ -91,6 +91,7 @@ export type OutboxQueueItem = PendingOutboxCommand & {
 export type JwtContext = {
   actorId: string;
   branchId: string;
+  tenantId?: string;
   employeeId?: string;
   isGlobalScope: boolean;
   permissions: string[];
@@ -2163,6 +2164,7 @@ export function readJwtContext(authorization: string): JwtContext | null {
       id?: unknown;
       sub?: unknown;
       branchId?: unknown;
+      tenantId?: unknown;
       employeeId?: unknown;
       isGlobalScope?: unknown;
       permissions?: unknown;
@@ -2182,6 +2184,9 @@ export function readJwtContext(authorization: string): JwtContext | null {
     return {
       actorId: userId,
       branchId,
+      ...(typeof parsed.tenantId === "string"
+        ? { tenantId: parsed.tenantId }
+        : {}),
       ...(typeof parsed.employeeId === "string"
         ? { employeeId: parsed.employeeId }
         : {}),
