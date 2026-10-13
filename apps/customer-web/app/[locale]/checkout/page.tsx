@@ -12,7 +12,6 @@ import {
   MapPin,
   Pencil,
   ShoppingBag,
-  Smartphone,
   Truck,
   UserRound,
   type LucideIcon,
@@ -48,15 +47,10 @@ type OrderResult = {
 };
 type OrderType = "DELIVERY" | "PICKUP";
 /*
- * Server yagona manba: `customer_payment_methods` sozlamasi qaysi usullar
- * OPERATSION ekanini aytadi. Bu yerdagi ro'yxat butun KATALOG — hali ishga
- * tushmaganlari ham bor, chunki ular yashirilmaydi.
- *
- * Egasining qaroriga ko'ra hozircha FAQAT naqd ishlaydi, keyinchalik
- * Click va Payme qo'shiladi. Karta ro'yxatdan olib tashlandi: rejada
- * yo'q usulni "Tez kunda" deb ko'rsatish mijozga yolg'on va'da berardi.
+ * Mijoz uchun hozir faqat naqd to'lov mavjud. Server ham shu usulni
+ * tasdiqlaydi; eski buyurtmalarning to'lov tarixi o'zgarmaydi.
  */
-type PaymentMethod = "CASH" | "CLICK" | "PAYME";
+type PaymentMethod = "CASH";
 type CheckoutQuote = {
   subtotal: string;
   deliveryFee: string;
@@ -98,26 +92,6 @@ const paymentOptions: {
     summary: {
       delivery: "Buyurtmani olganda kuryerga naqd to'lov",
       pickup: "Buyurtmani olganda kassada naqd to'lov",
-    },
-  },
-  {
-    value: "CLICK",
-    label: "Click",
-    hint: "Ilova orqali onlayn",
-    icon: Smartphone,
-    summary: {
-      delivery: "Click ilovasi orqali onlayn to'lov",
-      pickup: "Click ilovasi orqali onlayn to'lov",
-    },
-  },
-  {
-    value: "PAYME",
-    label: "Payme",
-    hint: "Ilova orqali onlayn",
-    icon: Smartphone,
-    summary: {
-      delivery: "Payme ilovasi orqali onlayn to'lov",
-      pickup: "Payme ilovasi orqali onlayn to'lov",
     },
   },
 ];
@@ -199,27 +173,12 @@ function CheckoutFlow() {
       window.removeEventListener("offline", updateOnlineState);
     };
   }, []);
-  /*
-   * Usullar YASHIRILMAYDI — hammasi ko'rsatiladi, hali ishga tushmaganiga
-   * "Tez kunda" belgisi qo'yiladi.
-   *
-   * Nima uchun: yashirilgan usul "bu yerda yo'q" degan taassurot beradi va
-   * mijoz kartada to'lay olmasligini buyurtma berayotganda biladi. Belgi esa
-   * "hozircha yo'q, lekin bo'ladi" deydi — bu kutishni to'g'ri shakllantiradi.
-   *
-   * Qaysi usul operatsion ekanini SERVER aytadi (kotirovka javobidagi
-   * `paymentMethods`). Kotirovka hali kelmagan bo'lsa hech biri tanlanmaydi.
-   */
+  // Server kotirovkasi naqd to'lovning ayni vaqtda mavjudligini bildiradi.
   const paymentAvailability = useMemo(() => {
     const allowedCodes = new Set(
       (quote?.paymentMethods ?? []).map((method) => method.code),
     );
-    /*
-     * Kotirovka hali kelmagan bo'lsa server HECH NARSA aytmagan. Bu holatda
-     * hammasini "Tez kunda" deb belgilash yolg'on bo'lardi va yuklanish
-     * tugagach uchtasi belgidan radioga sakrab, ko'z oldida "yaltirardi".
-     * Shuning uchun bilmaganda hech narsa da'vo qilinmaydi.
-     */
+    // Kotirovka kelguncha tanlovni vaqtincha ko'rsatamiz; yuborish bloklangan.
     if (!allowedCodes.size) {
       return paymentOptions.map((option) => ({ ...option, available: true }));
     }
@@ -228,16 +187,7 @@ function CheckoutFlow() {
       available: allowedCodes.has(option.value),
     }));
   }, [quote?.paymentMethods]);
-  /*
-   * Tanlangan usul serverga ko'ra ishlamasa — birinchi ishlaydiganiga
-   * o'tkaziladi.
-   *
-   * Ilgari mijoz kotirovka kelishidan oldin "Click"ni tanlab qo'ysa,
-   * keyin server uni rad etgani uchun radio "Tez kunda" belgisiga
-   * aylanardi, lekin `paymentMethod` state'da "CLICK" qolib ketardi va
-   * buyurtma yaroqsiz usul bilan yuborilardi. Xato faqat yuborishdan
-   * keyin ko'rinardi.
-   */
+  // Kelajakda server tanlovi o'zgarsa, state mavjud usulga moslashadi.
   useEffect(() => {
     if (!quote) return;
     const available = paymentAvailability.filter((option) => option.available);

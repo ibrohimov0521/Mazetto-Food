@@ -87,10 +87,13 @@ test("radius uchun manfiy qiymat rad etiladi", () => {
   );
 });
 
-test("cashier payment methods can be toggled independently from customer checkout", () => {
+test("cashier and customer checkout reject noncash payment methods", () => {
   assert.equal(
-    validateSettingValue("cashier_payment_methods", "cash, CARD, click, CARD"),
-    "CASH,CARD,CLICK",
+    validateSettingValue("cashier_payment_methods", "cash, CASH"),
+    "CASH",
+  );
+  assert.throws(() =>
+    validateSettingValue("cashier_payment_methods", "CASH,CARD"),
   );
   assert.throws(() =>
     validateSettingValue("customer_payment_methods", "CASH,CLICK"),
@@ -106,6 +109,10 @@ test("corrupt stored cashier payment allowlist fails closed instead of enabling 
     ["CASH"],
   );
   assert.deepEqual(parseCsvSetting("cashier_payment_methods", ""), []);
+  assert.deepEqual(
+    parseCsvSetting("cashier_payment_methods", "CASH,CARD,CLICK"),
+    ["CASH"],
+  );
   assert.deepEqual(
     parseCsvSetting("cashier_payment_methods", "UNKNOWN"),
     [],

@@ -119,13 +119,13 @@ const SETTING_LABELS: Record<
   },
   customer_payment_methods: {
     title: "Mijoz checkout to'lovi",
-    hint: "Avtomatik online to'lov integratsiyasi hozircha ulanmagan; naqd usuli ishlaydi",
+    hint: "Mijoz buyurtmalarida faqat naqd pul qabul qilinadi",
     impact:
-      "Mijoz saytidagi online to'lov usullari bank/provayder integratsiyasiga bog'liq. Hozircha faqat naqd ishlaydi.",
+      "Mijoz sayti va Telegram buyurtmalarida faqat naqd to'lov mavjud.",
   },
   cashier_payment_methods: {
     title: "Kassada qabul qilinadigan to'lovlar",
-    hint: "Kassir to'lov kelganini tekshirib tasdiqlaydi; bu avtomatik bank yoki provayder tasdig'i emas. Oflayn kassada faqat naqd pul ishlaydi; naqd usul o'chirilsa, oflayn savdo vaqtincha to'xtaydi.",
+    hint: "Hozir faqat naqd pul qabul qilinadi. Naqd usul o'chirilsa, kassa savdosi vaqtincha to'xtaydi.",
     group: "cashier-payments",
   },
   kitchen_pos_orders_enabled: {

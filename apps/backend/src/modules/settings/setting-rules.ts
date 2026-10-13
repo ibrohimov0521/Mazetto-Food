@@ -31,15 +31,7 @@ type SettingRule =
   | { kind: "csv-enum"; values: readonly string[]; fallback: string }
   | { kind: "string"; fallback: string };
 
-const CASHIER_PAYMENT_METHOD_CODES = [
-  "CASH",
-  "CARD",
-  "UZCARD",
-  "HUMO",
-  "CLICK",
-  "PAYME",
-  "ONLINE",
-] as const;
+const CASHIER_PAYMENT_METHOD_CODES = ["CASH"] as const;
 
 export type CashierPaymentMethodCode =
   (typeof CASHIER_PAYMENT_METHOD_CODES)[number];
@@ -90,14 +82,13 @@ const SETTING_RULES = {
   // --- Mijozga ochiq ---------------------------------------------------
   //
   // Mijoz tomoni to'lov usullarini O'ZI hal qilmaydi — server yagona manba.
-  // Hozir faqat CASH operatsion (AUD-002); provayder ishga tushganda bu
-  // qatorga qo'shiladi, deploysiz.
+  // Hozir faqat naqd to'lov qabul qilinadi.
   customer_payment_methods: {
     kind: "csv-enum",
     values: ["CASH"],
     fallback: "CASH",
   },
-  // Kassir tashqi to'lovni ko'rib tasdiqlaydi; provider callback yoqmaydi.
+  // Kassa va mijoz checkout'i bir xil naqd siyosatiga bo'ysunadi.
   cashier_payment_methods: {
     kind: "csv-enum",
     values: CASHIER_PAYMENT_METHOD_CODES,
