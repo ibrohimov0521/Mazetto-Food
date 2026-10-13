@@ -1,6 +1,6 @@
 # Audit remediation implementation progress
 
-Last updated: 2026-10-12 Asia/Tashkent. The 2026-09-23 checkpoint below is historical.
+Last updated: 2026-10-13 Asia/Tashkent. The 2026-09-23 checkpoint below is historical.
 
 ## Continuation checkpoint: 2026-09-23
 
@@ -537,3 +537,10 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Legacy queued sales with a terminal-bound provisional label but no date derive the date from their persisted queuedAt. If that timestamp is missing or invalid, replay fails closed for reconciliation instead of silently assigning the next day's date.
 - Verification: backend date/idempotency tests 10/10; 43 focused order, cash, refund, kitchen, printer, and Telegram tests passed; Desktop gateway suite 54/54 plus the legacy queued-sale date regression 1/1; backend app/scripts typechecks passed; isolated 61-migration order E2E passed; full release acceptance passed with exit code 0 after these changes; git diff --check passed.
 - This closes the code-level midnight regression only. Live browser/workstation, actual multi-terminal printing, and USB/Windows-spooler/LAN printer acceptance remain open. No production data/migration, push, or deployment was performed.
+
+## Audit continuation: explicit keyboard confirmation actions (2026-10-13)
+
+- Found that Enter could fall through to the last enabled dialog button when no primary action was declared. That could trigger an unintended cancel, deletion, or other action depending on button order.
+- Enter now activates only an explicitly marked `data-keyboard-primary` button. Disabled or unmarked actions do nothing. Dialogs without a primary action no longer focus their last action by default; normal buttons remain keyboard-focusable, and Escape still dismisses dialogs.
+- Added explicit primary markers to cashier product add, post-sale continuation, payment completion, shift close/transfer, kitchen cancellation/handoff, waiter item removal, courier confirmation, and waiter item submission flows. Multiple receipt reprint buttons intentionally have no automatic Enter action.
+- Verification: POS tests 87/87; POS TypeScript, ESLint, and production build passed. This is automated UI evidence; physical workstation acceptance of login, payment/refund, shift close, and focus/Escape behavior remains open. No push, production migration, or deployment was performed.

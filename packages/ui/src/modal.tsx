@@ -62,14 +62,9 @@ export function Modal({
       primaryCandidate && !primaryCandidate.hasAttribute("disabled")
         ? primaryCandidate
         : null;
-    const actions = panelRef.current?.querySelectorAll<HTMLElement>(
-      '[data-keyboard-actions] button:not(:disabled):not([data-keyboard-dialog-close])',
-    );
-    const fallback = primaryCandidate ? null : actions?.[actions.length - 1];
     const initial =
       input ??
       primary ??
-      fallback ??
       panelRef.current?.querySelector<HTMLElement>(
         'a[href], button:not([disabled]):not([data-mz-modal-close]), [tabindex]:not([tabindex="-1"])',
       );

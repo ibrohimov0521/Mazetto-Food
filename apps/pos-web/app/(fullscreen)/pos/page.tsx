@@ -1309,6 +1309,7 @@ function PosTerminal() {
             ) : null}
             <button
               className={styles.primary}
+              data-keyboard-primary
               onClick={() => setSuccess(null)}
               type="button"
             >
@@ -1403,6 +1404,7 @@ function PosTerminal() {
             </button>
             <button
               className={styles.primary}
+              data-keyboard-primary
               onClick={() => {
                 addLine(
                   selectedProduct,

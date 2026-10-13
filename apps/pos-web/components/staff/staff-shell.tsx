@@ -311,13 +311,9 @@ export function StaffDialog({
     const primary = dialog?.querySelector<HTMLButtonElement>(
       "button[data-keyboard-primary]",
     );
-    const actions = dialog?.querySelectorAll<HTMLElement>(
-      '[data-keyboard-actions] button:not(:disabled):not([data-keyboard-dialog-close])',
-    );
-    const fallback = actions?.[actions.length - 1];
     const initial =
       input ??
-      (primary ? (primary.disabled ? null : primary) : fallback) ??
+      (primary && !primary.disabled ? primary : null) ??
       dialog;
     initial?.focus();
     return () => {

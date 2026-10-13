@@ -903,6 +903,7 @@ export default function CashierHistoryPage() {
             </button>
             <button
               className={styles.danger}
+              data-keyboard-primary
               disabled={
                 !isOnline ||
                 Boolean(cancellingItemId) ||

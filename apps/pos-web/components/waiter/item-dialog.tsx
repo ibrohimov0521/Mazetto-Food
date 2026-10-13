@@ -224,6 +224,7 @@ export function ItemDialog({
         </button>
         <button
           className={styles.primary}
+          data-keyboard-primary
           disabled={busy || missingRequired}
           onClick={() => onSubmit(draft)}
           type="button"

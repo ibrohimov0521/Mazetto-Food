@@ -83,11 +83,11 @@ test("dialog Enter prefers its primary action and never falls back from a disabl
   assert.equal(findDialogEnterAction(disabledPrimaryDialog), null);
 });
 
-test("dialog Enter falls back to the last enabled action when no primary is marked", () => {
+test("dialog Enter does nothing when no primary action is explicitly marked", () => {
   const buttons = [{ disabled: false }, { disabled: false }];
   const dialog = {
     querySelector: () => null,
     querySelectorAll: () => buttons,
   };
-  assert.equal(findDialogEnterAction(dialog), buttons[1]);
+  assert.equal(findDialogEnterAction(dialog), null);
 });

@@ -553,6 +553,7 @@ function KitchenDisplay() {
             </button>
             <button
               className={styles.danger}
+              data-keyboard-primary
               disabled={busyTicketIds.has(cancelTicket.id)}
               onClick={() => void runAction(cancelTicket, "cancel")}
               type="button"
@@ -631,6 +632,7 @@ function KitchenDisplay() {
             ) : (
               <button
                 className={styles.primary}
+                data-keyboard-primary
                 disabled={
                   busyTicketIds.has(handoffTicket.id)
                 }

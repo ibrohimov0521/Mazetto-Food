@@ -973,6 +973,7 @@ function PaymentTerminal() {
             ) : null}
             <button
               className={styles.primary}
+              data-keyboard-primary
               onClick={resetForNextOrder}
               type="button"
             >

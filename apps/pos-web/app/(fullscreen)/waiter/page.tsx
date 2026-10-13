@@ -1095,6 +1095,7 @@ function WaiterFloor() {
             </button>
             <button
               className={styles.danger}
+              data-keyboard-primary
               disabled={busy}
               onClick={() => void removeLine(confirmation.line)}
               type="button"

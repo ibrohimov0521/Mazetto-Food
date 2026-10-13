@@ -42,11 +42,5 @@ export function shouldUseDialogEnter(event, target) {
 export function findDialogEnterAction(dialog) {
   const primary = dialog?.querySelector?.("button[data-keyboard-primary]");
   if (primary) return primary.disabled ? null : primary;
-
-  const actions = Array.from(
-    dialog?.querySelectorAll?.(
-      "[data-keyboard-actions] button:not(:disabled):not([data-keyboard-dialog-close])",
-    ) ?? [],
-  );
-  return actions.at(-1) ?? null;
+  return null;
 }

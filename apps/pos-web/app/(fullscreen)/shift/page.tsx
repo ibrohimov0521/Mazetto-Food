@@ -727,6 +727,7 @@ function ShiftConsole() {
             </button>
             <button
               className={styles.primary}
+              data-keyboard-primary
               disabled={isSaving || loadingClosingOrders || !closingOrders || Boolean(closingOrdersError)}
               onClick={() => void closeShift()}
               type="button"
@@ -741,7 +742,7 @@ function ShiftConsole() {
         <p>{transferConfirmation?.transfer.fromShift?.employee?.firstName} - <strong>{money(transferConfirmation?.transfer.amount ?? 0)}</strong></p>
         <p className={styles.muted}>{transferConfirmation?.action === "reject" ? "Summa xodim kassasiga qaytariladi." : "Pulni sanab olganingizni tasdiqlang. Summa umumiy kassangizga qo'shiladi."}</p>
         {error && <p className={styles.error} role="alert">{error}</p>}
-        <button className={styles.primary} disabled={isSaving} type="button" onClick={() => transferConfirmation && void processTransfer(transferConfirmation.transfer.id, transferConfirmation.action)}><Check size={16} />{isSaving ? "Saqlanmoqda..." : "Tasdiqlash"}</button>
+        <button className={styles.primary} data-keyboard-primary disabled={isSaving} type="button" onClick={() => transferConfirmation && void processTransfer(transferConfirmation.transfer.id, transferConfirmation.action)}><Check size={16} />{isSaving ? "Saqlanmoqda..." : "Tasdiqlash"}</button>
       </StaffDialog>}
     </StaffShell>
   );
