@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useAuth } from "../../components/auth/auth-provider";
 import { getPrimaryRedirect } from "../../lib/auth";
 import { useRouter } from "next/navigation";
@@ -24,9 +24,12 @@ function sameLoginIdentifier(left: string, right: string): boolean {
 export default function LoginPage() {
   const { isReady, login, session } = useAuth();
   const router = useRouter();
+  const initialSessionHandled = useRef(false);
 
   useEffect(() => {
-    if (isReady && session) {
+    if (!isReady || initialSessionHandled.current) return;
+    initialSessionHandled.current = true;
+    if (session) {
       router.replace(getPrimaryRedirect(session.user));
     }
   }, [isReady, router, session]);
@@ -38,8 +41,6 @@ export default function LoginPage() {
     useState(false);
   const [savedIdentifiers, setSavedIdentifiers] = useState<string[]>([]);
   const [selectedSavedIdentifier, setSelectedSavedIdentifier] = useState("");
-  const [rememberDesktopCredentials, setRememberDesktopCredentials] =
-    useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -60,31 +61,19 @@ export default function LoginPage() {
     };
   }, []);
 
-  async function selectSavedAccount(identifier: string) {
+  function selectSavedAccount(identifier: string) {
     setSelectedSavedIdentifier(identifier);
     setError(null);
-    if (!identifier) {
-      setRememberDesktopCredentials(false);
-      return;
-    }
+    setPassword("");
+    if (!identifier) return;
 
-    const credentials = window.mazettoDesktop?.auth?.credentials;
-    if (!credentials) return;
-    try {
-      const saved = await credentials.get(identifier);
-      if (!saved) return;
-      if (saved.identifier.includes("@")) {
-        setMode("email");
-        setIdentifier(saved.identifier);
-      } else {
-        const digits = saved.identifier.replace(/\D/g, "");
-        setMode("phone");
-        setPhone(digits.length > 9 ? digits.slice(-9) : digits);
-      }
-      setPassword(saved.password);
-      setRememberDesktopCredentials(true);
-    } catch {
-      setError("Saqlangan loginni o'qib bo'lmadi.");
+    if (identifier.includes("@")) {
+      setMode("email");
+      setIdentifier(identifier);
+    } else {
+      const digits = identifier.replace(/\D/g, "");
+      setMode("phone");
+      setPhone(digits.length > 9 ? digits.slice(-9) : digits);
     }
   }
 
@@ -96,7 +85,6 @@ export default function LoginPage() {
       setSavedIdentifiers(nextIdentifiers);
       setSelectedSavedIdentifier("");
       setPassword("");
-      setRememberDesktopCredentials(false);
     } catch {
       setError("Saqlangan loginni o'chirib bo'lmadi.");
     }
@@ -108,13 +96,15 @@ export default function LoginPage() {
     setError(null);
     setIsSubmitting(true);
 
+    const currentIdentifier =
+      mode === "phone" ? "+998" + phone : identifier.trim();
+    const useSavedCredential =
+      Boolean(selectedSavedIdentifier) &&
+      sameLoginIdentifier(currentIdentifier, selectedSavedIdentifier) &&
+      !password;
+
     try {
-      await login(
-        mode === "phone" ? "+998" + phone : identifier.trim(),
-        password,
-        rememberDesktopCredentials,
-        selectedSavedIdentifier || null,
-      );
+      await login(currentIdentifier, password, useSavedCredential);
     } catch (loginError) {
       setError(
         loginError instanceof Error
@@ -176,7 +166,6 @@ export default function LoginPage() {
                 onClick={() => {
                   setMode(value);
                   setSelectedSavedIdentifier("");
-                  setRememberDesktopCredentials(false);
                   setError(null);
                 }}
                 className={`flex flex-1 items-center justify-center gap-2 rounded-md px-3 py-2 text-sm font-bold transition ${mode === value ? "bg-[#004f55] text-white shadow-sm" : "text-[#004f55] hover:bg-[#dbece2]"}`}
@@ -232,7 +221,6 @@ export default function LoginPage() {
                   !sameLoginIdentifier(value, selectedSavedIdentifier)
                 ) {
                   setSelectedSavedIdentifier("");
-                  setRememberDesktopCredentials(false);
                 }
               }}
               disabled={isSubmitting}
@@ -254,7 +242,6 @@ export default function LoginPage() {
                     !sameLoginIdentifier(value, selectedSavedIdentifier)
                   ) {
                     setSelectedSavedIdentifier("");
-                    setRememberDesktopCredentials(false);
                   }
                 }}
                 autoComplete="username"
@@ -268,28 +255,19 @@ export default function LoginPage() {
             <input
               className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-base text-neutral-950 outline-none transition focus:border-emerald-500 focus:ring-4 focus:ring-emerald-100"
               value={password}
-              onChange={(event) => setPassword(event.target.value)}
+              onChange={(event) => {
+                setPassword(event.target.value);
+                if (event.target.value) setSelectedSavedIdentifier("");
+              }}
               type="password"
               name="password"
               autoComplete="current-password"
-              required
+              placeholder={
+                selectedSavedIdentifier ? "Saqlangan parol" : undefined
+              }
+              required={!selectedSavedIdentifier}
             />
           </label>
-
-          {hasDesktopCredentialStore ? (
-            <label className="flex items-center gap-2 text-sm text-neutral-700">
-              <input
-                type="checkbox"
-                checked={rememberDesktopCredentials}
-                onChange={(event) =>
-                  setRememberDesktopCredentials(event.target.checked)
-                }
-                disabled={isSubmitting}
-                className="h-4 w-4 accent-[#007a68]"
-              />
-              Shu qurilmada login va parolni eslab qolish
-            </label>
-          ) : null}
 
           {error ? (
             <div

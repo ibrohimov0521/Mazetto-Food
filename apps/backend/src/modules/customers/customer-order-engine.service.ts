@@ -23,6 +23,7 @@ import {
   createOrderNumber as createBusinessOrderNumber,
   withUniqueConstraintRetry,
 } from "../orders/order-rules";
+import { createModifierSnapshot as createOrderModifierSnapshot } from "../orders/order-guards";
 import { OrdersService } from "../orders/orders.service";
 import { ORDER_EVENTS, recordOrderEvent } from "../orders/order-events";
 import { customerVisibleProductWhere } from "./customer-catalog-visibility";
@@ -62,9 +63,7 @@ type CustomerOrderAttemptReservation = CustomerOrderAttemptRecord & {
   created: boolean;
 };
 
-const CUSTOMER_ORDER_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1000;
 const CUSTOMER_ORDER_ATTEMPT_WAIT_MS = 15000;
-const CUSTOMER_ORDER_STALE_PENDING_MS = 2 * 60 * 1000;
 const operationalCustomerPaymentMethods = [
   OnlinePaymentMethodDto.CASH,
 ] as const;
@@ -119,6 +118,10 @@ export class CustomerOrderEngineService {
           customerId,
           dto.idempotencyKey,
           requestHash,
+          await this.settings.getInt(
+            "customer_order_attempt_ttl_hours",
+            customer.tenantId,
+          ),
         )
       : null;
 
@@ -138,6 +141,10 @@ export class CustomerOrderEngineService {
         dto.branchId,
         deliveryLocation,
       );
+      const orderDisplayNumberStart = await this.settings.getInt(
+        "order_display_number_start",
+        customer.tenantId,
+      );
 
       const correlationId = randomUUID();
       const createOrder = () =>
@@ -146,10 +153,14 @@ export class CustomerOrderEngineService {
             const orderSource = options?.source ?? OrderSource.WEB;
             const displayOrder = await allocateDisplayOrderNumber(
               tx,
+              customer.tenantId,
               orderSource,
+              undefined,
+              orderDisplayNumberStart,
             );
             const order = await tx.order.create({
               data: {
+                tenantId: customer.tenantId,
                 branchId: dto.branchId,
                 orderNumber: createBusinessOrderNumber(
                   options?.orderNumberPrefix ?? "WEB",
@@ -374,8 +385,9 @@ export class CustomerOrderEngineService {
     customerId: string,
     idempotencyKey: string,
     requestHash: string,
+    ttlHours: number,
   ): Promise<CustomerOrderAttemptReservation> {
-    const expiresAt = new Date(Date.now() + CUSTOMER_ORDER_ATTEMPT_TTL_MS);
+    const expiresAt = new Date(Date.now() + ttlHours * 60 * 60 * 1000);
 
     try {
       const attempt = await this.prisma.customerOrderAttempt.create({
@@ -410,6 +422,7 @@ export class CustomerOrderEngineService {
         customerId,
         idempotencyKey,
         requestHash,
+        ttlHours,
       );
     }
 
@@ -459,10 +472,11 @@ export class CustomerOrderEngineService {
       }
 
       if (this.isStalePendingAttempt(existing)) {
-        await this.prisma.customerOrderAttempt.delete({
-          where: { id: existing.id },
-        });
-        return null;
+        if (await this.deleteStaleCustomerOrderAttempt(existing.id)) {
+          return null;
+        }
+
+        continue;
       }
 
       if (existing.expiresAt.getTime() <= Date.now()) {
@@ -489,10 +503,33 @@ export class CustomerOrderEngineService {
       stale.requestHash === requestHash &&
       this.isStalePendingAttempt(stale)
     ) {
-      await this.prisma.customerOrderAttempt.delete({
-        where: { id: stale.id },
+      if (await this.deleteStaleCustomerOrderAttempt(stale.id)) {
+        return null;
+      }
+
+      const current = await this.prisma.customerOrderAttempt.findUnique({
+        where: {
+          customerId_idempotencyKey: {
+            customerId,
+            idempotencyKey,
+          },
+        },
+        select: this.customerOrderAttemptSelect(),
       });
-      return null;
+
+      if (!current) {
+        return null;
+      }
+
+      if (current.requestHash !== requestHash) {
+        throw new ConflictException(
+          "Idempotency key was already used with a different checkout request",
+        );
+      }
+
+      if (current.customerOrderId) {
+        return current;
+      }
     }
 
     throw new ConflictException(
@@ -504,14 +541,34 @@ export class CustomerOrderEngineService {
     return (
       attempt.status === CustomerOrderAttemptStatus.PENDING &&
       !attempt.customerOrderId &&
-      Date.now() - attempt.createdAt.getTime() >=
-        CUSTOMER_ORDER_STALE_PENDING_MS
+      attempt.expiresAt.getTime() <= Date.now()
     );
+  }
+
+  private async deleteStaleCustomerOrderAttempt(
+    attemptId: string,
+  ): Promise<boolean> {
+    const result = await this.prisma.customerOrderAttempt.deleteMany({
+      where: {
+        id: attemptId,
+        status: CustomerOrderAttemptStatus.PENDING,
+        customerOrderId: null,
+        expiresAt: { lte: new Date() },
+      },
+    });
+
+    return result.count > 0;
   }
 
   private async releaseCustomerOrderAttempt(attemptId: string): Promise<void> {
     await this.prisma.customerOrderAttempt
-      .delete({ where: { id: attemptId } })
+      .deleteMany({
+        where: {
+          id: attemptId,
+          status: CustomerOrderAttemptStatus.PENDING,
+          customerOrderId: null,
+        },
+      })
       .catch(() => undefined);
   }
 
@@ -622,50 +679,12 @@ export class CustomerOrderEngineService {
     };
   }
 
-  private async createModifierSnapshot(
+  private createModifierSnapshot(
     tx: TransactionClient,
     productId: string,
     modifiers: OnlineOrderModifierDto[],
   ): Promise<ModifierSnapshot[]> {
-    if (!modifiers.length) {
-      return [];
-    }
-
-    const modifierIds = [
-      ...new Set(modifiers.map((modifier) => modifier.modifierId)),
-    ];
-    const productModifiers = await tx.productModifier.findMany({
-      where: {
-        productId,
-        modifierId: { in: modifierIds },
-        modifier: { isActive: true },
-      },
-      include: { modifier: true },
-    });
-
-    return modifiers.map((selected) => {
-      const productModifier = productModifiers.find(
-        (candidate) => candidate.modifierId === selected.modifierId,
-      );
-
-      if (!productModifier) {
-        throw new BadRequestException(
-          "Modifier is not available for this product",
-        );
-      }
-
-      const quantity = new Prisma.Decimal(selected.quantity ?? 1);
-      const totalPrice = productModifier.modifier.price.mul(quantity);
-
-      return {
-        id: productModifier.modifier.id,
-        code: productModifier.modifier.code,
-        name: productModifier.modifier.name,
-        quantity: quantity.toFixed(3),
-        unitPrice: productModifier.modifier.price.toFixed(2),
-        totalPrice: totalPrice.toFixed(2),
-      };
-    });
+    return createOrderModifierSnapshot(tx, productId, modifiers);
   }
 
   private modifierTotal(modifiers: ModifierSnapshot[]) {

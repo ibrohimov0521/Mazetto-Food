@@ -4,7 +4,7 @@ import {
   type Server,
   type ServerResponse,
 } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
 import {
   resolveOfflineCommand,
@@ -180,6 +180,13 @@ export class DesktopGateway {
     }
 
     if (
+      url.pathname.startsWith("/api/v1/desktop/outbox") ||
+      url.pathname.startsWith("/api/v1/desktop/prints")
+    ) {
+      url.pathname = url.pathname.slice("/api/v1".length);
+    }
+
+    if (
       url.pathname.startsWith("/desktop/outbox") ||
       url.pathname.startsWith("/desktop/prints")
     ) {
@@ -274,6 +281,22 @@ export class DesktopGateway {
         }
 
         const commandDefinition = resolveOfflineCommand(method, url.pathname);
+        if (
+          authorization &&
+          body &&
+          commandDefinition &&
+          this.sendExistingQueuedMutationResponse(response, {
+            authorization,
+            authScope,
+            body,
+            method,
+            pathname: url.pathname,
+            request,
+            definition: commandDefinition,
+          })
+        ) {
+          return;
+        }
         const isPaymentCommand =
           commandDefinition?.commandType === "pos.order.create" ||
           commandDefinition?.commandType === "payment.process";
@@ -286,6 +309,25 @@ export class DesktopGateway {
           offlinePaymentAllowed &&
           hasStableIdempotencyKey(request, body)
         ) {
+          const offlinePosOrderError = offlinePosOrderQueueError(
+            this.store,
+            cacheScope,
+            identity?.branchId,
+            method,
+            url.pathname,
+            body,
+            request,
+          );
+          if (offlinePosOrderError) {
+            this.sendJson(response, 409, {
+              success: false,
+              error: {
+                code: "OFFLINE_POS_ORDER_UNSAFE",
+                message: offlinePosOrderError,
+              },
+            });
+            return;
+          }
           const mutationError =
             commandDefinition.commandType === "payment.process"
               ? validateOfflineCashPayment(
@@ -314,7 +356,13 @@ export class DesktopGateway {
                       identity?.branchId,
                     )
                   : commandDefinition.commandType === "cash.transaction.create"
-                    ? validateOfflineCashTransaction(body)
+                    ? validateOfflineCashTransaction(
+                        this.store,
+                        authScope,
+                        cacheScope,
+                        targetUrl,
+                        body,
+                      )
                     : null;
           if (mutationError) {
             this.sendJson(response, 409, {
@@ -439,7 +487,12 @@ export class DesktopGateway {
         url.pathname === "/api/v1/pos/orders" &&
         upstream.ok
       ) {
-        rememberOnlinePosSequence(this.store, responseBody);
+        rememberOnlinePosSequence(
+          this.store,
+          responseBody,
+          identity?.tenantId,
+          identity?.branchId,
+        );
       }
       if (authorization) {
         this.trackBackgroundTask(
@@ -525,6 +578,22 @@ export class DesktopGateway {
       }
 
       const commandDefinition = resolveOfflineCommand(method, url.pathname);
+      if (
+        authorization &&
+        body &&
+        commandDefinition &&
+        this.sendExistingQueuedMutationResponse(response, {
+          authorization,
+          authScope,
+          body,
+          method,
+          pathname: url.pathname,
+          request,
+          definition: commandDefinition,
+        })
+      ) {
+        return;
+      }
       const isPaymentCommand =
         commandDefinition?.commandType === "pos.order.create" ||
         commandDefinition?.commandType === "payment.process";
@@ -538,6 +607,25 @@ export class DesktopGateway {
         (error === KNOWN_OFFLINE_ERROR ||
           hasStableIdempotencyKey(request, body))
       ) {
+        const offlinePosOrderError = offlinePosOrderQueueError(
+          this.store,
+          cacheScope,
+          identity?.branchId,
+          method,
+          url.pathname,
+          body,
+          request,
+        );
+        if (offlinePosOrderError) {
+          this.sendJson(response, 409, {
+            success: false,
+            error: {
+              code: "OFFLINE_POS_ORDER_UNSAFE",
+              message: offlinePosOrderError,
+            },
+          });
+          return;
+        }
         const mutationError =
           commandDefinition.commandType === "payment.process"
             ? validateOfflineCashPayment(
@@ -566,7 +654,13 @@ export class DesktopGateway {
                     identity?.branchId,
                   )
                 : commandDefinition.commandType === "cash.transaction.create"
-                  ? validateOfflineCashTransaction(body)
+                  ? validateOfflineCashTransaction(
+                      this.store,
+                      authScope,
+                      cacheScope,
+                      targetUrl,
+                      body,
+                    )
                   : null;
         if (mutationError) {
           this.sendJson(response, 409, {
@@ -794,6 +888,74 @@ export class DesktopGateway {
     );
   }
 
+  private sendExistingQueuedMutationResponse(
+    response: ServerResponse,
+    input: {
+      authorization: string;
+      authScope: string;
+      body: ArrayBuffer;
+      method: string;
+      pathname: string;
+      request: IncomingMessage;
+      definition: OfflineCommandDefinition;
+    },
+  ): boolean {
+    if (!hasStableIdempotencyKey(input.request, input.body)) return false;
+    const rawBody = Buffer.from(input.body).toString("utf8");
+    const parsedBody = parseJsonObject(rawBody);
+    const idempotencyKey =
+      headerValue(input.request.headers["idempotency-key"]) ??
+      stringField(parsedBody, "idempotencyKey");
+    if (!idempotencyKey) return false;
+
+    const identity = readJwtContext(input.authorization);
+    const requestFingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          method: input.method,
+          pathname: input.pathname,
+          body: parsedBody === null ? rawBody : canonicalizeJson(parsedBody),
+        }),
+      )
+      .digest("hex");
+    try {
+      const command = this.store.resolveIdempotentMutation({
+        idempotencyKey,
+        commandType: input.definition.commandType,
+        aggregateType: input.definition.aggregateType,
+        actorId: identity?.actorId ?? "unknown",
+        branchId: identity?.branchId ?? "global",
+        authScope: input.authScope,
+        requestFingerprint,
+        queuedEmployeeId: identity?.employeeId ?? null,
+      });
+      if (!command) return false;
+      this.sendQueuedMutationResponse(
+        response,
+        input.pathname,
+        command,
+        input.body,
+      );
+      return true;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Idempotency key is already used")
+      ) {
+        this.sendJson(response, 409, {
+          success: false,
+          error: {
+            code: "IDEMPOTENCY_KEY_REUSED",
+            message:
+              "Idempotency kaliti boshqa amal bilan ishlatilgan. Yangi kalit yarating.",
+          },
+        });
+        return true;
+      }
+      throw error;
+    }
+  }
+
   private queueMutation(input: {
     authorization: string;
     authScope: string;
@@ -806,11 +968,32 @@ export class DesktopGateway {
     definition: OfflineCommandDefinition;
   }): { command: PendingOutboxCommand } {
     let parsedBody = parseJsonObject(Buffer.from(input.body).toString("utf8"));
+    const rawBody = Buffer.from(input.body).toString("utf8");
+    const requestFingerprint = createHash("sha256")
+      .update(
+        JSON.stringify({
+          method: input.method,
+          pathname: input.pathname,
+          body: parsedBody === null ? rawBody : canonicalizeJson(parsedBody),
+        }),
+      )
+      .digest("hex");
     const context = readJwtContext(input.authorization);
     const idempotencyKey =
       headerValue(input.request.headers["idempotency-key"]) ??
       stringField(parsedBody, "idempotencyKey") ??
       `desktop-${randomUUID()}`;
+    const existingCommand = this.store.resolveIdempotentMutation({
+      idempotencyKey,
+      commandType: input.definition.commandType,
+      aggregateType: input.definition.aggregateType,
+      actorId: context?.actorId ?? "unknown",
+      branchId: context?.branchId ?? "global",
+      authScope: input.authScope,
+      requestFingerprint,
+      queuedEmployeeId: context?.employeeId ?? null,
+    });
+    if (existingCommand) return { command: existingCommand };
     const aggregate = aggregateFromPath(input.pathname);
     const localAggregateId = createsLocalAggregate(input.definition.commandType)
       ? `local-${randomUUID()}`
@@ -851,13 +1034,32 @@ export class DesktopGateway {
       localAggregateId &&
       parsedBody
     ) {
+      const offlineDisplayOrderDate = tashkentDateKey(new Date());
       const offlineDisplayOrderSequence = nextOfflineDisplayOrderSequence(
         this.store,
         input.cacheScope,
+        context?.tenantId,
+        context?.branchId,
+        offlineDisplayOrderDate,
+      );
+      const offlineCatalog = cachedCatalog(
+        this.store,
+        input.cacheScope,
+        context?.branchId,
+      );
+      const offlineDisplayNumberSuffix = stringField(
+        offlineCatalog,
+        "offlineDisplayNumberSuffix",
       );
       parsedBody = {
         ...parsedBody,
         offlineDisplayOrderSequence,
+        offlineDisplayOrderDate,
+        ...(offlineDisplayNumberSuffix
+          ? {
+              offlineDisplayOrderNumber: `${offlineDisplayOrderSequence}-${offlineDisplayNumberSuffix}`,
+            }
+          : {}),
       };
     }
     const bodyText = parsedBody
@@ -896,10 +1098,13 @@ export class DesktopGateway {
         : null;
     const localPrintJobs: LocalPrintJobInput[] = [];
     if (offlineOrderSnapshot && localAggregateId) {
-      const documentTypes =
-        parsedBody?.payLater === true
+      const documentTypes: Array<"RECEIPT" | "KITCHEN"> = [
+        ...(parsedBody?.payLater === true ? [] : (["RECEIPT"] as const)),
+        ...(Array.isArray(offlineOrderSnapshot.items) &&
+        offlineOrderSnapshot.items.some(isKitchenPrintItem)
           ? (["KITCHEN"] as const)
-          : (["RECEIPT", "KITCHEN"] as const);
+          : []),
+      ];
       for (const documentType of documentTypes) {
         localPrintJobs.push({
           logicalKey: localAggregateId + ":" + documentType,
@@ -957,6 +1162,8 @@ export class DesktopGateway {
         branchId: context?.branchId ?? "global",
         authScope: input.authScope,
         payload: {
+          requestFingerprint,
+          queuedEmployeeId: context?.employeeId ?? null,
           commandType: input.definition.commandType,
           method: input.method,
           targetUrl: input.targetUrl,
@@ -1043,7 +1250,6 @@ export class DesktopGateway {
     authorization: string,
   ): Promise<void> {
     const latestCommand = this.store.getOutboxCommand(command.id) ?? command;
-    this.store.markMutationSending(latestCommand.id);
 
     try {
       const payload = JSON.parse(latestCommand.payloadJson) as {
@@ -1054,7 +1260,27 @@ export class DesktopGateway {
         pathname?: string;
         targetUrl?: string;
         localAggregateId?: string;
+        queuedAt?: string;
+        queuedEmployeeId?: string | null;
       };
+      const hasEmployeeBinding = Object.prototype.hasOwnProperty.call(
+        payload,
+        "queuedEmployeeId",
+      );
+      const currentEmployeeId =
+        readJwtContext(authorization)?.employeeId ?? null;
+      if (
+        !hasEmployeeBinding ||
+        payload.queuedEmployeeId !== currentEmployeeId
+      ) {
+        this.store.markMutationConflict(
+          latestCommand.id,
+          hasEmployeeBinding
+            ? "EMPLOYEE_CONTEXT_CHANGED: Offline amal boshqa xodim kontekstida yaratilgan; kassirni tekshirib qayta yarating."
+            : "EMPLOYEE_CONTEXT_UNKNOWN: Eski offline amal yaratilgan xodim saqlanmagan; kassirni tekshirib qayta yarating.",
+        );
+        return;
+      }
       if (!payload.method || !payload.targetUrl) {
         throw new Error("Queued command payload is incomplete");
       }
@@ -1074,6 +1300,10 @@ export class DesktopGateway {
           command.id,
           "OFFLINE_COMMAND_INVALID: queued command registry mismatch",
         );
+        return;
+      }
+
+      if (!this.store.markMutationSending(latestCommand.id)) {
         return;
       }
 
@@ -1107,11 +1337,33 @@ export class DesktopGateway {
         );
         return;
       }
+      let replayBody = resolvedBody.value;
+      const replayDto = replayBody ? parseJsonObject(replayBody) : null;
+      if (
+        command.commandType === "pos.order.create" &&
+        replayDto &&
+        numberField(replayDto, "offlineDisplayOrderSequence") !== null &&
+        !stringField(replayDto, "offlineDisplayOrderDate")
+      ) {
+        const queuedAt = stringField(payload, "queuedAt");
+        const queuedDate = queuedAt ? new Date(queuedAt) : null;
+        if (!queuedDate || !Number.isFinite(queuedDate.getTime())) {
+          this.store.markMutationConflict(
+            command.id,
+            "OFFLINE_ORDER_DATE_UNKNOWN: Offline buyurtma sanasini aniqlab bo'lmadi; sotuvni qo'lda tekshiring.",
+          );
+          return;
+        }
+        replayBody = JSON.stringify({
+          ...replayDto,
+          offlineDisplayOrderDate: tashkentDateKey(queuedDate),
+        });
+      }
 
       const response = await this.fetchImpl(resolvedTarget.value, {
         method: payload.method,
         headers,
-        ...(resolvedBody.value ? { body: resolvedBody.value } : {}),
+        ...(replayBody ? { body: replayBody } : {}),
         signal: AbortSignal.timeout(10_000),
       });
       const responseText = await response.text();
@@ -1243,7 +1495,7 @@ export class DesktopGateway {
         return;
       }
 
-      const errorText = responseText;
+      const errorText = readableOutboxError(responseText, response.status);
       if (response.status === 409) {
         this.store.markMutationConflict(
           command.id,
@@ -1278,14 +1530,159 @@ export class DesktopGateway {
     url: URL,
   ): Promise<void> {
     const method = (request.method ?? "GET").toUpperCase();
+    const authorization = headerValue(request.headers.authorization);
+    const identity = authorization ? readJwtContext(authorization) : null;
+    const authScope =
+      authorization && identity
+        ? DesktopStore.mutationScope(authorization)
+        : null;
+    const printBranchId =
+      identity && !identity.isGlobalScope ? identity.branchId : undefined;
+    if (url.pathname === "/desktop/prints/shift-report" && method === "POST") {
+      if (!identity || !authScope) {
+        this.sendJson(response, 401, {
+          success: false,
+          error: {
+            message: "Smena hisobotini chop etish uchun tizimga kiring.",
+          },
+        });
+        return;
+      }
+
+      const body = await readBodyLimited(request, 8 * 1024 * 1024);
+      const payload = body ? parseJsonObject(body.toString("utf8")) : null;
+      const shift =
+        payload?.shift &&
+        typeof payload.shift === "object" &&
+        !Array.isArray(payload.shift)
+          ? (payload.shift as Record<string, unknown>)
+          : null;
+      const branch =
+        shift?.branch &&
+        typeof shift.branch === "object" &&
+        !Array.isArray(shift.branch)
+          ? (shift.branch as Record<string, unknown>)
+          : null;
+      const orders = payload?.orders;
+      const branchId =
+        typeof payload?.branchId === "string" ? payload.branchId : "";
+      const requestId =
+        typeof payload?.requestId === "string" ? payload.requestId : "";
+      const validOrders =
+        Array.isArray(orders) &&
+        orders.length <= 10000 &&
+        orders.every((order) => {
+          if (!order || typeof order !== "object" || Array.isArray(order)) {
+            return false;
+          }
+          const record = order as Record<string, unknown>;
+          return (
+            typeof record.id === "string" &&
+            Array.isArray(record.items) &&
+            record.items.length <= 1000
+          );
+        });
+      if (
+        !body ||
+        !payload ||
+        payload.documentType !== "SHIFT_REPORT" ||
+        typeof shift?.id !== "string" ||
+        !shift.id ||
+        !branch ||
+        branch.id !== branchId ||
+        !requestId ||
+        requestId.length > 100 ||
+        !/^[A-Za-z0-9:_-]+$/.test(requestId) ||
+        !validOrders
+      ) {
+        this.sendJson(response, body ? 400 : 413, {
+          success: false,
+          error: {
+            message: "Smena hisobotining chop etish ma'lumoti noto'g'ri.",
+          },
+        });
+        return;
+      }
+      const hasEveryPermission = identity.permissions.includes("*");
+      const canViewBranchShifts =
+        hasEveryPermission ||
+        identity.permissions.includes("SHIFT_VIEW_BRANCH");
+      const canPrintOwnShift =
+        hasEveryPermission ||
+        identity.permissions.some((permission) =>
+          ["SHIFT_CLOSE", "SHIFT_VIEW_OWN"].includes(permission),
+        );
+      if (!canViewBranchShifts && !canPrintOwnShift) {
+        this.sendJson(response, 403, {
+          success: false,
+          error: {
+            message: "Smena hisobotini ko'rish yoki chop etish ruxsati kerak.",
+          },
+        });
+        return;
+      }
+      if (!identity.isGlobalScope && identity.branchId !== branchId) {
+        this.sendJson(response, 403, {
+          success: false,
+          error: { message: "Bu hisobot sizning filialingizga tegishli emas." },
+        });
+        return;
+      }
+      const employee =
+        shift.employee &&
+        typeof shift.employee === "object" &&
+        !Array.isArray(shift.employee)
+          ? (shift.employee as Record<string, unknown>)
+          : null;
+      const shiftEmployeeId =
+        typeof shift.employeeId === "string"
+          ? shift.employeeId
+          : typeof employee?.id === "string"
+            ? employee.id
+            : null;
+      if (
+        !canViewBranchShifts &&
+        (!identity.employeeId || shiftEmployeeId !== identity.employeeId)
+      ) {
+        this.sendJson(response, 403, {
+          success: false,
+          error: { message: "Faqat o'z smena hisobotingizni chop eta olasiz." },
+        });
+        return;
+      }
+
+      if (!hasConfiguredSystemPrinterRole(this.store, "SHIFT_REPORT")) {
+        this.sendJson(response, 200, {
+          success: true,
+          data: { queued: false, printerConfigured: false },
+        });
+        return;
+      }
+
+      this.store.enqueueLocalPrintJob({
+        logicalKey:
+          "shift-report:" + encodeURIComponent(shift.id) + ":" + requestId,
+        branchId,
+        documentType: "SHIFT_REPORT",
+        payload,
+      });
+      this.sendJson(response, 202, {
+        success: true,
+        data: { queued: true, printerConfigured: true },
+      });
+      return;
+    }
+
     if (url.pathname === "/desktop/outbox" && method === "GET") {
       const limit = Number(url.searchParams.get("limit") ?? 50);
       this.sendJson(response, 200, {
         ok: true,
         data: {
           summary: this.status(),
-          commands: this.store.listOutbox(limit),
-          printJobs: this.store.listLocalPrintJobs(limit),
+          commands: authScope ? this.store.listOutbox(limit, authScope) : [],
+          printJobs: authScope
+            ? this.store.listLocalPrintJobs(limit, printBranchId)
+            : [],
         },
       });
       return;
@@ -1295,8 +1692,17 @@ export class DesktopGateway {
       /^\/desktop\/prints\/([^/]+)\/retry$/,
     );
     if (retryPrintMatch && method === "POST") {
+      if (!authScope) {
+        this.sendJson(response, 401, {
+          ok: false,
+          error: {
+            message: "Printer navbatini boshqarish uchun tizimga kiring.",
+          },
+        });
+        return;
+      }
       const id = decodeURIComponent(retryPrintMatch[1] ?? "");
-      if (!this.store.retryLocalPrintJob(id)) {
+      if (!this.store.retryLocalPrintJob(id, printBranchId)) {
         this.sendJson(response, 409, {
           ok: false,
           error: {
@@ -1309,8 +1715,8 @@ export class DesktopGateway {
         ok: true,
         data: {
           summary: this.status(),
-          commands: this.store.listOutbox(),
-          printJobs: this.store.listLocalPrintJobs(),
+          commands: this.store.listOutbox(50, authScope),
+          printJobs: this.store.listLocalPrintJobs(50, printBranchId),
         },
       });
       return;
@@ -1320,10 +1726,18 @@ export class DesktopGateway {
       /^\/desktop\/outbox\/([^/]+)\/compare$/,
     );
     if (compareMatch && method === "GET") {
+      if (!authScope) {
+        this.sendJson(response, 401, {
+          ok: false,
+          error: { message: "Navbatni taqqoslash uchun tizimga kiring." },
+        });
+        return;
+      }
       await this.handleOutboxComparison(
         request,
         response,
         decodeURIComponent(compareMatch[1] ?? ""),
+        authScope,
       );
       return;
     }
@@ -1339,12 +1753,20 @@ export class DesktopGateway {
       return;
     }
 
+    if (!authorization || !authScope) {
+      this.sendJson(response, 401, {
+        ok: false,
+        error: { message: "Navbat amallarini bajarish uchun tizimga kiring." },
+      });
+      return;
+    }
+
     const id = decodeURIComponent(match[1] ?? "");
     const action = match[2];
     const changed =
       action === "retry"
-        ? this.store.retryMutation(id)
-        : this.store.cancelMutation(id);
+        ? this.store.retryMutation(id, authScope)
+        : this.store.cancelMutation(id, authScope);
 
     if (!changed) {
       this.sendJson(response, 409, {
@@ -1353,25 +1775,24 @@ export class DesktopGateway {
           message:
             action === "retry"
               ? "Bu amalni qayta yuborib bo'lmaydi."
-              : "Bu amalni navbatdan olib tashlab bo'lmaydi.",
+              : "Bu amalni bekor qilib bo'lmaydi: moliyaviy yoki tizim amali, tanilmagan tur, yuborilgan amal yoxud bog'liq/chop etilgan hujjat bo'lishi mumkin.",
         },
       });
       return;
     }
 
     if (action === "retry") {
-      for (const [authScope, authorization] of this.activeAuthorizations) {
-        this.trackBackgroundTask(
-          this.flushPendingMutations(authorization, authScope),
-        );
-      }
+      this.activeAuthorizations.set(authScope, authorization);
+      this.trackBackgroundTask(
+        this.flushPendingMutations(authorization, authScope),
+      );
     }
 
     this.sendJson(response, 200, {
       ok: true,
       data: {
         summary: this.status(),
-        commands: this.store.listOutbox(),
+        commands: this.store.listOutbox(50, authScope),
       },
     });
   }
@@ -1380,8 +1801,9 @@ export class DesktopGateway {
     request: IncomingMessage,
     response: ServerResponse,
     id: string,
+    authScope: string,
   ): Promise<void> {
-    const command = this.store.getOutboxCommand(id);
+    const command = this.store.getOutboxCommand(id, authScope);
     if (!command) {
       this.sendJson(response, 404, {
         ok: false,
@@ -1390,9 +1812,7 @@ export class DesktopGateway {
       return;
     }
 
-    const authorization =
-      headerValue(request.headers.authorization) ??
-      this.activeAuthorizations.get(command.authScope);
+    const authorization = headerValue(request.headers.authorization);
     if (!authorization) {
       this.sendJson(response, 401, {
         ok: false,
@@ -1449,7 +1869,7 @@ export class DesktopGateway {
       });
       const responseText = await upstream.text();
       const outboxItem = this.store
-        .listOutbox(200)
+        .listOutbox(200, authScope)
         .find((item) => item.id === command.id);
       this.sendJson(response, 200, {
         ok: true,
@@ -1461,6 +1881,7 @@ export class DesktopGateway {
             aggregateId: command.aggregateId,
             idempotencyKey: command.idempotencyKey,
             baseVersion: command.baseVersion,
+            canCancel: outboxItem?.canCancel ?? false,
             payload: {
               method: stringField(payload, "method"),
               pathname,
@@ -1866,7 +2287,13 @@ function validateOfflineCashTransfer(
   }
 }
 
-function validateOfflineCashTransaction(body: ArrayBuffer): string | null {
+function validateOfflineCashTransaction(
+  store: DesktopStore,
+  authScope: string,
+  cacheScope: string,
+  targetUrl: string,
+  body: ArrayBuffer,
+): string | null {
   const payload = parseJsonObject(Buffer.from(body).toString("utf8"));
   const type = stringField(payload, "type");
   if (!new Set(["INCOME", "EXPENSE", "WITHDRAW"]).has(type ?? "")) {
@@ -1876,6 +2303,57 @@ function validateOfflineCashTransaction(body: ArrayBuffer): string | null {
   if (amount === null || amount <= 0) {
     return "Kassa harakati summasi musbat bo'lishi kerak.";
   }
+
+  try {
+    const transactionUrl = new URL(targetUrl);
+    const shiftId = transactionUrl.pathname.match(
+      /^\/api\/v1\/cash-register\/shift\/([^/]+)\/transactions$/,
+    )?.[1];
+    if (!shiftId) {
+      return "Oflayn kassa harakati uchun smena manzili aniqlanmadi.";
+    }
+
+    const shiftUrl = new URL(transactionUrl);
+    shiftUrl.pathname = "/api/v1/cash-register/shift";
+    shiftUrl.search = "";
+    const cachedShift = store.getCachedResponse(
+      DesktopStore.cacheKey(shiftUrl.toString(), cacheScope),
+    );
+    if (!cachedShift) {
+      return "Ochiq kassa smenasi qurilmada saqlanmagan. Internet borida smenani yangilang.";
+    }
+    if (!isFreshOfflineCashPaymentSnapshot(cachedShift)) {
+      return "Kassa smenasi keshi eskirgan. Oflayn kassa harakatidan oldin internetda smenani yangilang.";
+    }
+    const projected = applyOptimisticProjection(
+      cachedShift.body,
+      shiftUrl.toString(),
+      store.listActiveMutations(authScope),
+    );
+    const shift = responseDataRecord(
+      parseJsonValue(projected?.body ?? cachedShift.body),
+    );
+    if (!shift || shift.id !== shiftId || shift.status !== "OPEN") {
+      return "Oflayn kassa harakati uchun ochiq smena holati topilmadi.";
+    }
+
+    if (type === "EXPENSE" || type === "WITHDRAW") {
+      const available =
+        finiteAmount(shift.expectedCash) ??
+        finiteAmount(shift.currentBalance) ??
+        finiteAmount(shift.currentCash) ??
+        finiteAmount(shift.openingBalance);
+      if (available === null) {
+        return "Kassadagi naqd pul qoldig'i oflayn tekshirilmaydi. Internetga ulaning.";
+      }
+      if (amount > available) {
+        return `Kassada yetarli naqd pul yo'q. Joriy qoldiq: ${available.toFixed(2)} so'm.`;
+      }
+    }
+  } catch {
+    return "Kassa holatini oflayn tekshirib bo'lmadi. Internetga ulaning.";
+  }
+
   return null;
 }
 
@@ -1950,6 +2428,50 @@ function validateOfflineCashPayment(
   if (!orderId || !shiftId) {
     return {
       error: "Oflayn to'lov uchun buyurtma va ochiq smena tanlanishi kerak.",
+      order: null,
+    };
+  }
+
+  const cachedPaymentMethods = store.getLatestCachedResponse(
+    cacheScope,
+    "/api/v1/payments/methods",
+  );
+  if (!cachedPaymentMethods) {
+    return {
+      error:
+        "Kassa to'lov sozlamalari qurilmada saqlanmagan. Internet borida to'lovlar sahifasini yangilang.",
+      order: null,
+    };
+  }
+  if (!isFreshOfflineCashPaymentSnapshot(cachedPaymentMethods)) {
+    return {
+      error:
+        "Kassa to'lov sozlamalari keshi eskirgan. Oflayn pul qabul qilishdan oldin internetda to'lovlar sahifasini yangilang.",
+      order: null,
+    };
+  }
+  const paymentMethodsPayload = parseJsonValue(cachedPaymentMethods.body);
+  const paymentMethods =
+    isRecord(paymentMethodsPayload) && Array.isArray(paymentMethodsPayload.data)
+      ? paymentMethodsPayload.data
+      : paymentMethodsPayload;
+  if (!Array.isArray(paymentMethods)) {
+    return {
+      error:
+        "Kassa to'lov sozlamalarining keshlangan javobi yaroqsiz. Internetga ulaning.",
+      order: null,
+    };
+  }
+  if (
+    !paymentMethods.some(
+      (method) =>
+        isRecord(method) &&
+        stringField(method, "code")?.toUpperCase() === "CASH",
+    )
+  ) {
+    return {
+      error:
+        "Naqd to'lov usuli oxirgi sinxronlangan kassa sozlamalarida o'chirilgan. Internetga ulaning.",
       order: null,
     };
   }
@@ -2471,6 +2993,13 @@ function applyOptimisticProjection(
         }
       }
       if (pathname === "/api/v1/kitchen/orders") {
+        const kitchenResponse = isRecord(projected)
+          ? (recordField(projected, "data") ?? projected)
+          : null;
+        const showPosOrder =
+          command.commandType !== "pos.order.create" ||
+          kitchenResponse?.kitchenPosOrdersEnabled === true;
+        if (!showPosOrder) continue;
         const ticket = optimisticKitchenTicket(
           command,
           order,
@@ -2777,6 +3306,18 @@ function applyOptimisticProjection(
     }
   }
 
+  if (pathname === "/api/v1/kitchen/orders") {
+    const kitchenResponse = responseDataRecord(projected);
+    if (kitchenResponse && Array.isArray(kitchenResponse.items)) {
+      kitchenResponse.items = kitchenResponse.items.filter(
+        (ticket) =>
+          isRecord(ticket) &&
+          Array.isArray(ticket.items) &&
+          ticket.items.length > 0,
+      );
+    }
+  }
+
   return applied.length
     ? { body: JSON.stringify(projected), commandIds: applied }
     : null;
@@ -2802,7 +3343,9 @@ function optimisticOrder(
     ...(source === "POS"
       ? {
           displayOrderNumber:
-            numberField(body, "offlineDisplayOrderSequence") ?? 101,
+            stringField(body, "offlineDisplayOrderNumber") ??
+            numberField(body, "offlineDisplayOrderSequence") ??
+            101,
         }
       : {}),
     version: numberField(body, "expectedVersion") ?? 0,
@@ -3130,7 +3673,7 @@ function patchKitchenOrderItemProjection(
   ) {
     return false;
   }
-  if (!ticketHasItem) ticketItems.push(item);
+  if (!ticketHasItem && isKitchenPrintItem(item)) ticketItems.push(item);
   ticket.items = ticketItems;
   ticket.pendingSync = true;
   return true;
@@ -3219,13 +3762,22 @@ function queuedResponseData(
     queuedPayload,
     "offlineWaiterItemSnapshot",
   );
-  const total = paymentTotal(parsedBody);
-  const cashReceived = numberField(parsedBody, "cashReceived") ?? total;
-  const offlineNumber = offlinePosInternalOrderNumber(
-    command.aggregateId ?? command.id,
+  const offlineOrderSnapshot = recordField(
+    queuedPayload,
+    "offlineOrderSnapshot",
   );
+  const total =
+    parsedBody?.payLater === true
+      ? (finiteAmount(offlineOrderSnapshot?.total) ?? paymentTotal(parsedBody))
+      : paymentTotal(parsedBody);
+  const cashReceived = numberField(parsedBody, "cashReceived") ?? total;
+  const offlineNumber =
+    stringField(offlineOrderSnapshot, "orderNumber") ??
+    offlinePosInternalOrderNumber(command.aggregateId ?? command.id);
   const displayNumber =
-    numberField(parsedBody, "offlineDisplayOrderSequence") ?? 101;
+    stringField(parsedBody, "offlineDisplayOrderNumber") ??
+    numberField(parsedBody, "offlineDisplayOrderSequence") ??
+    101;
   const base = {
     offlineQueued: true,
     queued: true,
@@ -3434,6 +3986,70 @@ function parseJsonObject(source: string): Record<string, unknown> | null {
   } catch {
     return null;
   }
+}
+
+function hasConfiguredSystemPrinterRole(
+  store: DesktopStore,
+  role: string,
+): boolean {
+  try {
+    const printers = JSON.parse(
+      store.getSetting("system_printers") ?? "[]",
+    ) as unknown;
+    return (
+      Array.isArray(printers) &&
+      printers.some(
+        (printer) =>
+          printer &&
+          typeof printer === "object" &&
+          Array.isArray((printer as Record<string, unknown>).roles) &&
+          ((printer as Record<string, unknown>).roles as unknown[]).includes(
+            role,
+          ),
+      )
+    );
+  } catch {
+    return false;
+  }
+}
+
+function readableOutboxError(responseText: string, status: number): string {
+  const payload = parseJsonObject(responseText);
+  const nestedError = payload?.error;
+  const nestedMessage =
+    nestedError &&
+    typeof nestedError === "object" &&
+    !Array.isArray(nestedError)
+      ? (nestedError as Record<string, unknown>).message
+      : undefined;
+  const rawMessage =
+    nestedMessage ??
+    payload?.message ??
+    (typeof nestedError === "string" ? nestedError : undefined);
+  const message = Array.isArray(rawMessage)
+    ? rawMessage
+        .filter(
+          (value): value is string =>
+            typeof value === "string" && Boolean(value.trim()),
+        )
+        .join("; ")
+    : rawMessage;
+  const readable =
+    typeof message === "string" && message.trim()
+      ? message.trim()
+      : responseText.trim() || `HTTP ${status}`;
+  return readable.slice(0, 500);
+}
+
+function canonicalizeJson(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalizeJson);
+  if (!value || typeof value !== "object") return value;
+  const record = value as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.keys(record)
+      .sort()
+      .map((key) => [key, canonicalizeJson(record[key])]),
+  );
 }
 
 function stringField(
@@ -4230,6 +4846,7 @@ function buildOfflineWaiterItemSnapshot(
     productId,
     variantId,
     productName,
+    printerRouting: stringField(product, "printerRouting") ?? "KITCHEN",
     variantName: isRecord(variant) ? stringField(variant, "name") : null,
     quantity: quantity.toString(),
     unitPrice: unitPrice.toFixed(2),
@@ -4266,7 +4883,19 @@ function cachedCatalog(
       Array.isArray(catalog.products) &&
       Array.isArray(catalog.tables)
     ) {
-      return branch ? { ...catalog, branch } : catalog;
+      const bootstrapCatalog = recordField(snapshot, "catalog");
+      const bootstrapOrderDisplayStart = numberField(
+        bootstrapCatalog,
+        "orderDisplayNumberStart",
+      );
+      return {
+        ...catalog,
+        ...(catalog.orderDisplayNumberStart === undefined &&
+        bootstrapOrderDisplayStart !== null
+          ? { orderDisplayNumberStart: bootstrapOrderDisplayStart }
+          : {}),
+        ...(branch ? { branch } : {}),
+      };
     }
   }
 
@@ -4282,6 +4911,335 @@ function cachedCatalog(
   }
 
   return branch ? { ...catalog, branch } : catalog;
+}
+
+function offlinePosOrderQueueError(
+  store: DesktopStore,
+  cacheScope: string,
+  branchId: string | null | undefined,
+  method: string,
+  pathname: string,
+  body: ArrayBuffer | undefined,
+  request: IncomingMessage,
+): string | null {
+  if (method !== "POST" || pathname !== "/api/v1/pos/orders") return null;
+  if (!body || !branchId) {
+    return "Faol filial aniqlanmadi. Oflayn savdo navbatga olinmadi.";
+  }
+
+  const posResponse = store.getLatestCachedResponse(
+    cacheScope,
+    "/api/v1/pos/catalog",
+  );
+  const posData = posResponse ? parseJsonObject(posResponse.body) : null;
+  const posCatalog = recordField(posData, "data") ?? posData;
+  if (
+    stringField(posCatalog, "branchId") &&
+    stringField(posCatalog, "branchId") !== branchId
+  ) {
+    return "Keshdagi POS katalogi boshqa filialniki. Internet borida POS oynasini yangilang.";
+  }
+
+  const bootstrapResponse = store.getLatestCachedResponse(
+    cacheScope,
+    "/api/v1/realtime/bootstrap",
+  );
+  const bootstrap = bootstrapResponse
+    ? recordField(parseJsonObject(bootstrapResponse.body), "data")
+    : null;
+  if (
+    bootstrap?.schemaVersion === 2 &&
+    stringField(bootstrap, "branchId") &&
+    stringField(bootstrap, "branchId") !== branchId
+  ) {
+    return "Keshdagi POS katalogi boshqa filialniki. Internet borida POS oynasini yangilang.";
+  }
+
+  const catalog = cachedCatalog(store, cacheScope, branchId);
+  if (!catalog) {
+    return "Oflayn savdo uchun shu filial katalogi keshda yo'q. Internet borida POS menyusini yangilang.";
+  }
+  if (!stringField(catalog, "offlineDisplayNumberSuffix")) {
+    return "Oflayn chek raqamlari noyob bo'lishi uchun terminalni ro'yxatdan o'tkazing va POS oynasini internetda yangilang.";
+  }
+  const products = Array.isArray(catalog.products) ? catalog.products : [];
+  const tables = Array.isArray(catalog.tables) ? catalog.tables : [];
+  const source = parseJsonObject(Buffer.from(body).toString("utf8"));
+  if (!source) return "Oflayn savdo so'rovi noto'g'ri.";
+  const idempotencyKey = stringField(source, "idempotencyKey");
+  const headerIdempotencyKey = headerValue(request.headers["idempotency-key"]);
+  if (!idempotencyKey || idempotencyKey.trim().length > 160) {
+    return "Buyurtma uchun body ichidagi takroriy yuborishdan himoya kaliti yo'q yoki noto'g'ri.";
+  }
+  if (headerIdempotencyKey && headerIdempotencyKey !== idempotencyKey) {
+    return "Body va header ichidagi buyurtma kalitlari mos emas.";
+  }
+  const items = Array.isArray(source.items) ? source.items : [];
+  if (!items.length || items.length > 80) {
+    return "Oflayn savdoda 1 dan 80 tagacha mahsulot bo'lishi kerak.";
+  }
+  const type = source.type == null ? "TAKEAWAY" : source.type;
+  if (type !== "TAKEAWAY" && type !== "DINE_IN") {
+    return "Oflayn kassada faqat zal yoki olib ketish buyurtmasi mumkin.";
+  }
+  if (source.payLater != null && typeof source.payLater !== "boolean") {
+    return "To'lov holati noto'g'ri. Oflayn savdo navbatga olinmadi.";
+  }
+  const payLater = source.payLater === true;
+  if (payLater && type !== "DINE_IN") {
+    return "Keyin to'lash faqat zal buyurtmasida mumkin.";
+  }
+  if (!payLater) {
+    const cachedPaymentMethods = Array.isArray(catalog.paymentMethods)
+      ? catalog.paymentMethods
+      : [];
+    const cashEnabled = cachedPaymentMethods.some(
+      (method) =>
+        isRecord(method) &&
+        stringField(method, "code")?.trim().toUpperCase() === "CASH" &&
+        method.active === true,
+    );
+    if (!cashEnabled) {
+      return "Keshdagi sozlamada naqd to'lov yoqilmagan yoki mavjud emas. Internetga ulanib POS katalogini yangilang.";
+    }
+  }
+  if (
+    payLater &&
+    (source.payments !== undefined || source.cashReceived !== undefined)
+  ) {
+    return "Zal uchun keyin to'lanadigan buyurtmada to'lov yuborilmaydi.";
+  }
+  if (
+    source.notes != null &&
+    (typeof source.notes !== "string" || source.notes.length > 500)
+  ) {
+    return "Buyurtma izohi 500 belgidan oshmasligi kerak.";
+  }
+  if (source.tableId != null) {
+    if (
+      typeof source.tableId !== "string" ||
+      !source.tableId ||
+      type !== "DINE_IN"
+    ) {
+      return "Stol faqat zal buyurtmasida tanlanadi.";
+    }
+    if (
+      !tables.some((table) => isRecord(table) && table.id === source.tableId)
+    ) {
+      return "Tanlangan stol faol filial katalogida topilmadi.";
+    }
+  }
+  const cents = (value: unknown): number | null => {
+    if (
+      (typeof value !== "number" && typeof value !== "string") ||
+      (typeof value === "string" && !value.trim())
+    )
+      return null;
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount < 0) return null;
+    const raw = amount * 100;
+    const rounded = Math.round(raw);
+    return Number.isSafeInteger(rounded) && Math.abs(raw - rounded) < 0.000001
+      ? rounded
+      : null;
+  };
+  let totalCents = 0;
+
+  for (const [index, value] of items.entries()) {
+    const item = isRecord(value) ? value : null;
+    const productId = item ? stringField(item, "productId") : null;
+    const quantity = item ? finiteAmount(item.quantity) : null;
+    const fail = (message: string) =>
+      index + 1 + "-mahsulot " + message + " Oflayn savdo navbatga olinmadi.";
+    if (
+      !item ||
+      !productId ||
+      quantity === null ||
+      quantity <= 0 ||
+      quantity > 99
+    ) {
+      return fail("ma'lumoti yaroqsiz.");
+    }
+    if (
+      item.notes != null &&
+      (typeof item.notes !== "string" || item.notes.length > 300)
+    ) {
+      return fail("izohi yaroqsiz.");
+    }
+    if (item.variantId != null && typeof item.variantId !== "string") {
+      return fail("varianti yaroqsiz.");
+    }
+    const product = products.find(
+      (candidate) => isRecord(candidate) && candidate.id === productId,
+    );
+    if (
+      !isRecord(product) ||
+      product.isAvailable === false ||
+      !stringField(product, "name")
+    ) {
+      return fail(
+        "faol filial katalogida topilmadi. Internet borida menyuni yangilang.",
+      );
+    }
+    const variantId = stringField(item, "variantId");
+    const variants = Array.isArray(product.variants) ? product.variants : [];
+    const variant = variantId
+      ? variants.find(
+          (candidate) => isRecord(candidate) && candidate.id === variantId,
+        )
+      : null;
+    if (variantId && (!isRecord(variant) || variant.isAvailable === false)) {
+      return fail("varianti katalogda topilmadi.");
+    }
+    const unitCents = cents(
+      isRecord(variant) ? variant.sellingPrice : product.sellingPrice,
+    );
+    if (unitCents === null) return fail("narxi aniqlanmadi.");
+
+    if (product.modifiers != null && !Array.isArray(product.modifiers)) {
+      return fail("qo'shimcha sozlamalari yaroqsiz.");
+    }
+    if (item.modifiers != null && !Array.isArray(item.modifiers)) {
+      return fail("qo'shimchalari noto'g'ri.");
+    }
+    const links = Array.isArray(product.modifiers) ? product.modifiers : [];
+    const requested = Array.isArray(item.modifiers) ? item.modifiers : [];
+    if (requested.length > 12)
+      return fail("12 tadan ortiq qo'shimcha tanlab bo'lmaydi.");
+
+    const selected = new Map<string, number>();
+    let modifierCents = 0;
+    for (const entry of requested) {
+      const chosen = isRecord(entry) ? entry : null;
+      const modifierId = chosen ? stringField(chosen, "modifierId") : null;
+      const rawQuantity = chosen?.quantity;
+      const modifierQuantity =
+        rawQuantity == null
+          ? 1
+          : typeof rawQuantity === "number" ||
+              (typeof rawQuantity === "string" && rawQuantity.trim())
+            ? finiteAmount(rawQuantity)
+            : null;
+      const link = modifierId
+        ? links.find(
+            (candidate) =>
+              isRecord(candidate) &&
+              recordField(candidate, "modifier")?.id === modifierId,
+          )
+        : null;
+      const modifier = isRecord(link) ? recordField(link, "modifier") : null;
+      const priceCents = cents(modifier?.price);
+      if (
+        !chosen ||
+        !modifierId ||
+        selected.has(modifierId) ||
+        !modifier ||
+        !stringField(modifier, "name") ||
+        modifierQuantity === null ||
+        !Number.isInteger(modifierQuantity) ||
+        modifierQuantity < 1 ||
+        modifierQuantity > 99 ||
+        priceCents === null
+      ) {
+        return fail("qo'shimchasi faol yoki miqdori ruxsat etilgan emas.");
+      }
+      selected.set(modifierId, modifierQuantity);
+      modifierCents += priceCents * modifierQuantity;
+      if (!Number.isSafeInteger(modifierCents)) {
+        return "Buyurtma summasi xavfsiz hisoblanmadi. Oflayn savdo navbatga olinmadi.";
+      }
+    }
+
+    for (const link of links) {
+      if (!isRecord(link)) return fail("qo'shimcha sozlamalari yaroqsiz.");
+      const modifier = recordField(link, "modifier");
+      const modifierId = stringField(modifier, "id");
+      const minimum = link.minSelect == null ? 0 : finiteAmount(link.minSelect);
+      const maximum =
+        link.maxSelect == null ? null : finiteAmount(link.maxSelect);
+      if (
+        !modifierId ||
+        minimum === null ||
+        !Number.isInteger(minimum) ||
+        minimum < 0 ||
+        (link.maxSelect != null &&
+          (maximum === null || !Number.isInteger(maximum) || maximum < 0))
+      ) {
+        return fail("qo'shimcha tanlov chegaralari yaroqsiz.");
+      }
+      const requiredMinimum = Math.max(
+        minimum,
+        link.isRequired === true ? 1 : 0,
+      );
+      const selectedQuantity = selected.get(modifierId) ?? 0;
+      if (
+        selectedQuantity < requiredMinimum ||
+        (maximum !== null && selectedQuantity > maximum)
+      ) {
+        return fail(
+          "majburiy yoki ruxsat etilgan qo'shimcha miqdoriga mos emas.",
+        );
+      }
+    }
+
+    const itemCents = Math.round((unitCents + modifierCents) * quantity);
+    if (
+      !Number.isSafeInteger(itemCents) ||
+      !Number.isSafeInteger(totalCents + itemCents)
+    ) {
+      return "Buyurtma summasi xavfsiz hisoblanmadi. Oflayn savdo navbatga olinmadi.";
+    }
+    totalCents += itemCents;
+  }
+
+  if (payLater) {
+    if (
+      source.offlineEstimatedTotal != null &&
+      (typeof source.offlineEstimatedTotal !== "number" ||
+        !Number.isFinite(source.offlineEstimatedTotal) ||
+        source.offlineEstimatedTotal < 0 ||
+        cents(source.offlineEstimatedTotal) !== totalCents)
+    ) {
+      return "Zal buyurtmasi taxminiy summasi keshdagi narxlarga mos emas.";
+    }
+    return null;
+  }
+
+  const payments = Array.isArray(source.payments) ? source.payments : [];
+  if (!payments.length || payments.length > 4) {
+    return "Oflayn savdoda 1 dan 4 tagacha naqd to'lov bo'lagi bo'lishi kerak.";
+  }
+  let paidCents = 0;
+  const paymentCodes = new Set<string>();
+  for (const value of payments) {
+    const payment = isRecord(value) ? value : null;
+    const code = payment
+      ? stringField(payment, "paymentMethodCode")?.trim().toUpperCase()
+      : null;
+    const amountCents = payment ? cents(payment.amount) : null;
+    if (
+      !payment ||
+      code !== "CASH" ||
+      paymentCodes.has(code) ||
+      amountCents === null ||
+      amountCents <= 0 ||
+      !Number.isSafeInteger(paidCents + amountCents)
+    ) {
+      return "Oflayn savdoda faqat takrorlanmagan, to'g'ri naqd to'lov qabul qilinadi.";
+    }
+    paymentCodes.add(code);
+    paidCents += amountCents;
+  }
+  if (paidCents !== totalCents) {
+    return "Naqd to'lov summasi mahsulotlarning keshdagi narxiga mos emas. Oflayn savdo navbatga olinmadi.";
+  }
+  if (source.cashReceived != null) {
+    const receivedCents = cents(source.cashReceived);
+    if (receivedCents === null || receivedCents < paidCents) {
+      return "Qabul qilingan naqd pul buyurtma summasidan kam.";
+    }
+  }
+  return null;
 }
 
 function buildOfflineOrderSnapshot(
@@ -4349,6 +5307,7 @@ function buildOfflineOrderSnapshot(
       id: `${localOrderId}-item-${index + 1}`,
       productId,
       productName: stringField(productRecord, "name") ?? "Mahsulot",
+      printerRouting: stringField(productRecord, "printerRouting") ?? "KITCHEN",
       variantName: stringField(isRecord(variant) ? variant : null, "name"),
       quantity: quantity.toString(),
       ...(unitPrice !== null ? { unitPrice: unitPrice.toFixed(2) } : {}),
@@ -4357,11 +5316,25 @@ function buildOfflineOrderSnapshot(
       modifierSnapshot: modifiers,
     };
   });
+  const localOrderTotal =
+    body.payLater === true
+      ? Number(
+          items
+            .reduce(
+              (sum, item) => sum + (finiteAmount(item.totalPrice) ?? 0),
+              0,
+            )
+            .toFixed(2),
+        )
+      : paymentTotal(body);
   const tableId = stringField(body, "tableId");
   const table = tables.find(
     (candidate) => isRecord(candidate) && candidate.id === tableId,
   );
-  const offlineNumber = numberField(body, "offlineDisplayOrderSequence") ?? 101;
+  const offlineNumber =
+    stringField(body, "offlineDisplayOrderNumber") ??
+    numberField(body, "offlineDisplayOrderSequence") ??
+    101;
   return {
     id: localOrderId,
     orderNumber: offlinePosInternalOrderNumber(localOrderId),
@@ -4369,7 +5342,7 @@ function buildOfflineOrderSnapshot(
     status: "NEW",
     orderState: "PLACED",
     paymentStatus: body.payLater === true ? "PENDING" : "PENDING_SYNC",
-    total: String(paymentTotal(body)),
+    total: String(localOrderTotal),
     source: "POS",
     type: stringField(body, "type") ?? "TAKEAWAY",
     notes: stringField(body, "notes"),
@@ -4399,7 +5372,9 @@ function optimisticKitchenTicket(
         ...(tableSnapshot ? { table: tableSnapshot } : {}),
       }
     : order;
-  const items = Array.isArray(ticketOrder.items) ? [...ticketOrder.items] : [];
+  const items = Array.isArray(ticketOrder.items)
+    ? ticketOrder.items.filter(isKitchenPrintItem)
+    : [];
   return {
     id: `offline-ticket-${command.id}`,
     ticketNumber: `OFF-${command.id.slice(0, 8).toUpperCase()}`,
@@ -4425,11 +5400,38 @@ function buildOfflinePrintDocument(
     ? body.payments.map((value) => {
         const payment = isRecord(value) ? value : {};
         return {
-          method: stringField(payment, "paymentMethodCode") ?? "CASH",
-          amount: String(finiteAmount(payment.amount) ?? 0),
+          method:
+            stringField(payment, "paymentMethodCode") ??
+            stringField(payment, "methodCode") ??
+            stringField(payment, "method") ??
+            "CASH",
+          amount: receiptMoney(payment.amount) ?? "0.00",
         };
       })
     : [];
+  const items = Array.isArray(order.items)
+    ? order.items
+        .filter(
+          (value) => documentType !== "KITCHEN" || isKitchenPrintItem(value),
+        )
+        .map((value) => {
+          const item = isRecord(value) ? value : {};
+          const total = receiptMoney(item.totalPrice ?? item.total);
+          return {
+            name:
+              stringField(item, "productName") ??
+              stringField(item, "name") ??
+              "Mahsulot",
+            variant:
+              stringField(item, "variantName") ?? stringField(item, "variant"),
+            quantity: receiptQuantity(item.quantity),
+            ...(total !== null ? { total } : {}),
+            notes: stringField(item, "notes"),
+            modifiers: item.modifierSnapshot ?? item.modifiers,
+          };
+        })
+    : [];
+  const total = receiptMoney(order.total);
   return {
     title: "MAZETTO FOOD",
     documentType,
@@ -4442,16 +5444,38 @@ function buildOfflinePrintDocument(
     displayOrderNumber: order.displayOrderNumber,
     orderType: offlineOrderTypeLabel(stringField(order, "type")),
     orderSource: stringField(order, "source") ?? "POS",
+    customerName: stringField(order, "customerName"),
+    customerPhone: stringField(order, "customerPhone"),
+    address:
+      stringField(order, "deliveryAddress") ?? stringField(order, "address"),
     orderNotes:
       typeof order.notes === "string" ? order.notes.trim() || null : null,
-    items: order.items,
+    items,
     payments,
-    total: order.total,
+    ...(total !== null ? { total } : {}),
     dateTime: formatTashkentDateTime(
       new Date(stringField(order, "createdAt") ?? new Date().toISOString()),
     ),
     offline: true,
   };
+}
+
+function isKitchenPrintItem(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const routing = stringField(value, "printerRouting") ?? "KITCHEN";
+  return routing === "KITCHEN" || routing === "BAR";
+}
+
+function receiptMoney(value: unknown): string | null {
+  const amount = finiteAmount(value);
+  return amount === null ? null : amount.toFixed(2);
+}
+
+function receiptQuantity(value: unknown): string {
+  const quantity = finiteAmount(value);
+  if (quantity === null) return String(value ?? "1");
+  if (Number.isInteger(quantity)) return String(quantity);
+  return quantity.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function offlineWaiterInternalOrderNumber(localOrderId: string): string {
@@ -4467,7 +5491,7 @@ function offlineOrderTypeLabel(type: string | null): string {
     case "DELIVERY":
       return "Yetkazib berish";
     default:
-      return type ?? "";
+      return "Noma'lum";
   }
 }
 
@@ -4485,18 +5509,35 @@ function offlinePosInternalOrderNumber(localOrderId: string): string {
 function nextOfflineDisplayOrderSequence(
   store: DesktopStore,
   authScope: string,
+  tenantId?: string,
+  branchId?: string,
+  today = tashkentDateKey(new Date()),
 ): number {
-  const today = tashkentDateKey(new Date());
-  const settingKey = `pos-sequence:${today}`;
-  const savedSequence = Number(store.getSetting(settingKey) ?? 100);
+  const catalog = cachedCatalog(store, authScope, branchId);
+  const configuredStart = numberField(catalog, "orderDisplayNumberStart");
+  const startingSequence =
+    configuredStart !== null &&
+    Number.isInteger(configuredStart) &&
+    configuredStart >= 1 &&
+    configuredStart <= 1_000_000
+      ? configuredStart
+      : 101;
+  const baseline = startingSequence - 1;
+  const settingKey = posSequenceSettingKey(tenantId, branchId, today);
+  const savedValue = store.getSetting(settingKey);
+  const parsedSavedSequence = Number(savedValue ?? baseline);
+  const savedSequence =
+    Number.isInteger(parsedSavedSequence) && parsedSavedSequence >= baseline
+      ? parsedSavedSequence
+      : baseline;
   const cachedOrders = store.getLatestCachedResponse(
     authScope,
     "/api/v1/orders",
   );
   const cachedSequence = cachedOrders
-    ? maxPosDisplaySequence(parseJsonValue(cachedOrders.body), today)
-    : 100;
-  const nextSequence = Math.max(100, savedSequence, cachedSequence) + 1;
+    ? maxPosDisplaySequence(parseJsonValue(cachedOrders.body), today, baseline)
+    : baseline;
+  const nextSequence = Math.max(baseline, savedSequence, cachedSequence) + 1;
   store.setSetting(settingKey, String(nextSequence));
   return nextSequence;
 }
@@ -4504,6 +5545,8 @@ function nextOfflineDisplayOrderSequence(
 function rememberOnlinePosSequence(
   store: DesktopStore,
   responseBody: string,
+  tenantId?: string,
+  branchId?: string,
 ): void {
   const response = parseJsonObject(responseBody);
   const data = recordField(response, "data") ?? response;
@@ -4516,20 +5559,41 @@ function rememberOnlinePosSequence(
   const numberFromLabel = Number(stringField(order, "displayOrderNumber") ?? 0);
   const sequence =
     numberField(order, "displayOrderSequence") ?? numberFromLabel;
-  if (!Number.isInteger(sequence) || sequence < 101) return;
-  const key = `pos-sequence:${dateKey}`;
-  const saved = Number(store.getSetting(key) ?? 100);
-  if (sequence > saved) store.setSetting(key, String(sequence));
+  if (!Number.isInteger(sequence) || sequence < 1) return;
+  const key = posSequenceSettingKey(tenantId, branchId, dateKey);
+  const savedValue = store.getSetting(key);
+  const saved = savedValue === null ? null : Number(savedValue);
+  if (saved === null || !Number.isInteger(saved) || sequence > saved) {
+    store.setSetting(key, String(sequence));
+  }
 }
 
-function maxPosDisplaySequence(value: unknown, dateKey: string): number {
+function posSequenceSettingKey(
+  tenantId: string | undefined,
+  branchId: string | undefined,
+  dateKey: string,
+): string {
+  const scope = tenantId
+    ? `tenant:${tenantId}`
+    : branchId
+      ? `branch:${branchId}`
+      : "global";
+  return `pos-sequence:${scope}:${dateKey}`;
+}
+
+function maxPosDisplaySequence(
+  value: unknown,
+  dateKey: string,
+  baseline = 100,
+): number {
   if (Array.isArray(value)) {
     return value.reduce(
-      (max, item) => Math.max(max, maxPosDisplaySequence(item, dateKey)),
-      100,
+      (max, item) =>
+        Math.max(max, maxPosDisplaySequence(item, dateKey, baseline)),
+      baseline,
     );
   }
-  if (!isRecord(value)) return 100;
+  if (!isRecord(value)) return baseline;
   const source = stringField(value, "source");
   const displayDate = stringField(value, "displayOrderDate")?.slice(0, 10);
   const isPosOrder =
@@ -4537,10 +5601,11 @@ function maxPosDisplaySequence(value: unknown, dateKey: string): number {
   const ownSequence: number = isPosOrder
     ? (numberField(value, "displayOrderSequence") ??
       Number(stringField(value, "displayOrderNumber") ?? 0))
-    : 100;
+    : baseline;
   return Object.values(value).reduce<number>(
-    (max, child) => Math.max(max, maxPosDisplaySequence(child, dateKey)),
-    Number.isFinite(ownSequence) ? ownSequence : 100,
+    (max, child) =>
+      Math.max(max, maxPosDisplaySequence(child, dateKey, baseline)),
+    Number.isFinite(ownSequence) ? Math.max(baseline, ownSequence) : baseline,
   );
 }
 
@@ -4639,4 +5704,24 @@ async function readBody(
     body.byteOffset,
     body.byteOffset + body.byteLength,
   ) as ArrayBuffer;
+}
+
+async function readBodyLimited(
+  request: IncomingMessage,
+  maxBytes: number,
+): Promise<Buffer | null> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  let tooLarge = false;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += buffer.length;
+    if (size > maxBytes) {
+      tooLarge = true;
+      chunks.length = 0;
+    } else if (!tooLarge) {
+      chunks.push(buffer);
+    }
+  }
+  return tooLarge ? null : Buffer.concat(chunks);
 }

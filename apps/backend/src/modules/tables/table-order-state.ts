@@ -12,6 +12,12 @@ export async function releaseTableIfNoActiveOrders(
   tx: Prisma.TransactionClient,
   tableId: string,
 ): Promise<void> {
+  const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
+    'SELECT "id" FROM "restaurant_tables" WHERE "id" = $1 FOR UPDATE',
+    tableId,
+  );
+  if (locked.length !== 1) return;
+
   const activeOrders = await tx.order.count({
     where: { tableId, status: { in: activeTableOrderStatuses } },
   });

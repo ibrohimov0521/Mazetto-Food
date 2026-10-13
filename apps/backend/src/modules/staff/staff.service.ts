@@ -294,10 +294,6 @@ export class StaffService {
     this.assertNotTerminated(existing, "rolini o'zgartirish");
     const roleCodes = this.resolveRequestedRoleCodes(dto);
     await this.assertCanAssignRoles(actor, roleCodes);
-    await this.assertCanRemoveCurrentSuperAdmin(
-      existing,
-      !roleCodes.includes("SUPER_ADMIN"),
-    );
 
     const branchId = await this.resolveBranchForRoles(
       actor,
@@ -306,6 +302,11 @@ export class StaffService {
     );
 
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.assertCanRemoveCurrentSuperAdmin(
+        existing,
+        !roleCodes.includes("SUPER_ADMIN"),
+        tx,
+      );
       const roles = await this.findActiveRoles(tx, roleCodes);
 
       await tx.userRole.deleteMany({ where: { userId: id } });
@@ -351,11 +352,10 @@ export class StaffService {
     await this.assertCanManageStaffRecord(actor, existing);
     this.assertNotTerminated(existing, "holatini o'zgartirish");
 
-    if (!dto.isActive) {
-      await this.assertCanRemoveCurrentSuperAdmin(existing, true);
-    }
-
     const updated = await this.prisma.$transaction(async (tx) => {
+      if (!dto.isActive) {
+        await this.assertCanRemoveCurrentSuperAdmin(existing, true, tx);
+      }
       await tx.user.update({
         where: { id },
         data: { isActive: dto.isActive },
@@ -407,7 +407,6 @@ export class StaffService {
         "O'zingizning accountingizni o'chira olmaysiz",
       );
     }
-    await this.assertCanRemoveCurrentSuperAdmin(existing, true);
     await this.assertNoOpenFinancialDuties(existing.employee?.id);
     if (
       existing.employee &&
@@ -419,6 +418,7 @@ export class StaffService {
     }
 
     await this.prisma.$transaction(async (tx) => {
+      await this.assertCanRemoveCurrentSuperAdmin(existing, true, tx);
       await this.createAuditLog(tx, actor.id, "STAFF_DELETED", id, {
         displayName: existing.displayName,
         email: existing.email,
@@ -432,7 +432,35 @@ export class StaffService {
   async deleteStaffBulk(ids: string[], actor: AuthenticatedUser) {
     const uniqueIds = [...new Set((ids ?? []).filter((id) => typeof id === "string" && id.trim()))];
     if (!uniqueIds.length) throw new BadRequestException("Kamida bitta xodim tanlanishi kerak");
-    for (const id of uniqueIds) await this.deleteStaff(id, actor);
+    const staffRecords = await Promise.all(
+      uniqueIds.map((id) => this.findStaffOrThrow(id)),
+    );
+    for (const staff of staffRecords) {
+      await this.assertCanManageStaffRecord(actor, staff);
+      if (staff.id === actor.id) {
+        throw new BadRequestException("O'zingizning accountingizni o'chira olmaysiz");
+      }
+      await this.assertNoOpenFinancialDuties(staff.employee?.id);
+      if (
+        staff.employee &&
+        staff.employee.status !== EmployeeStatus.TERMINATED
+      ) {
+        throw new BadRequestException(
+          "Tarixli xodim loginini o'chirishdan oldin uni ishdan bo'shating",
+        );
+      }
+    }
+    await this.prisma.$transaction(async (tx) => {
+      await this.assertCanRemoveActiveSuperAdmins(uniqueIds, tx);
+      for (const staff of staffRecords) {
+        await this.createAuditLog(tx, actor.id, "STAFF_DELETED", staff.id, {
+          displayName: staff.displayName,
+          email: staff.email,
+        });
+        await tx.user.delete({ where: { id: staff.id } });
+      }
+    });
+    await Promise.all(staffRecords.map((staff) => this.invalidateUserAccess(staff.id)));
     return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
@@ -451,13 +479,13 @@ export class StaffService {
         "Bu account xodim yozuviga biriktirilmagan",
       );
     }
-    await this.assertCanRemoveCurrentSuperAdmin(existing, true);
     await this.assertNoOpenFinancialDuties(existing.employee.id);
 
     const terminatedAt = dto.terminatedAt
       ? new Date(dto.terminatedAt)
       : new Date();
     const updated = await this.prisma.$transaction(async (tx) => {
+      await this.assertCanRemoveCurrentSuperAdmin(existing, true, tx);
       await tx.user.update({ where: { id }, data: { isActive: false } });
       await tx.employee.update({
         where: { id: existing.employee!.id },
@@ -1121,16 +1149,71 @@ export class StaffService {
   private async assertCanRemoveCurrentSuperAdmin(
     staff: StaffRecord,
     wouldRemoveActiveSuperAdmin: boolean,
+    tx: Prisma.TransactionClient,
   ): Promise<void> {
-    if (
-      !wouldRemoveActiveSuperAdmin ||
-      !staff.isActive ||
-      !this.hasRole(staff, "SUPER_ADMIN")
-    ) {
-      return;
-    }
+    if (!wouldRemoveActiveSuperAdmin) return;
 
-    const activeSuperAdmins = await this.prisma.user.count({
+    await this.lockSuperAdminRole(tx);
+    const targetSuperAdminCount = await tx.user.count({
+      where: {
+        id: staff.id,
+        isActive: true,
+        roles: {
+          some: {
+            role: {
+              code: "SUPER_ADMIN",
+              isActive: true,
+            },
+          },
+        },
+      },
+    });
+    if (targetSuperAdminCount === 0) return;
+
+    await this.assertAtLeastOneActiveSuperAdminRemains(1, tx);
+  }
+
+  private async assertCanRemoveActiveSuperAdmins(
+    userIds: string[],
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    await this.lockSuperAdminRole(tx);
+    const countToRemove = await tx.user.count({
+      where: {
+        id: { in: userIds },
+        isActive: true,
+        roles: {
+          some: {
+            role: {
+              code: "SUPER_ADMIN",
+              isActive: true,
+            },
+          },
+        },
+      },
+    });
+    await this.assertAtLeastOneActiveSuperAdminRemains(countToRemove, tx);
+  }
+
+  private async lockSuperAdminRole(tx: Prisma.TransactionClient): Promise<void> {
+    const [superAdminRole] = await tx.$queryRaw<{ id: string }[]>`
+      SELECT "id"
+      FROM "roles"
+      WHERE "code" = 'SUPER_ADMIN'
+      FOR UPDATE
+    `;
+    if (!superAdminRole) {
+      throw new BadRequestException("SUPER_ADMIN role is not configured");
+    }
+  }
+
+  private async assertAtLeastOneActiveSuperAdminRemains(
+    countToRemove: number,
+    tx: Prisma.TransactionClient,
+  ): Promise<void> {
+    if (countToRemove <= 0) return;
+
+    const activeSuperAdmins = await tx.user.count({
       where: {
         isActive: true,
         roles: {
@@ -1143,8 +1226,7 @@ export class StaffService {
         },
       },
     });
-
-    if (activeSuperAdmins <= 1) {
+    if (activeSuperAdmins - countToRemove < 1) {
       throw new BadRequestException(
         "At least one active SUPER_ADMIN account must remain",
       );

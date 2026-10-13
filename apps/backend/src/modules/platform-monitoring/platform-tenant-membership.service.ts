@@ -191,7 +191,7 @@ export class PlatformTenantMembershipService {
     status: "ACTIVE" | "SUSPENDED",
     actor: AuthenticatedUser,
   ) {
-    let affectedUserId: string | undefined;
+    let changedMembershipId: string | undefined;
     const result = await this.prisma.$transaction(async (tx) => {
       const membership = await tx.tenantMembership.findFirst({
         where: { id: membershipId, tenantId },
@@ -201,7 +201,7 @@ export class PlatformTenantMembershipService {
         throw new NotFoundException("Restoran a'zoligi topilmadi.");
       if (membership.status === status) return { id: membership.id, status };
 
-      affectedUserId = membership.userId;
+      changedMembershipId = membership.id;
       const updated = await tx.tenantMembership.update({
         where: { id: membership.id },
         data: { status },
@@ -220,7 +220,7 @@ export class PlatformTenantMembershipService {
       });
       return updated;
     });
-    if (affectedUserId) this.kitchenGateway.disconnectStaffUser(affectedUserId);
+    if (changedMembershipId) this.kitchenGateway.disconnectTenantMembership(changedMembershipId);
     return result;
   }
 
@@ -274,7 +274,7 @@ export class PlatformTenantMembershipService {
       });
       return updated;
     });
-    this.kitchenGateway.disconnectStaffUser(membership.userId);
+    this.kitchenGateway.disconnectTenantMembership(membership.id);
     return updatedMembership;
   }
 

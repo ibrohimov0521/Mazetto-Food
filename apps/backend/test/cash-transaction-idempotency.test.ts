@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { ConflictException } from "@nestjs/common";
+import { CashTransactionType, Prisma } from "@prisma/client";
 import test from "node:test";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { ShiftsService } from "../src/modules/shifts/shifts.service";
@@ -12,6 +13,55 @@ const cashier: AuthenticatedUser = {
   roles: ["CASHIER"],
   permissions: ["CASH_TRANSACTION_CREATE"],
 };
+
+function createCashBalanceHarness() {
+  const rows: { amount: Prisma.Decimal; type: CashTransactionType }[] = [];
+  let shiftLocked = false;
+  let writes = 0;
+  const tx = {
+    branch: {
+      findUnique: async () => ({ tenantId: "tenant-a" }),
+      findFirst: async () => ({ id: "branch-a" }),
+    },
+    shift: {
+      findUnique: async () => ({
+        id: "shift-a",
+        branchId: "branch-a",
+        employeeId: "employee-a",
+        status: "OPEN",
+        openingBalance: new Prisma.Decimal(10_000),
+      }),
+      updateMany: async () => {
+        shiftLocked = true;
+        return { count: 1 };
+      },
+    },
+    employee: { findFirst: async () => ({ id: "employee-a" }) },
+    cashTransaction: {
+      findMany: async () => {
+        assert.equal(shiftLocked, true, "balance must be read under the shift lock");
+        return [...rows];
+      },
+      create: async ({ data }: { data: { amount: Prisma.Decimal; type: CashTransactionType } }) => {
+        writes += 1;
+        rows.push(data);
+        return { id: `cash-${writes}`, ...data };
+      },
+    },
+  };
+  const prisma = {
+    ...tx,
+    $transaction: async (callback: (client: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+  };
+
+  return {
+    service: new ShiftsService(prisma as never),
+    get writes() {
+      return writes;
+    },
+  };
+}
 
 test("cash transaction replay returns the original ledger row without a second write", async () => {
   let transactionActive = false;
@@ -184,4 +234,33 @@ test("cash transaction API rejects system-owned ledger types", async () => {
       /Faqat kirim, xarajat yoki kassadan chiqarish/,
     );
   }
+});
+
+test("expenses and withdrawals cannot overdraw the locked cash drawer", async () => {
+  const harness = createCashBalanceHarness();
+
+  await assert.rejects(
+    harness.service.createCashTransaction(
+      "shift-a",
+      { type: CashTransactionType.EXPENSE, amount: 10_001 } as never,
+      cashier,
+    ),
+    /Joriy qoldiq: 10000\.00 so'm/,
+  );
+  assert.equal(harness.writes, 0);
+
+  await harness.service.createCashTransaction(
+    "shift-a",
+    { type: CashTransactionType.WITHDRAW, amount: 7_000 } as never,
+    cashier,
+  );
+  await assert.rejects(
+    harness.service.createCashTransaction(
+      "shift-a",
+      { type: CashTransactionType.EXPENSE, amount: 4_000 } as never,
+      cashier,
+    ),
+    /Joriy qoldiq: 3000\.00 so'm/,
+  );
+  assert.equal(harness.writes, 1);
 });

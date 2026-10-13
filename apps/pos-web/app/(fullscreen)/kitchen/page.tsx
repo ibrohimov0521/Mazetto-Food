@@ -15,7 +15,12 @@ import {
   type KitchenQueueResponse,
   type KitchenTicket,
 } from "../../../components/kitchen/kitchen-types";
-import { useKitchenChime } from "../../../components/kitchen/use-kitchen-chime";
+import {
+  kitchenOrdersAcknowledgedEvent,
+  readKitchenSoundPreference,
+  saveKitchenSoundPreference,
+  useKitchenChime,
+} from "../../../components/kitchen/use-kitchen-chime";
 import { KitchenWorkspaceNavigation } from "../../../components/staff/staff-panel-navigation";
 import {
   StaffDialog,
@@ -138,6 +143,10 @@ function KitchenDisplay() {
   });
 
   useEffect(() => {
+    setIsSoundEnabled(readKitchenSoundPreference());
+  }, []);
+
+  useEffect(() => {
     void loadTickets();
     const refresh = () => {
       if (document.visibilityState === "visible") {
@@ -240,25 +249,7 @@ function KitchenDisplay() {
   ) {
     if (busyTicketIds.has(ticket.id)) return;
     const recipient = recipientName.trim();
-    if (
-      action === "complete" &&
-      ticket.order.type === "TAKEAWAY" &&
-      !recipient
-    ) {
-      setActionErrors((current) => ({
-        ...current,
-        [ticket.id]: "Buyurtmani olgan shaxs ismini kiriting.",
-      }));
-      return;
-    }
     const reason = cancelReason.trim();
-    if (action === "cancel" && !reason) {
-      setActionErrors((current) => ({
-        ...current,
-        [ticket.id]: "Bekor qilish sababini yozing.",
-      }));
-      return;
-    }
     const fingerprint = `${ticket.id}:${ticket.version}:${action}:${recipient}`;
     const idempotencyKey =
       actionKeys.current.get(fingerprint) ?? crypto.randomUUID();
@@ -286,7 +277,10 @@ function KitchenDisplay() {
               ? { recipientName: recipient }
               : {}),
             ...(action === "cancel"
-              ? { reason, reasonCode: "KITCHEN_OPERATOR_CANCELLED" }
+              ? {
+                  ...(reason ? { reason } : {}),
+                  reasonCode: "KITCHEN_OPERATOR_CANCELLED",
+                }
               : {}),
           }),
         },
@@ -330,12 +324,17 @@ function KitchenDisplay() {
   function toggleSound() {
     const next = !isSoundEnabled;
     setIsSoundEnabled(next);
+    saveKitchenSoundPreference(next);
     /* Tugmani bosish — haqiqiy harakat, shu yerda ovozni ochib olamiz. */
     if (next) chime.unlock();
   }
 
   function acknowledgeNew() {
-    setAcknowledgedIds(new Set(newTickets.map((ticket) => ticket.id)));
+    const ids = newTickets.map((ticket) => ticket.id);
+    setAcknowledgedIds(new Set(ids));
+    window.dispatchEvent(
+      new CustomEvent(kitchenOrdersAcknowledgedEvent, { detail: { ids } }),
+    );
     chime.unlock();
   }
 
@@ -543,7 +542,7 @@ function KitchenDisplay() {
               {actionErrors[cancelTicket.id]}
             </p>
           )}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               disabled={busyTicketIds.has(cancelTicket.id)}
@@ -554,6 +553,7 @@ function KitchenDisplay() {
             </button>
             <button
               className={styles.danger}
+              data-keyboard-primary
               disabled={busyTicketIds.has(cancelTicket.id)}
               onClick={() => void runAction(cancelTicket, "cancel")}
               type="button"
@@ -588,7 +588,7 @@ function KitchenDisplay() {
             </p>
           ) : (
             <label className={styles.field}>
-              <span>Buyurtmani olgan shaxs</span>
+              <span>Buyurtmani olgan shaxs (ixtiyoriy)</span>
               <input
                 className={styles.input}
                 maxLength={120}
@@ -602,7 +602,6 @@ function KitchenDisplay() {
                   });
                 }}
                 placeholder="Ism-familiyasi"
-                required
                 value={handoffRecipient}
               />
             </label>
@@ -612,7 +611,7 @@ function KitchenDisplay() {
               {actionErrors[handoffTicket.id]}
             </p>
           )}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               disabled={busyTicketIds.has(handoffTicket.id)}
@@ -633,9 +632,9 @@ function KitchenDisplay() {
             ) : (
               <button
                 className={styles.primary}
+                data-keyboard-primary
                 disabled={
-                  busyTicketIds.has(handoffTicket.id) ||
-                  !handoffRecipient.trim()
+                  busyTicketIds.has(handoffTicket.id)
                 }
                 onClick={() =>
                   void runAction(handoffTicket, "complete", handoffRecipient)

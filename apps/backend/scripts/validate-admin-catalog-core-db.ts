@@ -1,4 +1,5 @@
 import * as assert from "node:assert/strict";
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import { MenuService } from "../src/modules/menu/menu.service";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { loadEnvironmentFile } from "../src/config/env";
@@ -42,7 +43,7 @@ async function main(): Promise<void> {
     });
 
     assert.equal(created.categoryId, category.id);
-    assert.equal(created.catalogVisibility, "INTERNAL");
+    assert.equal(created.catalogVisibility, "CUSTOM");
     assert.equal(String(created.sellingPrice), "12000");
     assert.equal(created.variants.length, 1);
     assert.equal(String(created.variants[0]?.sellingPrice), "12000");
@@ -94,11 +95,11 @@ function assertIsolatedDatabase(): void {
     throw new Error("MAZETTO_ADMIN_CATALOG_DB_SMOKE=1 is required");
   }
 
-  const databaseUrl = process.env.DATABASE_URL ?? "";
-
-  if (!/localhost|127\.0\.0\.1/.test(databaseUrl)) {
-    throw new Error("Refusing to run admin catalog DB smoke outside localhost");
-  }
+  assertDisposableLoopbackDatabase(
+    process.env.DATABASE_URL,
+    /^(?=.*(?:^|_)(?:qa|isolated)(?:_|$))[a-z0-9_]+$/i,
+    ["5432", "5433", "15432"],
+  );
 }
 
 void main();

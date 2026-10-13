@@ -1,6 +1,6 @@
 # MAZETTO FOOD Release Readiness Checklist
 
-Last updated: 2026-09-11
+Last updated: 2026-10-12
 
 This checklist is for the next controlled production release. It is documentation only; it does not authorize deployment by itself.
 
@@ -75,11 +75,12 @@ This checklist is for the next controlled production release. It is documentatio
    - Do not reset or change the webhook unless the release prompt explicitly requires it.
 
 10. Public route health
-   - Run `pnpm release:smoke` (or GitHub Actions → Production smoke). It is read-only and covers backend health with database, customer-web pages, the customer menu/home APIs from step 11, pos-web, owner login, and media health, and protected endpoints that must return 401 without a token. Representative media file URLs still need the manual check below.
-   - Backend health.
-   - Customer web home.
-   - Customer menu.
-   - Media representative URLs.
+
+- Run `pnpm release:smoke` (or GitHub Actions → Production smoke). It is read-only and covers backend health with database, customer-web pages, the customer menu/home APIs from step 11, pos-web, owner login, and media health, and protected endpoints that must return 401 without a token. Representative media file URLs still need the manual check below.
+- Backend health.
+- Customer web home.
+- Customer menu.
+- Media representative URLs.
 
 11. API smoke
     - Customer branches.
@@ -124,10 +125,28 @@ curl -I https://media.mazettofood.uz/products/lavash-big.webp
 
 ## Current Known Gaps
 
-- Production media direct URLs are not considered complete until the media volume is populated.
-- Eight product media assets remain unresolved and should keep using fallback behavior until approved assets exist.
-- Click and Payme are not active payment providers.
-- Staff Telegram activation remains a separate phase.
+- Production read-only smoke passed 27/27 on 2026-10-12 against the deployed baseline. Its media check verifies image URLs returned by the public category and product APIs; all API-referenced images returned HTTP 200. Local and PR-only source changes are not included in this production check.
+- The local media manifest validates 11 category assets, 74 product assets, and 0 unresolved product assets. A direct production check of all 85 manifest URLs found one 404: `/categories/blyudalar.webp`. The current public category API points `Blyudalar` to `/categories/doner.webp`, so the missing manifest file is not currently referenced. Keep it documented until confirmed removable or deliberately copied.
+- Click and Payme are available only as cashier-selected manual settlement methods when enabled; they are not automated providers. Customer checkout currently supports cash only. The NBU QR SMS has no reliable order identifier, so automatic order matching requires a bank API/export or trusted reconciliation feed. Disconnected Desktop terminals can enforce only the last synchronized payment-method snapshot; paid offline POS sales and offline settlement of an existing order now fail closed unless that fresh snapshot enables CASH. Changes made from another device are not received until reconnection, so drain pending actions before changing cashier payment methods.
+- Both production Telegram getWebhookInfo checks passed read-only on 2026-10-12: 0 pending updates and no last error. Real-account order UX and group notification still require a human smoke.
+- Pre-release backup `/mnt/storage/backups/mazetto/postgres/mazetto-20261012-093631596.dump` (538,289 bytes; 703 archive entries; SHA-256 `8671a672ee9e05d0846b2f04ff9ca81d4b2e660f81fd250b5976f40325e882f3`) passed a full isolated PostgreSQL 18 restore with `pg_restore --exit-on-error`. The 59 migrations were deployed twice with no pending migrations; branch, employee, order, payment, and receipt row counts matched both the initial and independent rollback restore (2/7/21/17/38). The loopback-only temporary container was removed. This still does not rehearse application rollback or a live recovery procedure.
+- Desktop 0.1.116 is not published. Windows workstation installation/update, the new credential save prompt, offline recovery, and physical receipt plus shift-close printer output remain acceptance tests.
+- Offline POS paper uses the local order-created time, while the durable server receipt is timestamped when replay creates it. Define whether reprints retain sale time or show reprint time; do not accept client-supplied timestamps without a trusted provenance design.
+- Current grouped audit changes are not included in the deployed baseline. The Desktop local shift-report printer route now requires shift close/view permission and binds own-shift printing to the employee ID. Fresh workspace tests, verify, isolated DB acceptance, and read-only 27/27 production smoke passed on 2026-10-12; these do not replace physical printer, payment-provider, Telegram, and Windows Desktop acceptance.
+- Customer standalone browser QA had no local API attached; no offline-readiness conclusion should be drawn from that browser session.
+- Full release acceptance passed through migrations, seed, and database-backed order-to-cash-to-stock-to-print E2E using a disposable volume-free PostgreSQL container.
+- A non-blocking PostgreSQL client query-queue deprecation warning came from Prisma's adapter during that isolated E2E; it does not fail the test but should be tracked before a pg@9 upgrade.
+- Mocked staff workflows also passed across five viewport sizes; this does not replace tests using the live restaurant account, real staff device, or physical printer.
+
+## Unreleased payment-method audit note (2026-10-12)
+
+- The current local audit worktree fixes PostgreSQL NULL ordering in branch-specific payment-method overrides across cashier list, POS catalog, Desktop snapshot, and existing-order settlement. An inactive branch override now blocks fallback to a global active method. Corrupt/empty cashier allowlists fail closed rather than re-enabling CASH, and the settings UI can repair unknown stored codes.
+- Backend tests 674/674 plus 3 HTTP retry tests, POS tests 74/74, backend/POS lint and typecheck, and four-viewport settings browser QA passed. Fresh workspace verify passed (14 lint/typecheck tasks, 7 builds, 33 validators); full release acceptance passed backend/Desktop tests, media validation, all 59 migrations, seed, and database-backed order-to-cash-to-stock-to-print E2E using an explicit isolated-admin URL. A later test-harness edit makes isolated E2E honor `DATABASE_URL` when the explicit URL is absent and provide a useful connection hint; the focused E2E passed via that fallback, as did formatting and all 33 validators. Its temporary test database was dropped and confirmed absent. The change group remains uncommitted and undeployed; the 27/27 production smoke remains a baseline-only result and was not rerun for these changes.
+
+## Unreleased tenant-auth audit note (2026-10-12)
+
+- Tenant login now rejects an active membership with no active non-platform role instead of issuing an empty-permission session. Focused coverage passed 4/4; the full backend suite passed 678/678 plus 3 HTTP retry tests; backend lint/typecheck passed.
+- Read-only production counts found 0 active memberships without an active restaurant role and all 3 active employee-linked accounts matched same-branch memberships. This is not a password or workstation login smoke. The fix is uncommitted and undeployed; production smoke was not rerun.
 
 ## Step 14 Release Record
 
@@ -168,3 +187,8 @@ Remaining after Step 14:
 
 - Human Telegram UX smoke for the newly deployed single-message navigation and quick-add merge should be done manually from a real Telegram account without creating an unnecessary extra production order.
 - Eight authentic media assets remain unresolved.
+
+## Read-only Telegram webhook verification (2026-10-12)
+
+- Both production customer and staff bot `getWebhookInfo` calls succeeded: `api.mazettofood.uz`, 0 pending updates, and no last error. Tokens were not printed; no webhook or message was changed.
+- This supersedes the earlier current-gap note that credentials were unavailable. Real-account Telegram UX and order-notification smoke remain pending.

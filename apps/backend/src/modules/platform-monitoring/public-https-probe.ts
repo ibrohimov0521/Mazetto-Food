@@ -2,7 +2,7 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import { request } from "node:https";
 
-export type ProbeStatus = "ONLINE" | "OFFLINE";
+type ProbeStatus = "ONLINE" | "OFFLINE";
 
 export type ProbeResult = {
   status: ProbeStatus;
@@ -62,7 +62,8 @@ export function isPublicAddress(address: string): boolean {
       (a === 192 && (b === 0 || b === 168)) ||
       (a === 192 && b === 88 && octets[2] === 99) ||
       (a === 192 && b === 0 && octets[2] === 2) ||
-      (a === 198 && (b === 18 || b === 19 || (b === 51 && octets[2] === 100))) ||
+      (a === 198 &&
+        (b === 18 || b === 19 || (b === 51 && octets[2] === 100))) ||
       (a === 203 && b === 0 && octets[2] === 113) ||
       a >= 224
     );
@@ -72,15 +73,18 @@ export function isPublicAddress(address: string): boolean {
     const mapped = address.match(/^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i);
     if (mapped?.[1]) return isPublicAddress(mapped[1]);
 
-    const firstGroup = Number.parseInt(address.split(":")[0] || "0", 16);
     const normalized = address.toLowerCase();
-    return (
-      firstGroup >= 0x2000 &&
-      firstGroup <= 0x3fff &&
-      !normalized.startsWith("2001:db8:") &&
-      !normalized.startsWith("2001:10:") &&
-      !normalized.startsWith("2002:")
-    );
+    const [firstGroupText, secondGroupText] = normalized.split(":");
+    const firstGroup = Number.parseInt(firstGroupText || "0", 16);
+    const secondGroup = Number.parseInt(secondGroupText || "0", 16);
+    // Special-purpose prefixes inside global unicast are not public probe targets.
+    const specialPurpose =
+      (firstGroup === 0x2001 && secondGroup <= 0x01ff) ||
+      (firstGroup === 0x2001 && secondGroup === 0x0db8) ||
+      firstGroup === 0x2002 ||
+      (firstGroup === 0x3fff && secondGroup <= 0x000f);
+
+    return firstGroup >= 0x2000 && firstGroup <= 0x3fff && !specialPurpose;
   }
 
   return false;
@@ -126,7 +130,10 @@ export async function probePublicHttpsUrl(
   try {
     const url = new URL(normalizePublicHttpsUrl(rawUrl));
     const addresses = await lookup(url.hostname, { all: true, verbatim: true });
-    if (!addresses.length || addresses.some(({ address }) => !isPublicAddress(address))) {
+    if (
+      !addresses.length ||
+      addresses.some(({ address }) => !isPublicAddress(address))
+    ) {
       return {
         status: "OFFLINE",
         statusCode: null,
@@ -156,7 +163,9 @@ export async function probePublicHttpsUrl(
       status: online ? "ONLINE" : "OFFLINE",
       statusCode: result.statusCode,
       latencyMs: result.latencyMs,
-      error: online ? null : `Server HTTP ${result.statusCode} xatosini qaytardi.`,
+      error: online
+        ? null
+        : `Server HTTP ${result.statusCode} xatosini qaytardi.`,
     };
   } catch (error) {
     return {

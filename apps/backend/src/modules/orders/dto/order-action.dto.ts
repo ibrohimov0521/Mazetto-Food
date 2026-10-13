@@ -21,8 +21,8 @@ export class CancelOrderActionDto {
   @MaxLength(80)
   reasonCode!: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(500)
-  reason!: string;
+  reason?: string;
 }

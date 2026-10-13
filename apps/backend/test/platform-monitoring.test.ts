@@ -36,60 +36,123 @@ test("monitoring registry is restricted to the platform owner health permission"
 });
 
 test("global activity feed has the same owner-only access policy", () => {
-  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, PlatformEventsController), ["PLATFORM_OWNER"]);
-  assert.deepEqual(Reflect.getMetadata(PERMISSIONS_KEY, PlatformEventsController), ["SYSTEM_HEALTH_VIEW"]);
+  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, PlatformEventsController), [
+    "PLATFORM_OWNER",
+  ]);
+  assert.deepEqual(
+    Reflect.getMetadata(PERMISSIONS_KEY, PlatformEventsController),
+    ["SYSTEM_HEALTH_VIEW"],
+  );
 });
 
 test("technical diagnostics are owner-only, bounded, filtered, and time-limited", async () => {
-  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, PlatformDiagnosticsController), ["PLATFORM_OWNER"]);
-  assert.deepEqual(Reflect.getMetadata(PERMISSIONS_KEY, PlatformDiagnosticsController), ["SYSTEM_HEALTH_VIEW"]);
+  assert.deepEqual(
+    Reflect.getMetadata(ROLES_KEY, PlatformDiagnosticsController),
+    ["PLATFORM_OWNER"],
+  );
+  assert.deepEqual(
+    Reflect.getMetadata(PERMISSIONS_KEY, PlatformDiagnosticsController),
+    ["SYSTEM_HEALTH_VIEW"],
+  );
   let query: unknown;
   const prisma = {
-    platformSiteDiagnostic: { findMany: async (input: unknown) => { query = input; return []; } },
+    platformSiteDiagnostic: {
+      findMany: async (input: unknown) => {
+        query = input;
+        return [];
+      },
+    },
   } as unknown as PrismaService;
   const service = new PlatformMonitoringService(prisma, {} as RedisService);
 
   await service.listDiagnostics(500, " site-1 ", "error");
-  const request = query as { where: Record<string, unknown>; take: number; orderBy: unknown };
+  const request = query as {
+    where: Record<string, unknown>;
+    take: number;
+    orderBy: unknown;
+  };
   assert.deepEqual(request.where.siteId, "site-1");
   assert.deepEqual(request.where.severity, "error");
   assert.ok("gte" in (request.where.occurredAt as object));
   assert.equal(request.take, 200);
-  assert.deepEqual(request.orderBy, [{ occurredAt: "desc" }, { receivedAt: "desc" }]);
+  assert.deepEqual(request.orderBy, [
+    { occurredAt: "desc" },
+    { receivedAt: "desc" },
+  ]);
   await assert.rejects(service.listDiagnostics(20, " "), /identifikatori/);
-  await assert.rejects(service.listDiagnostics(20, undefined, "fatal"), /darajasi/);
+  await assert.rejects(
+    service.listDiagnostics(20, undefined, "fatal"),
+    /darajasi/,
+  );
 });
 
 test("platform audit is owner-only and queries only bounded control-plane actions", async () => {
-  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, PlatformAuditController), ["PLATFORM_OWNER"]);
-  assert.deepEqual(Reflect.getMetadata(PERMISSIONS_KEY, PlatformAuditController), ["SYSTEM_HEALTH_VIEW"]);
+  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, PlatformAuditController), [
+    "PLATFORM_OWNER",
+  ]);
+  assert.deepEqual(
+    Reflect.getMetadata(PERMISSIONS_KEY, PlatformAuditController),
+    ["SYSTEM_HEALTH_VIEW"],
+  );
   let query: unknown;
   let rows: unknown[] = [];
-  const prisma = { auditLog: { findMany: async (input: unknown) => { query = input; return rows; } } } as unknown as PrismaService;
+  const prisma = {
+    auditLog: {
+      findMany: async (input: unknown) => {
+        query = input;
+        return rows;
+      },
+    },
+  } as unknown as PrismaService;
   const service = new PlatformMonitoringService(prisma, {} as RedisService);
   await service.listPlatformAudit(500, -4);
   assert.deepEqual(query, {
-    where: { action: { startsWith: "PLATFORM_" }, entity: { in: ["PLATFORM_SITE", "PLATFORM_SITE_EVENT", "TENANT_DOMAIN"] } },
+    where: {
+      action: { startsWith: "PLATFORM_" },
+      entity: { in: ["PLATFORM_SITE", "PLATFORM_SITE_EVENT", "TENANT_DOMAIN"] },
+    },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     skip: 0,
     take: 101,
     select: {
-      id: true, action: true, entity: true, entityId: true, metadata: true, createdAt: true,
-      user: { select: { id: true, displayName: true, email: true, phone: true } },
+      id: true,
+      action: true,
+      entity: true,
+      entityId: true,
+      metadata: true,
+      createdAt: true,
+      user: {
+        select: { id: true, displayName: true, email: true, phone: true },
+      },
     },
   });
   await service.listPlatformAudit(20, 10, "owner@bestteam.uz");
-  const search = query as unknown as { where: { OR: unknown[] }; skip: number; take: number };
+  const search = query as unknown as {
+    where: { OR: unknown[] };
+    skip: number;
+    take: number;
+  };
   assert.equal(search.skip, 10);
   assert.equal(search.take, 21);
   assert.deepEqual(search.where.OR, [
     { action: { contains: "owner@bestteam.uz", mode: "insensitive" } },
     { entityId: { contains: "owner@bestteam.uz", mode: "insensitive" } },
-    { user: { is: { OR: [
-      { displayName: { contains: "owner@bestteam.uz", mode: "insensitive" } },
-      { email: { contains: "owner@bestteam.uz", mode: "insensitive" } },
-      { phone: { contains: "owner@bestteam.uz", mode: "insensitive" } },
-    ] } } },
+    {
+      user: {
+        is: {
+          OR: [
+            {
+              displayName: {
+                contains: "owner@bestteam.uz",
+                mode: "insensitive",
+              },
+            },
+            { email: { contains: "owner@bestteam.uz", mode: "insensitive" } },
+            { phone: { contains: "owner@bestteam.uz", mode: "insensitive" } },
+          ],
+        },
+      },
+    },
   ]);
   rows = [{ id: "first" }, { id: "next" }];
   const page = await service.listPlatformAudit(1);
@@ -97,29 +160,57 @@ test("platform audit is owner-only and queries only bounded control-plane action
 });
 
 test("event acknowledgement is owner-only and available only for actionable incidents", () => {
-  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, PlatformEventsController), ["PLATFORM_OWNER"]);
-  assert.deepEqual(Reflect.getMetadata(PERMISSIONS_KEY, PlatformEventsController), ["SYSTEM_HEALTH_VIEW"]);
+  assert.deepEqual(Reflect.getMetadata(ROLES_KEY, PlatformEventsController), [
+    "PLATFORM_OWNER",
+  ]);
+  assert.deepEqual(
+    Reflect.getMetadata(PERMISSIONS_KEY, PlatformEventsController),
+    ["SYSTEM_HEALTH_VIEW"],
+  );
 });
 
 test("acknowledging an incident is idempotent and writes its audit record once", async () => {
-  const event = { id: "event-1", siteId: "site-1", code: "API_OFFLINE", acknowledgedAt: null as Date | null, acknowledgedById: null as string | null, site: { name: "QA Restaurant" } };
+  const event = {
+    id: "event-1",
+    siteId: "site-1",
+    code: "API_OFFLINE",
+    acknowledgedAt: null as Date | null,
+    acknowledgedById: null as string | null,
+    site: { name: "QA Restaurant" },
+  };
   let auditWrites = 0;
   let auditMetadata: unknown;
   const tx = {
     platformSiteEvent: {
       findUnique: async () => ({ ...event }),
       findUniqueOrThrow: async () => ({ ...event }),
-      updateMany: async ({ data }: { data: { acknowledgedAt: Date; acknowledgedById: string } }) => {
+      updateMany: async ({
+        data,
+      }: {
+        data: { acknowledgedAt: Date; acknowledgedById: string };
+      }) => {
         if (event.acknowledgedAt) return { count: 0 };
         Object.assign(event, data);
         return { count: 1 };
       },
     },
-    auditLog: { create: async ({ data }: { data: { metadata: unknown } }) => { auditWrites += 1; auditMetadata = data.metadata; return {}; } },
+    auditLog: {
+      create: async ({ data }: { data: { metadata: unknown } }) => {
+        auditWrites += 1;
+        auditMetadata = data.metadata;
+        return {};
+      },
+    },
   };
-  const prisma = { $transaction: (callback: (value: typeof tx) => Promise<unknown>) => callback(tx) } as unknown as PrismaService;
+  const prisma = {
+    $transaction: (callback: (value: typeof tx) => Promise<unknown>) =>
+      callback(tx),
+  } as unknown as PrismaService;
   const service = new PlatformMonitoringService(prisma, {} as RedisService);
-  const actor = { id: "owner-1", email: "owner@bestteam.uz" } as AuthenticatedUser;
+  const actor = {
+    id: "owner-1",
+    email: "owner@bestteam.uz",
+  } as AuthenticatedUser;
 
   const first = await service.acknowledgeEvent("event-1", actor);
   const second = await service.acknowledgeEvent("event-1", actor);
@@ -127,13 +218,22 @@ test("acknowledging an incident is idempotent and writes its audit record once",
   assert.equal(first.acknowledgedById, actor.id);
   assert.equal(first.acknowledgedBy?.email, actor.email);
   assert.equal(auditWrites, 1);
-  assert.deepEqual(auditMetadata, { siteId: "site-1", siteName: "QA Restaurant", code: "API_OFFLINE" });
+  assert.deepEqual(auditMetadata, {
+    siteId: "site-1",
+    siteName: "QA Restaurant",
+    code: "API_OFFLINE",
+  });
 });
 
 test("global activity feed is bounded, ordered and includes restaurant identity", async () => {
   let query: unknown;
   const prisma = {
-    platformSiteEvent: { findMany: async (input: unknown) => { query = input; return []; } },
+    platformSiteEvent: {
+      findMany: async (input: unknown) => {
+        query = input;
+        return [];
+      },
+    },
   } as unknown as PrismaService;
   const service = new PlatformMonitoringService(prisma, {} as RedisService);
   await service.listRecentEvents(500);
@@ -141,10 +241,18 @@ test("global activity feed is bounded, ordered and includes restaurant identity"
     orderBy: [{ occurredAt: "desc" }, { receivedAt: "desc" }],
     take: 200,
     select: {
-      id: true, siteId: true, code: true, branchId: true, branchName: true,
-      occurredAt: true, receivedAt: true,
-      acknowledgedAt: true, acknowledgedById: true,
-      acknowledgedBy: { select: { displayName: true, email: true, phone: true } },
+      id: true,
+      siteId: true,
+      code: true,
+      branchId: true,
+      branchName: true,
+      occurredAt: true,
+      receivedAt: true,
+      acknowledgedAt: true,
+      acknowledgedById: true,
+      acknowledgedBy: {
+        select: { displayName: true, email: true, phone: true },
+      },
       site: { select: { name: true, productCode: true } },
     },
   });
@@ -154,11 +262,26 @@ test("global activity feed is bounded, ordered and includes restaurant identity"
   await service.listRecentEvents(50, undefined, "open");
   assert.deepEqual(query.where, {
     acknowledgedAt: null,
-    code: { in: ["WEBSITE_OFFLINE", "API_OFFLINE", "AGENT_DISCONNECTED", "SERVICE_DEGRADED", "PRINTER_FAILED", "DEVICE_DISCONNECTED"] },
+    code: {
+      in: [
+        "WEBSITE_OFFLINE",
+        "API_OFFLINE",
+        "AGENT_DISCONNECTED",
+        "SERVICE_DEGRADED",
+        "PRINTER_FAILED",
+        "DEVICE_DISCONNECTED",
+      ],
+    },
   });
   await service.listRecentEvents(50, "site-2", "acknowledged");
-  assert.deepEqual(query.where, { siteId: "site-2", acknowledgedAt: { not: null } });
-  await assert.rejects(service.listRecentEvents(50, undefined, "unknown"), /Hodisa holati/);
+  assert.deepEqual(query.where, {
+    siteId: "site-2",
+    acknowledgedAt: { not: null },
+  });
+  await assert.rejects(
+    service.listRecentEvents(50, undefined, "unknown"),
+    /Hodisa holati/,
+  );
   await assert.rejects(service.listRecentEvents(50, " "), /identifikatori/);
 });
 
@@ -169,12 +292,42 @@ test("owner reports aggregate only validated site-level summaries and mark stale
     platformSite: {
       findMany: async () => [
         {
-          id: "site-1", name: "Restaurant One", productCode: "FAST_FOOD", lastHeartbeatAt: now,
-          lastHeartbeatData: { dailyReports: [{ day: today, completedOrders: 4, cancelledOrders: 1, completedOrderTotal: "125000" }] },
+          id: "site-1",
+          name: "Restaurant One",
+          productCode: "FAST_FOOD",
+          lastHeartbeatAt: now,
+          lastHeartbeatData: {
+            dailyReports: [
+              {
+                day: today,
+                completedOrders: 4,
+                cancelledOrders: 1,
+                completedOrderTotal: "125000",
+              },
+            ],
+          },
         },
         {
-          id: "site-2", name: "Restaurant Two", productCode: "FAST_FOOD", lastHeartbeatAt: null,
-          lastHeartbeatData: { dailyReports: [{ day: today, completedOrders: 2, cancelledOrders: 0, completedOrderTotal: "75000" }, { day: today, completedOrders: 99, cancelledOrders: 0, completedOrderTotal: "NaN" }] },
+          id: "site-2",
+          name: "Restaurant Two",
+          productCode: "FAST_FOOD",
+          lastHeartbeatAt: null,
+          lastHeartbeatData: {
+            dailyReports: [
+              {
+                day: today,
+                completedOrders: 2,
+                cancelledOrders: 0,
+                completedOrderTotal: "75000",
+              },
+              {
+                day: today,
+                completedOrders: 99,
+                cancelledOrders: 0,
+                completedOrderTotal: "NaN",
+              },
+            ],
+          },
         },
       ],
     },
@@ -183,9 +336,18 @@ test("owner reports aggregate only validated site-level summaries and mark stale
 
   const result = await service.listPlatformReports(7);
   assert.equal(result.sites.length, 2);
-  assert.equal(result.daily.find((day) => day.day === today)?.completedOrders, 6);
-  assert.equal(result.daily.find((day) => day.day === today)?.cancelledOrders, 1);
-  assert.equal(result.daily.find((day) => day.day === today)?.completedOrderTotal, 200000);
+  assert.equal(
+    result.daily.find((day) => day.day === today)?.completedOrders,
+    6,
+  );
+  assert.equal(
+    result.daily.find((day) => day.day === today)?.cancelledOrders,
+    1,
+  );
+  assert.equal(
+    result.daily.find((day) => day.day === today)?.completedOrderTotal,
+    200000,
+  );
   const staleSite = result.sites[1];
   assert.ok(staleSite);
   assert.equal(staleSite.stale, true);
@@ -227,13 +389,20 @@ test("monitor probes refuse private, reserved, and documentation IP ranges", () 
     "::1",
     "fc00::1",
     "fe80::1",
+    "2001::1",
+    "2001:2::1",
+    "2001:0002::1",
     "2001:db8::1",
+    "2001:0db8::1",
+    "2002::1",
+    "3fff::1",
     "::ffff:192.168.0.1",
   ]) {
     assert.equal(isPublicAddress(address), false, address);
   }
   assert.equal(isPublicAddress("8.8.8.8"), true);
   assert.equal(isPublicAddress("2606:4700:4700::1111"), true);
+  assert.equal(isPublicAddress("2001:0200::1"), true);
 });
 
 test("website and API probes treat HTTP client errors as offline", () => {
@@ -249,11 +418,20 @@ test("website and API probes treat HTTP client errors as offline", () => {
 });
 
 test("invalid monitor URLs produce a client error before writing a site", async () => {
-  const service = new PlatformMonitoringService({} as PrismaService, {} as RedisService);
+  const service = new PlatformMonitoringService(
+    {} as PrismaService,
+    {} as RedisService,
+  );
   await assert.rejects(
-    service.createSite({
-      name: "QA", productCode: "FAST_FOOD", websiteUrl: "http://localhost", apiHealthUrl: "https://food.example/health",
-    }, { id: "owner" } as Parameters<PlatformMonitoringService["createSite"]>[1]),
+    service.createSite(
+      {
+        name: "QA",
+        productCode: "FAST_FOOD",
+        websiteUrl: "http://localhost",
+        apiHealthUrl: "https://food.example/health",
+      },
+      { id: "owner" } as Parameters<PlatformMonitoringService["createSite"]>[1],
+    ),
     BadRequestException,
   );
 });
@@ -262,17 +440,25 @@ test("monitor site refuses to link an unknown tenant before writing", async () =
   let writes = 0;
   const prisma = {
     restaurantTenant: { findUnique: async () => null },
-    $transaction: async () => { writes += 1; },
+    $transaction: async () => {
+      writes += 1;
+    },
   } as unknown as PrismaService;
   const service = new PlatformMonitoringService(prisma, {} as RedisService);
 
-  await assert.rejects(service.createSite({
-    tenantId: "missing-tenant",
-    name: "QA",
-    productCode: "FAST_FOOD",
-    websiteUrl: "https://restaurant.example",
-    apiHealthUrl: "https://api.restaurant.example/health",
-  }, { id: "owner" } as AuthenticatedUser), NotFoundException);
+  await assert.rejects(
+    service.createSite(
+      {
+        tenantId: "missing-tenant",
+        name: "QA",
+        productCode: "FAST_FOOD",
+        websiteUrl: "https://restaurant.example",
+        apiHealthUrl: "https://api.restaurant.example/health",
+      },
+      { id: "owner" } as AuthenticatedUser,
+    ),
+    NotFoundException,
+  );
   assert.equal(writes, 0);
 });
 
@@ -281,40 +467,81 @@ test("monitor site cannot be reassigned to an unknown tenant", async () => {
   const prisma = {
     platformSite: { findUnique: async () => ({ id: "site-1" }) },
     restaurantTenant: { findUnique: async () => null },
-    $transaction: async () => { writes += 1; },
+    $transaction: async () => {
+      writes += 1;
+    },
   } as unknown as PrismaService;
   const service = new PlatformMonitoringService(prisma, {} as RedisService);
 
-  await assert.rejects(service.updateSite("site-1", { tenantId: "missing-tenant" }, { id: "owner" } as AuthenticatedUser), NotFoundException);
+  await assert.rejects(
+    service.updateSite("site-1", { tenantId: "missing-tenant" }, {
+      id: "owner",
+    } as AuthenticatedUser),
+    NotFoundException,
+  );
   assert.equal(writes, 0);
 });
 
 test("monitor site can be linked to an existing tenant and records that association", async () => {
   const now = new Date();
   const created = {
-    id: "site-1", siteKey: "key-1", tenantId: "tenant-1", name: "Mazetto Food", productCode: "MAZETTO_FOOD",
-    websiteUrl: "https://restaurant.example/", apiHealthUrl: "https://api.restaurant.example/health",
-    isActive: true, lastHeartbeatAt: null, lastHeartbeatStatus: null, lastHeartbeatData: null,
-    websiteStatus: "UNKNOWN", websiteStatusCode: null, websiteLatencyMs: null, websiteCheckedAt: null, websiteError: null,
-    apiStatus: "UNKNOWN", apiStatusCode: null, apiLatencyMs: null, apiCheckedAt: null, apiError: null,
-    createdAt: now, updatedAt: now,
+    id: "site-1",
+    siteKey: "key-1",
+    tenantId: "tenant-1",
+    name: "Mazetto Food",
+    productCode: "MAZETTO_FOOD",
+    websiteUrl: "https://restaurant.example/",
+    apiHealthUrl: "https://api.restaurant.example/health",
+    isActive: true,
+    lastHeartbeatAt: null,
+    lastHeartbeatStatus: null,
+    lastHeartbeatData: null,
+    websiteStatus: "UNKNOWN",
+    websiteStatusCode: null,
+    websiteLatencyMs: null,
+    websiteCheckedAt: null,
+    websiteError: null,
+    apiStatus: "UNKNOWN",
+    apiStatusCode: null,
+    apiLatencyMs: null,
+    apiCheckedAt: null,
+    apiError: null,
+    createdAt: now,
+    updatedAt: now,
   };
   let createInput: Record<string, unknown> | undefined;
   let auditMetadata: unknown;
   const tx = {
-    platformSite: { create: async ({ data }: { data: Record<string, unknown> }) => { createInput = data; return created; } },
-    auditLog: { create: async ({ data }: { data: { metadata?: unknown } }) => { auditMetadata = data.metadata; return {}; } },
+    platformSite: {
+      create: async ({ data }: { data: Record<string, unknown> }) => {
+        createInput = data;
+        return created;
+      },
+    },
+    auditLog: {
+      create: async ({ data }: { data: { metadata?: unknown } }) => {
+        auditMetadata = data.metadata;
+        return {};
+      },
+    },
   };
   const prisma = {
     restaurantTenant: { findUnique: async () => ({ id: "tenant-1" }) },
-    $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx),
+    $transaction: async (callback: (client: typeof tx) => Promise<unknown>) =>
+      callback(tx),
   } as unknown as PrismaService;
   const service = new PlatformMonitoringService(prisma, {} as RedisService);
 
-  const result = await service.createSite({
-    tenantId: "tenant-1", name: "Mazetto Food", productCode: "MAZETTO_FOOD",
-    websiteUrl: "https://restaurant.example", apiHealthUrl: "https://api.restaurant.example/health",
-  }, { id: "owner" } as AuthenticatedUser);
+  const result = await service.createSite(
+    {
+      tenantId: "tenant-1",
+      name: "Mazetto Food",
+      productCode: "MAZETTO_FOOD",
+      websiteUrl: "https://restaurant.example",
+      apiHealthUrl: "https://api.restaurant.example/health",
+    },
+    { id: "owner" } as AuthenticatedUser,
+  );
 
   assert.equal(createInput?.tenantId, "tenant-1");
   assert.equal(result.site.tenantId, "tenant-1");
@@ -339,7 +566,11 @@ test("heartbeat rejects a token rotated after the initial lookup", async () => {
     $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
       callback({
         platformSite: { updateMany: async () => ({ count: 0 }) },
-        platformSiteEvent: { createMany: async () => { eventWrites += 1; } },
+        platformSiteEvent: {
+          createMany: async () => {
+            eventWrites += 1;
+          },
+        },
       }),
   } as unknown as PrismaService;
   const service = new PlatformMonitoringService(prisma, {} as RedisService);
@@ -359,7 +590,10 @@ test("heartbeat rejects a token rotated after the initial lookup", async () => {
     events: [],
   } as PlatformHeartbeatDto;
 
-  await assert.rejects(service.receiveHeartbeat("site-1", token, heartbeat), /bekor qilingan/);
+  await assert.rejects(
+    service.receiveHeartbeat("site-1", token, heartbeat),
+    /bekor qilingan/,
+  );
   assert.equal(eventWrites, 0);
 });
 
@@ -379,5 +613,8 @@ test("operational log can filter one kitchen without mixing other branches", asy
   await service.listEvents("site-1", 50, " kitchen-1 ");
   assert.deepEqual(queriedWhere, { siteId: "site-1", branchId: "kitchen-1" });
   await assert.rejects(service.listEvents("site-1", 50, " "), /identifikatori/);
-  await assert.rejects(service.listEvents("site-1", 50, "x".repeat(81)), /identifikatori/);
+  await assert.rejects(
+    service.listEvents("site-1", 50, "x".repeat(81)),
+    /identifikatori/,
+  );
 });

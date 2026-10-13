@@ -82,7 +82,16 @@ type LocalPrintQueue = {
     attemptId?: string,
   ) => void;
   markPrinting?: (id: string) => string | boolean | void;
-  wasPrinted: (serverOrderId: string, documentType: string) => boolean;
+  wasPrinted: (
+    serverOrderId: string,
+    documentType: string,
+    printerName?: string,
+  ) => boolean;
+  wasAmbiguousLocallyOn?: (
+    serverOrderId: string,
+    documentType: string,
+    printerName: string,
+  ) => boolean;
   wasTargetPrinted?: (
     scope: "local" | "server",
     jobId: string,
@@ -343,15 +352,6 @@ export class DesktopPrintWorker {
           `/receipts/${encodeURIComponent(job.receiptId)}`,
         ));
       const route = receiptRoute(receipt);
-      if (
-        job.payload?.[ALLOW_LOCAL_REPRINT_KEY] !== true &&
-        receipt.orderId &&
-        this.localQueue?.wasPrinted(receipt.orderId, route)
-      ) {
-        await this.completeServerJob(job);
-        return true;
-      }
-      assertPrintableReceipt(receipt);
 
       const metadata = job.printer?.metadata ?? {};
       const host =
@@ -374,10 +374,69 @@ export class DesktopPrintWorker {
       const systemTargets = host
         ? []
         : selectSystemPrinterTargets(job, route, this.systemPrinters);
+      const allowLocalReprint = job.payload?.[ALLOW_LOCAL_REPRINT_KEY] === true;
+      const wasPrintedLocallyOn = (printerName: string) =>
+        !allowLocalReprint &&
+        Boolean(receipt.orderId) &&
+        this.localQueue?.wasPrinted(receipt.orderId!, route, printerName) ===
+          true;
+      const wasAmbiguousLocallyOn = (printerName: string) =>
+        !allowLocalReprint &&
+        Boolean(receipt.orderId) &&
+        this.localQueue?.wasAmbiguousLocallyOn?.(
+          receipt.orderId!,
+          route,
+          printerName,
+        ) === true;
+      const matchingSystemPrinter =
+        host && job.printer
+          ? this.systemPrinters.find(
+              (printer) =>
+                printer.roles.includes(route) &&
+                [printer.name, printer.displayName].some(
+                  (name) =>
+                    name.trim().toLocaleLowerCase() ===
+                    job.printer!.name.trim().toLocaleLowerCase(),
+                ),
+            )
+          : undefined;
+      if (matchingSystemPrinter && wasPrintedLocallyOn(matchingSystemPrinter.name)) {
+        await this.completeServerJob(job);
+        return true;
+      }
+      if (
+        matchingSystemPrinter &&
+        wasAmbiguousLocallyOn(matchingSystemPrinter.name)
+      ) {
+        await this.markServerJobDispatching(job);
+        throw new PrintOutcomeUnknownError(
+          `${matchingSystemPrinter.displayName}: offline chop natijasi noaniq; qog'oz tekshirilmaguncha qayta chiqarilmadi.`,
+        );
+      }
+      const ambiguousLocalTargets = systemTargets.filter((printer) =>
+        wasAmbiguousLocallyOn(printer.name),
+      );
+      const systemTargetsToPrint = systemTargets.filter(
+        (printer) =>
+          !wasPrintedLocallyOn(printer.name) &&
+          !wasAmbiguousLocallyOn(printer.name),
+      );
+      if (systemTargets.length > 0 && systemTargetsToPrint.length === 0) {
+        if (ambiguousLocalTargets.length > 0) {
+          await this.markServerJobDispatching(job);
+          throw new PrintOutcomeUnknownError(
+            `Offline chop natijasi noaniq (${ambiguousLocalTargets.map((target) => target.displayName).join(", ")}); qog'ozni tekshiring.`,
+          );
+        }
+        await this.completeServerJob(job);
+        return true;
+      }
+      assertPrintableReceipt(receipt);
       if (
         paperWidthMm === 210 &&
         (host ||
-          (!(systemTargets.length > 0 && this.printSystem) && this.printerHost))
+          (!(systemTargetsToPrint.length > 0 && this.printSystem) &&
+            this.printerHost))
       ) {
         throw new Error(
           "A4 formatni tarmoq ESC/POS printeri qo'llamaydi; Windows drayveridan foydalaning",
@@ -404,15 +463,20 @@ export class DesktopPrintWorker {
           port,
           paperWidthMm,
         );
-      } else if (systemTargets.length > 0 && this.printSystem) {
+      } else if (systemTargetsToPrint.length > 0 && this.printSystem) {
         await this.markServerJobDispatching(job);
         printerMayHaveReceived = await this.printSystemTargets(
           "server",
           job.id,
-          systemTargets,
+          systemTargetsToPrint,
           receipt,
           job.allowAmbiguousRetry === true,
         );
+        if (ambiguousLocalTargets.length > 0) {
+          throw new PrintOutcomeUnknownError(
+            `Offline chop natijasi noaniq (${ambiguousLocalTargets.map((target) => target.displayName).join(", ")}); qog'ozni tekshiring.`,
+          );
+        }
       } else if (
         this.printerHost &&
         !job.printer &&
@@ -557,6 +621,7 @@ export class DesktopPrintWorker {
         documentType: job.documentType,
         content,
       };
+      assertPrintableReceipt(receipt);
       await this.printSystemTargets("local", job.id, targets, receipt);
     } catch (error) {
       this.localQueue.fail(
@@ -1125,6 +1190,31 @@ function assertPrintableReceipt(receipt: PrintableReceipt): void {
     throw new Error("Chek mazmuni topilmadi; chop etish navbatda qoldirildi");
   }
   const documentType = receiptRoute(receipt);
+  if (documentType === "SHIFT_REPORT") {
+    const shift =
+      content.shift &&
+      typeof content.shift === "object" &&
+      !Array.isArray(content.shift)
+        ? (content.shift as Record<string, unknown>)
+        : null;
+    const orders = content.orders;
+    if (
+      !shift ||
+      typeof shift.id !== "string" ||
+      !shift.id ||
+      !Array.isArray(orders) ||
+      orders.some(
+        (order) =>
+          !order ||
+          typeof order !== "object" ||
+          Array.isArray(order) ||
+          !Array.isArray((order as Record<string, unknown>).items),
+      )
+    ) {
+      throw new Error("Smena hisoboti to'liq emas; bo'sh sahifa chop etilmadi");
+    }
+    return;
+  }
   const hasOrder =
     typeof content.orderNumber === "string" ||
     typeof content.displayOrderNumber === "string";

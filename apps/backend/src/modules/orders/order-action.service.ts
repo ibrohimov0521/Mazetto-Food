@@ -4,6 +4,7 @@ import { PosOrderStatus } from "./dto/order-status.dto";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { hasPermission } from "../../common/auth/authorization";
 import { PERMISSIONS } from "../../common/auth/permissions";
+import { sumNetCollectedPayments } from "../payments/refund-ledger";
 import { IdempotencyService } from "../../common/idempotency/idempotency.service";
 import {
   buildIdempotencyScope,
@@ -64,7 +65,10 @@ export class OrderActionService {
     return this.runIdempotent("cancel", orderId, dto, user, context, () =>
       this.orders.updateStatus(
         orderId,
-        { status: PosOrderStatus.CANCELLED, reason: dto.reason },
+        {
+          status: PosOrderStatus.CANCELLED,
+          ...(dto.reason !== undefined ? { reason: dto.reason } : {}),
+        },
         user,
         {
           expectedVersion: dto.expectedVersion,
@@ -97,7 +101,9 @@ export class OrderActionService {
           itemId,
           {
             status: OrderItemStatus.CANCELLED,
-            cancellationReason: dto.reason,
+            ...(dto.reason !== undefined
+              ? { cancellationReason: dto.reason }
+              : {}),
           },
           user,
           {
@@ -117,6 +123,9 @@ export class OrderActionService {
     const order = await this.orders.getOrder(orderId, user);
     const terminal =
       order.orderState === "COMPLETED" || order.orderState === "CANCELLED";
+    const hasUnrefundedPayment = sumNetCollectedPayments(
+      order.payments ?? [],
+    ).greaterThan(0);
     const actions: string[] = [];
 
     if (
@@ -125,7 +134,11 @@ export class OrderActionService {
     ) {
       actions.push("accept");
     }
-    if (!terminal && hasPermission(user, PERMISSIONS.ORDER_UPDATE)) {
+    if (
+      !terminal &&
+      !hasUnrefundedPayment &&
+      hasPermission(user, PERMISSIONS.ORDER_UPDATE)
+    ) {
       actions.push("cancel");
     }
 

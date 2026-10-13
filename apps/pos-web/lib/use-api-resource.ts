@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiFetch, SessionExpiredError } from "./api";
+import { SessionExpiredError } from "./api";
 
 /*
  * Admin ekranlari uchun ma'lumot yuklash.
@@ -115,17 +115,4 @@ export function useApiResource<T>(
   }, [errorMessage]);
 
   return { data, isLoading, error, reload, reloadAndWait };
-}
-
-/** Bitta endpoint uchun qisqartma. */
-export function useApiList<T>(
-  path: string,
-  errorMessage: string,
-  deps: readonly unknown[] = [],
-): ApiResource<T> {
-  return useApiResource<T>(
-    () => apiFetch<T>(path),
-    [path, ...deps],
-    errorMessage,
-  );
 }

@@ -21,7 +21,7 @@ import { hasPermission, type AuthUser } from "./auth";
  * oldin, u esa `/admin/products` dan oldin).
  */
 
-export type RouteAccessRule = {
+type RouteAccessRule = {
   /** `:` bilan boshlangan segment istalgan bitta segmentga mos keladi. */
   pattern: string;
   roles: string[];
@@ -37,8 +37,16 @@ const MANAGER = "BRANCH_MANAGER";
 const ACCOUNTANT = "ACCOUNTANT";
 
 export const routeAccessRules: RouteAccessRule[] = [
-  { pattern: "/accounting", roles: [ACCOUNTANT, SUPER], permission: "DASHBOARD_VIEW" },
-  { pattern: "/manager/dashboard", roles: [MANAGER, SUPER], permission: "DASHBOARD_VIEW" },
+  {
+    pattern: "/accounting",
+    roles: [ACCOUNTANT, SUPER],
+    permission: "DASHBOARD_VIEW",
+  },
+  {
+    pattern: "/manager/dashboard",
+    roles: [MANAGER, SUPER],
+    permission: "DASHBOARD_VIEW",
+  },
 
   // `/admin` va `/admin/menu` — redirect sahifalari. Ular o'z maqsadining
   // qoidasini oladi, aks holda qobiq ularni noma'lum route deb rad etardi.

@@ -81,10 +81,9 @@ test("customer keyboard profile uses the shared profile renderer", async () => {
     true,
   );
   assert.equal(calls[0]?.kind, "screen");
-  assert.deepEqual(
-    (calls[0]?.value as { target: unknown }).target,
-    { chatId: "42" },
-  );
+  assert.deepEqual((calls[0]?.value as { target: unknown }).target, {
+    chatId: "42",
+  });
   assert.match(
     JSON.stringify((calls[0]?.value as { payload: unknown }).payload),
     /Buyurtmalarim/,
@@ -102,7 +101,111 @@ test("unlinked customer keyboard actions lead to account linking", async () => {
     }),
     true,
   );
-  assert.deepEqual(calls, [
-    { kind: "link-required", value: { chatId: "42" } },
+  assert.deepEqual(calls, [{ kind: "link-required", value: { chatId: "42" } }]);
+});
+
+type CartHarnessItem = {
+  id: string;
+  quantity: number;
+  modifierSnapshot: unknown;
+};
+
+function createCartHarness(existingItems: CartHarnessItem[] = []) {
+  const mutations: Array<{ kind: "create" | "update"; data: unknown }> = [];
+  const cartItem = {
+    findMany: async () => existingItems,
+    update: async (input: { where: { id: string }; data: unknown }) => {
+      mutations.push({ kind: "update", data: input.data });
+      return { id: input.where.id };
+    },
+    create: async (input: { data: unknown }) => {
+      mutations.push({ kind: "create", data: input.data });
+      return { id: "new-line" };
+    },
+  };
+  const tx = { cartItem };
+  const prisma = {
+    $transaction: async (
+      callback: (transaction: typeof tx) => Promise<unknown>,
+    ) => callback(tx),
+  };
+  const cart = {
+    lockTelegramCart: async () => undefined,
+    getOrCreateCartForTransaction: async () => ({ id: "cart-1" }),
+    lockCartLine: async () => undefined,
+  };
+  const service = new TelegramCustomerOrderingService(
+    prisma as never,
+    {} as never,
+    {} as never,
+    cart as never,
+    {} as never,
+    {} as never,
+  );
+  const addCartItem = (
+    service as unknown as {
+      addCartItem: (
+        customerId: string,
+        productId: string,
+        variantId: string | null,
+        quantity: number,
+        modifiers: Array<{ modifierId: string; quantity: number }>,
+      ) => Promise<{ id: string }>;
+    }
+  ).addCartItem.bind(service);
+
+  return { addCartItem, mutations };
+}
+
+test("Telegram cart stores required modifier quantities on the line", async () => {
+  const { addCartItem, mutations } = createCartHarness();
+  await addCartItem("customer-1", "product-1", null, 1, [
+    { modifierId: "modifier-a", quantity: 2 },
   ]);
+
+  assert.equal(mutations[0]?.kind, "create");
+  assert.deepEqual(
+    (mutations[0]?.data as { modifierSnapshot: unknown }).modifierSnapshot,
+    [{ modifierId: "modifier-a", quantity: 2 }],
+  );
+});
+
+test("Telegram cart merges identical modifier selections regardless of order", async () => {
+  const { addCartItem, mutations } = createCartHarness([
+    {
+      id: "line-1",
+      quantity: 2,
+      modifierSnapshot: [
+        { modifierId: "modifier-a", quantity: 2 },
+        { modifierId: "modifier-b", quantity: 1 },
+      ],
+    },
+  ]);
+  await addCartItem("customer-1", "product-1", null, 1, [
+    { modifierId: "modifier-b", quantity: 1 },
+    { modifierId: "modifier-a", quantity: 2 },
+  ]);
+
+  assert.deepEqual(
+    mutations.map((mutation) => mutation.kind),
+    ["update"],
+  );
+});
+
+test("Telegram cart keeps different modifier selections on separate lines", async () => {
+  const { addCartItem, mutations } = createCartHarness([
+    {
+      id: "line-1",
+      quantity: 2,
+      modifierSnapshot: [{ modifierId: "modifier-a", quantity: 1 }],
+    },
+  ]);
+  await addCartItem("customer-1", "product-1", null, 1, [
+    { modifierId: "modifier-a", quantity: 2 },
+  ]);
+
+  assert.deepEqual(
+    mutations.map((mutation) => mutation.kind),
+    ["create"],
+  );
 });

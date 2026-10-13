@@ -52,6 +52,7 @@ type Shift = {
   outgoingCashTransfers?: OutgoingTransfer[];
   id: string;
   shiftNumber: number;
+  employeeId?: string | null;
   status: "OPEN" | "CLOSED";
   openingBalance: string;
   closingBalance?: string | null;
@@ -64,7 +65,7 @@ type Shift = {
   openedAt: string;
   closedAt?: string | null;
   branch: { id: string; name: string; address?: string | null };
-  employee: { firstName: string; lastName?: string | null };
+  employee: { id?: string; firstName: string; lastName?: string | null };
   cashTransactions?: {
     id: string;
     type: string;
@@ -715,7 +716,7 @@ function ShiftConsole() {
               {error}
             </p>
           )}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               disabled={isSaving}
@@ -726,6 +727,7 @@ function ShiftConsole() {
             </button>
             <button
               className={styles.primary}
+              data-keyboard-primary
               disabled={isSaving || loadingClosingOrders || !closingOrders || Boolean(closingOrdersError)}
               onClick={() => void closeShift()}
               type="button"
@@ -740,7 +742,7 @@ function ShiftConsole() {
         <p>{transferConfirmation?.transfer.fromShift?.employee?.firstName} - <strong>{money(transferConfirmation?.transfer.amount ?? 0)}</strong></p>
         <p className={styles.muted}>{transferConfirmation?.action === "reject" ? "Summa xodim kassasiga qaytariladi." : "Pulni sanab olganingizni tasdiqlang. Summa umumiy kassangizga qo'shiladi."}</p>
         {error && <p className={styles.error} role="alert">{error}</p>}
-        <button className={styles.primary} disabled={isSaving} type="button" onClick={() => transferConfirmation && void processTransfer(transferConfirmation.transfer.id, transferConfirmation.action)}><Check size={16} />{isSaving ? "Saqlanmoqda..." : "Tasdiqlash"}</button>
+        <button className={styles.primary} data-keyboard-primary disabled={isSaving} type="button" onClick={() => transferConfirmation && void processTransfer(transferConfirmation.transfer.id, transferConfirmation.action)}><Check size={16} />{isSaving ? "Saqlanmoqda..." : "Tasdiqlash"}</button>
       </StaffDialog>}
     </StaffShell>
   );

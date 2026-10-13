@@ -50,11 +50,48 @@ test("cashier payment method list follows tenant toggles and active methods", as
         findMany: async (args: { where: Record<string, unknown> }) => {
           methodWhere = args.where;
           return [
-            { code: "CASH", name: "Naqd", sortOrder: 1 },
-            { code: "CARD", name: "Karta", sortOrder: 2 },
-            { code: "CLICK", name: "Click", sortOrder: 3 },
-            { code: "PAYME", name: "Payme", sortOrder: 4 },
-            { code: "UNKNOWN", name: "Noma'lum", sortOrder: 5 },
+            {
+              branchId: "branch-a",
+              code: "CASH",
+              name: "Filial naqd",
+              sortOrder: 1,
+              isActive: true,
+            },
+            {
+              branchId: null,
+              code: "CASH",
+              name: "Umumiy naqd",
+              sortOrder: 2,
+              isActive: true,
+            },
+            {
+              branchId: "branch-a",
+              code: "CLICK",
+              name: "Filial Click",
+              sortOrder: 3,
+              isActive: false,
+            },
+            {
+              branchId: null,
+              code: "CLICK",
+              name: "Umumiy Click",
+              sortOrder: 4,
+              isActive: true,
+            },
+            {
+              branchId: null,
+              code: "PAYME",
+              name: "Payme",
+              sortOrder: 5,
+              isActive: true,
+            },
+            {
+              branchId: null,
+              code: "UNKNOWN",
+              name: "Noma'lum",
+              sortOrder: 6,
+              isActive: true,
+            },
           ];
         },
       },
@@ -65,19 +102,57 @@ test("cashier payment method list follows tenant toggles and active methods", as
   const methods = await service.listPaymentMethods(cashier);
 
   assert.deepEqual(methodWhere, {
-    isActive: true,
     OR: [{ branchId: "branch-a" }, { branchId: null }],
   });
   assert.deepEqual(methods, [
-    { code: "CASH", name: "Naqd" },
-    { code: "CLICK", name: "Click" },
+    { code: "CASH", name: "Filial naqd" },
   ]);
+});
+
+test("stale global method ID cannot bypass a disabled branch override", async () => {
+  const service = new PaymentsService({} as never);
+  const lookups: Record<string, unknown>[] = [];
+  const tx = {
+    paymentMethod: {
+      findFirst: async (args: { where: Record<string, unknown> }) => {
+        lookups.push(args.where);
+        if (args.where.id === "global-card") {
+          return { code: "CARD" };
+        }
+        if (args.where.branchId === "branch-a") {
+          return {
+            id: "branch-card",
+            code: "CARD",
+            name: "Filial karta",
+            isActive: false,
+          };
+        }
+        return { id: "global-card", code: "CARD", name: "Karta" };
+      },
+    },
+  };
+  const resolve = (
+    service as unknown as {
+      resolvePaymentMethod: (
+        transaction: object,
+        branchId: string,
+        tender: { paymentMethodId: string },
+      ) => Promise<{ id: string }>;
+    }
+  ).resolvePaymentMethod.bind(service);
+
+  await assert.rejects(
+    resolve(tx, "branch-a", { paymentMethodId: "global-card" }),
+    /bu filialda mavjud emas/,
+  );
+  assert.equal(lookups.length, 2);
 });
 
 test("disabled payment method cannot be collected against an existing order", async () => {
   let orderReads = 0;
   let paymentWrites = 0;
   let revenueWrites = 0;
+  let settingsReadClient: unknown;
   const order = {
     id: "order-a",
     branchId: "branch-a",
@@ -101,7 +176,12 @@ test("disabled payment method cannot be collected against an existing order", as
     },
     employee: { findFirst: async () => ({ id: "employee-a" }) },
     paymentMethod: {
-      findFirst: async () => ({ id: "click-method", code: "CLICK" }),
+      findFirst: async () => ({
+        id: "click-method",
+        code: "CLICK",
+        name: "Click",
+        isActive: true,
+      }),
     },
     payment: {
       create: async () => {
@@ -118,7 +198,12 @@ test("disabled payment method cannot be collected against an existing order", as
   };
   const service = new PaymentsService(
     { ...tenantLookup } as never,
-    { getCsv: async () => ["CASH"] } as never,
+    {
+      getCsv: async (_key: string, _tenantId: string, client?: unknown) => {
+        settingsReadClient = client;
+        return ["CASH"];
+      },
+    } as never,
   );
 
   await assert.rejects(
@@ -138,6 +223,7 @@ test("disabled payment method cannot be collected against an existing order", as
   );
   assert.equal(paymentWrites, 0);
   assert.equal(revenueWrites, 0);
+  assert.equal(settingsReadClient, transaction);
 });
 
 test("disabled payment method does not block replay of a completed payment", async () => {
@@ -146,9 +232,15 @@ test("disabled payment method does not block replay of a completed payment", asy
     idempotencyKey: "completed-click-payment",
     payments: [{ paymentMethodCode: "CLICK", amount: 10000 }],
   };
+  let settingsReads = 0;
   const service = new PaymentsService(
     { ...tenantLookup } as never,
-    { getCsv: async () => ["CASH"] } as never,
+    {
+      getCsv: async () => {
+        settingsReads += 1;
+        return ["CASH"];
+      },
+    } as never,
   );
   const requestHash = (
     service as unknown as {
@@ -205,6 +297,7 @@ test("disabled payment method does not block replay of a completed payment", asy
   assert.equal(result.order?.id, dto.orderId);
   assert.equal(paymentWrites, 0);
   assert.equal(methodReads, 0);
+  assert.equal(settingsReads, 0);
 });
 
 test("foreign order is rejected before an idempotency replay lookup", async () => {

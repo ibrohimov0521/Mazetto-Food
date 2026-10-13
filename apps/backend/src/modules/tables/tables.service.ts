@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   OrderSource,
@@ -28,6 +29,7 @@ import {
 } from "../../common/idempotency/idempotency-key";
 import { PrismaService } from "../../prisma/prisma.service";
 import { KitchenService } from "../kitchen/kitchen.service";
+import { SettingsService } from "../settings/settings.service";
 import { allocateDisplayOrderNumber } from "../orders/order-display-number";
 import {
   createOrderNumber as createBusinessOrderNumber,
@@ -44,12 +46,19 @@ import type {
   UpdateTableStatusDto,
 } from "./dto/tables.dto";
 
+function normalizeRequiredName(value: string): string {
+  const name = value.trim();
+  if (!name) throw new BadRequestException("Name cannot be empty");
+  return name;
+}
+
 @Injectable()
 export class TablesService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly kitchenService: KitchenService,
     private readonly idempotency: IdempotencyService,
+    @Optional() private readonly settings?: SettingsService,
   ) {}
 
   async listHalls(branchId: string | undefined, user: AuthenticatedUser) {
@@ -168,56 +177,67 @@ export class TablesService {
   }
 
   async createHall(dto: CreateHallDto, user: AuthenticatedUser) {
+    const name = normalizeRequiredName(dto.name);
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
     await assertBranchBelongsToActor(this.prisma, user, branchId);
-    const name = dto.name.trim();
 
-    return this.prisma.hall.create({
-      data: {
-        branchId,
-        code: this.createCode(name),
-        name,
-        description: dto.description?.trim() || null,
-        sortOrder: dto.sortOrder,
-      },
-    });
+    return withUniqueConstraintRetry(() =>
+      this.prisma.hall.create({
+        data: {
+          branchId,
+          code: this.createCode(name),
+          name,
+          description: dto.description?.trim() || null,
+          sortOrder: dto.sortOrder,
+        },
+      }),
+    );
   }
 
   async createTable(dto: CreateTableDto, user: AuthenticatedUser) {
+    const name = normalizeRequiredName(dto.name);
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
     await assertBranchBelongsToActor(this.prisma, user, branchId);
-    const hall = await this.prisma.hall.findFirst({
-      where: { id: dto.hallId, branchId, isActive: true },
-      select: { id: true },
-    });
-
-    if (!hall) {
-      throw new BadRequestException(
-        "Selected hall is not active in this branch",
-      );
-    }
-
-    const duplicate = await this.prisma.restaurantTable.findFirst({
-      where: { hallId: dto.hallId, number: dto.number, isActive: true },
-      select: { id: true },
-    });
-
-    if (duplicate) {
-      throw new ConflictException("A table with this number already exists");
-    }
-
-    return this.prisma.restaurantTable.create({
-      data: {
-        branchId,
-        hallId: dto.hallId,
-        code: `T${dto.number}-${Date.now().toString(36).toUpperCase()}`,
-        number: dto.number,
-        name: dto.name.trim(),
-        capacity: dto.capacity,
-        seats: dto.capacity,
-        sortOrder: dto.sortOrder ?? dto.number,
-      },
-    });
+    return withUniqueConstraintRetry(() =>
+      this.prisma.$transaction(async (tx) => {
+        await assertBranchBelongsToActor(tx, user, branchId);
+        if (!(await this.lockHall(tx, dto.hallId, branchId))) {
+          throw new BadRequestException(
+            "Selected hall is not active in this branch",
+          );
+        }
+        const hall = await tx.hall.findFirst({
+          where: { id: dto.hallId, branchId, isActive: true },
+          select: { id: true },
+        });
+        if (!hall) {
+          throw new BadRequestException(
+            "Selected hall is not active in this branch",
+          );
+        }
+        const duplicate = await tx.restaurantTable.findFirst({
+          where: { hallId: dto.hallId, number: dto.number, isActive: true },
+          select: { id: true },
+        });
+        if (duplicate) {
+          throw new ConflictException(
+            "A table with this number already exists",
+          );
+        }
+        return tx.restaurantTable.create({
+          data: {
+            branchId,
+            hallId: dto.hallId,
+            code: `T${dto.number}-${randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase()}`,
+            number: dto.number,
+            name,
+            capacity: dto.capacity,
+            seats: dto.capacity,
+            sortOrder: dto.sortOrder ?? dto.number,
+          },
+        });
+      }),
+    );
   }
 
   async updateStatus(
@@ -225,101 +245,198 @@ export class TablesService {
     dto: UpdateTableStatusDto,
     user: AuthenticatedUser,
   ) {
-    await this.assertTable(id, user);
-    const activeOrder = await this.prisma.order.findFirst({
-      where: { tableId: id, status: { in: activeTableOrderStatuses } },
-      select: { id: true },
-    });
-
-    if (activeOrder && dto.status !== TableStatus.OCCUPIED) {
-      throw new BadRequestException(
-        "Ochiq buyurtmali stol faqat Band holatida turishi mumkin",
-      );
-    }
-    if (!activeOrder && dto.status === TableStatus.OCCUPIED) {
-      throw new BadRequestException(
-        "Stol faqat ochiq buyurtma yaratilganda Band holatiga o'tadi",
-      );
-    }
-
-    return this.prisma.restaurantTable.update({
-      where: { id },
-      data: { status: dto.status },
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    return this.prisma.$transaction(async (tx) => {
+      const tableWhere = {
+        id,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      };
+      const candidate = await tx.restaurantTable.findFirst({
+        where: tableWhere,
+        select: { id: true, branchId: true },
+      });
+      if (!candidate) throw new NotFoundException("Table not found");
+      await assertBranchBelongsToActor(tx, user, candidate.branchId);
+      await this.lockTable(tx, id, candidate.branchId);
+      const table = await tx.restaurantTable.findFirst({
+        where: tableWhere,
+        select: { id: true, branchId: true },
+      });
+      if (!table) throw new NotFoundException("Table not found");
+      const activeOrder = await tx.order.findFirst({
+        where: {
+          tableId: id,
+          branchId: table.branchId,
+          status: { in: activeTableOrderStatuses },
+        },
+        select: { id: true },
+      });
+      if (activeOrder && dto.status !== TableStatus.OCCUPIED) {
+        throw new BadRequestException(
+          "Ochiq buyurtmali stol faqat Band holatida turishi mumkin",
+        );
+      }
+      if (!activeOrder && dto.status === TableStatus.OCCUPIED) {
+        throw new BadRequestException(
+          "Stol faqat ochiq buyurtma yaratilganda Band holatiga o'tadi",
+        );
+      }
+      return tx.restaurantTable.update({
+        where: { id },
+        data: { status: dto.status },
+      });
     });
   }
 
   async updateHall(id: string, dto: UpdateHallDto, user: AuthenticatedUser) {
-    await this.assertHall(id, user);
-
-    if (dto.isActive === false) {
-      const activeTable = await this.prisma.restaurantTable.findFirst({
-        where: { hallId: id, isActive: true },
-        select: { name: true },
+    const name =
+      dto.name === undefined ? undefined : normalizeRequiredName(dto.name);
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    return this.prisma.$transaction(async (tx) => {
+      const hallWhere = {
+        id,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      };
+      const candidate = await tx.hall.findFirst({
+        where: hallWhere,
+        select: { id: true, branchId: true },
       });
-
-      if (activeTable) {
-        throw new BadRequestException(
-          `Archive ${activeTable.name} before archiving this hall`,
-        );
+      if (!candidate) throw new NotFoundException("Hall not found");
+      await assertBranchBelongsToActor(tx, user, candidate.branchId);
+      if (!(await this.lockHall(tx, id, candidate.branchId))) {
+        throw new NotFoundException("Hall not found");
       }
-    }
-
-    return this.prisma.hall.update({
-      where: { id },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
-        ...(dto.description !== undefined
-          ? { description: dto.description.trim() || null }
-          : {}),
-        ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
-      },
+      const hall = await tx.hall.findFirst({
+        where: hallWhere,
+        select: { id: true, branchId: true },
+      });
+      if (!hall) throw new NotFoundException("Hall not found");
+      if (dto.isActive === false) {
+        const activeTable = await tx.restaurantTable.findFirst({
+          where: { hallId: id, branchId: hall.branchId, isActive: true },
+          select: { name: true },
+        });
+        if (activeTable) {
+          throw new BadRequestException(
+            `Archive ${activeTable.name} before archiving this hall`,
+          );
+        }
+      }
+      return tx.hall.update({
+        where: { id },
+        data: {
+          ...(name !== undefined ? { name } : {}),
+          ...(dto.description !== undefined
+            ? { description: dto.description.trim() || null }
+            : {}),
+          ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+          ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        },
+      });
     });
   }
 
   async updateTable(id: string, dto: UpdateTableDto, user: AuthenticatedUser) {
-    const table = await this.assertTable(id, user);
-
-    if (dto.number !== undefined && table.hallId) {
-      const duplicate = await this.prisma.restaurantTable.findFirst({
-        where: {
-          hallId: table.hallId,
-          number: dto.number,
+    const name =
+      dto.name === undefined ? undefined : normalizeRequiredName(dto.name);
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    return this.prisma.$transaction(async (tx) => {
+      const tableWhere = {
+        id,
+        ...(scope.branchId
+          ? { branchId: scope.branchId }
+          : { branch: { tenantId: scope.tenantId } }),
+      };
+      const candidate = await tx.restaurantTable.findFirst({
+        where: tableWhere,
+        select: { id: true, branchId: true, hallId: true },
+      });
+      if (!candidate) throw new NotFoundException("Table not found");
+      await assertBranchBelongsToActor(tx, user, candidate.branchId);
+      if (
+        candidate.hallId &&
+        !(await this.lockHall(tx, candidate.hallId, candidate.branchId))
+      ) {
+        throw new NotFoundException("Hall not found");
+      }
+      await this.lockTable(tx, id, candidate.branchId);
+      const table = await tx.restaurantTable.findFirst({
+        where: tableWhere,
+        select: {
+          id: true,
+          branchId: true,
+          hallId: true,
+          number: true,
           isActive: true,
-          id: { not: id },
         },
-        select: { id: true },
       });
-
-      if (duplicate) {
-        throw new ConflictException("A table with this number already exists");
+      if (!table) throw new NotFoundException("Table not found");
+      const targetNumber = dto.number ?? table.number;
+      const isReactivating = dto.isActive === true && !table.isActive;
+      if (isReactivating && table.hallId) {
+        const activeHall = await tx.hall.findFirst({
+          where: {
+            id: table.hallId,
+            branchId: table.branchId,
+            isActive: true,
+          },
+          select: { id: true },
+        });
+        if (!activeHall) {
+          throw new BadRequestException(
+            "Activate the hall before reactivating its table",
+          );
+        }
       }
-    }
-
-    if (dto.isActive === false) {
-      const activeOrder = await this.prisma.order.findFirst({
-        where: { tableId: id, status: { in: activeTableOrderStatuses } },
-        select: { id: true },
+      if (
+        table.hallId &&
+        typeof targetNumber === "number" &&
+        (dto.number !== undefined || isReactivating)
+      ) {
+        const duplicate = await tx.restaurantTable.findFirst({
+          where: {
+            hallId: table.hallId,
+            number: targetNumber,
+            isActive: true,
+            id: { not: id },
+          },
+          select: { id: true },
+        });
+        if (duplicate)
+          throw new ConflictException(
+            "A table with this number already exists",
+          );
+      }
+      if (dto.isActive === false) {
+        const activeOrder = await tx.order.findFirst({
+          where: {
+            tableId: id,
+            branchId: table.branchId,
+            status: { in: activeTableOrderStatuses },
+          },
+          select: { id: true },
+        });
+        if (activeOrder)
+          throw new BadRequestException(
+            "A table with an active order cannot be archived",
+          );
+      }
+      return tx.restaurantTable.update({
+        where: { id },
+        data: {
+          ...(name !== undefined ? { name } : {}),
+          ...(dto.number !== undefined ? { number: dto.number } : {}),
+          ...(dto.capacity !== undefined
+            ? { capacity: dto.capacity, seats: dto.capacity }
+            : {}),
+          ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+          ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
+        },
       });
-
-      if (activeOrder) {
-        throw new BadRequestException(
-          "A table with an active order cannot be archived",
-        );
-      }
-    }
-
-    return this.prisma.restaurantTable.update({
-      where: { id },
-      data: {
-        ...(dto.name !== undefined ? { name: dto.name.trim() } : {}),
-        ...(dto.number !== undefined ? { number: dto.number } : {}),
-        ...(dto.capacity !== undefined
-          ? { capacity: dto.capacity, seats: dto.capacity }
-          : {}),
-        ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
-        ...(dto.isActive !== undefined ? { isActive: dto.isActive } : {}),
-      },
     });
   }
 
@@ -338,23 +455,36 @@ export class TablesService {
         ? { branchId: scope.branchId }
         : { branch: { tenantId: scope.tenantId } }),
     };
-    const halls = await this.prisma.hall.findMany({
-      where,
-      select: {
-        id: true,
-        branchId: true,
-        _count: { select: { tables: true } },
-      },
+
+    return this.prisma.$transaction(async (tx) => {
+      const halls = await tx.hall.findMany({
+        where,
+        select: { id: true, branchId: true },
+      });
+      if (halls.length !== uniqueIds.length)
+        throw new NotFoundException("Tanlangan zallardan biri topilmadi");
+
+      for (const hall of halls.sort((left, right) =>
+        left.id.localeCompare(right.id),
+      )) {
+        if (!(await this.lockHall(tx, hall.id, hall.branchId))) {
+          throw new NotFoundException("Tanlangan zallardan biri topilmadi");
+        }
+      }
+
+      const checkedHalls = await tx.hall.findMany({
+        where,
+        select: { id: true, _count: { select: { tables: true } } },
+      });
+      const occupied = checkedHalls.find((hall) => hall._count.tables > 0);
+      if (occupied)
+        throw new BadRequestException(
+          "Stollari mavjud zalni avval bo'shating yoki arxivlang",
+        );
+
+      await tx.hall.deleteMany({ where });
+      return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
     });
-    if (halls.length !== uniqueIds.length)
-      throw new NotFoundException("Tanlangan zallardan biri topilmadi");
-    const occupied = halls.find((hall) => hall._count.tables > 0);
-    if (occupied)
-      throw new BadRequestException(
-        "Stollari mavjud zalni avval bo'shating yoki arxivlang",
-      );
-    await this.prisma.hall.deleteMany({ where });
-    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
   async permanentlyDeleteTables(ids: string[], user: AuthenticatedUser) {
@@ -372,23 +502,43 @@ export class TablesService {
         ? { branchId: scope.branchId }
         : { branch: { tenantId: scope.tenantId } }),
     };
-    const tables = await this.prisma.restaurantTable.findMany({
-      where,
-      select: {
-        id: true,
-        branchId: true,
-        _count: { select: { orders: true } },
-      },
+
+    return this.prisma.$transaction(async (tx) => {
+      const candidates = await tx.restaurantTable.findMany({
+        where,
+        select: { id: true, branchId: true },
+      });
+      if (candidates.length !== uniqueIds.length)
+        throw new NotFoundException("Tanlangan stollardan biri topilmadi");
+
+      for (const table of candidates.sort((left, right) =>
+        left.id.localeCompare(right.id),
+      )) {
+        await assertBranchBelongsToActor(tx, user, table.branchId);
+        if (!(await this.lockTable(tx, table.id, table.branchId))) {
+          throw new NotFoundException("Tanlangan stollardan biri topilmadi");
+        }
+      }
+
+      const tables = await tx.restaurantTable.findMany({
+        where,
+        select: {
+          id: true,
+          branchId: true,
+          _count: { select: { orders: true } },
+        },
+      });
+      if (tables.length !== uniqueIds.length)
+        throw new NotFoundException("Tanlangan stollardan biri topilmadi");
+      const withHistory = tables.find((table) => table._count.orders > 0);
+      if (withHistory)
+        throw new BadRequestException(
+          "Buyurtma tarixi bor stolni o'chirib bo'lmaydi",
+        );
+
+      await tx.restaurantTable.deleteMany({ where });
+      return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
     });
-    if (tables.length !== uniqueIds.length)
-      throw new NotFoundException("Tanlangan stollardan biri topilmadi");
-    const withHistory = tables.find((table) => table._count.orders > 0);
-    if (withHistory)
-      throw new BadRequestException(
-        "Buyurtma tarixi bor stolni o'chirib bo'lmaydi",
-      );
-    await this.prisma.restaurantTable.deleteMany({ where });
-    return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
   async createOrderForTable(
@@ -399,6 +549,9 @@ export class TablesService {
   ) {
     const waiterId = this.requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
+    const orderDisplayNumberStart = this.settings
+      ? await this.settings.getInt("order_display_number_start", scope.tenantId)
+      : 101;
     const idempotencyKey = context?.idempotencyKey
       ? normalizeIdempotencyKey(context.idempotencyKey)
       : undefined;
@@ -447,25 +600,25 @@ export class TablesService {
       try {
         const createTableOrder = () =>
           this.prisma.$transaction(async (tx) => {
-            const table = await tx.restaurantTable.findFirst({
-              where: {
-                id,
-                ...(scope.branchId
-                  ? { branchId: scope.branchId }
-                  : { branch: { tenantId: scope.tenantId } }),
-              },
-            });
-
-            if (!table?.isActive) {
-              throw new NotFoundException("Table not found");
-            }
-
-            await this.assertEmployeeInBranch(tx, waiterId, table.branchId);
-            await assertBranchBelongsToActor(tx, user, table.branchId);
-            await tx.$queryRawUnsafe(
-              'SELECT "id" FROM "restaurant_tables" WHERE "id" = $1 FOR UPDATE',
+            const tableWhere = {
               id,
-            );
+              ...(scope.branchId
+                ? { branchId: scope.branchId }
+                : { branch: { tenantId: scope.tenantId } }),
+            };
+            const candidate = await tx.restaurantTable.findFirst({
+              where: tableWhere,
+              select: { id: true, branchId: true },
+            });
+            if (!candidate) throw new NotFoundException("Table not found");
+            await this.assertEmployeeInBranch(tx, waiterId, candidate.branchId);
+            await assertBranchBelongsToActor(tx, user, candidate.branchId);
+            await this.lockTable(tx, id, candidate.branchId);
+            const table = await tx.restaurantTable.findFirst({
+              where: tableWhere,
+            });
+            if (!table?.isActive)
+              throw new NotFoundException("Table not found");
 
             if (
               table.status === TableStatus.CLEANING ||
@@ -546,10 +699,14 @@ export class TablesService {
 
             const displayOrder = await allocateDisplayOrderNumber(
               tx,
+              scope.tenantId,
               OrderSource.POS,
+              undefined,
+              orderDisplayNumberStart,
             );
             const order = await tx.order.create({
               data: {
+                tenantId: scope.tenantId,
                 branchId: table.branchId,
                 tableId: id,
                 waiterId,
@@ -680,43 +837,30 @@ export class TablesService {
     return user.employeeId;
   }
 
-  private async assertTable(
+  private async lockHall(
+    tx: Prisma.TransactionClient,
     id: string,
-    user: AuthenticatedUser,
-  ): Promise<{ id: string; branchId: string; hallId: string | null }> {
-    const scope = await resolveRestaurantScope(this.prisma, user);
-    const table = await this.prisma.restaurantTable.findFirst({
-      where: {
-        id,
-        ...(scope.branchId
-          ? { branchId: scope.branchId }
-          : { branch: { tenantId: scope.tenantId } }),
-      },
-      select: { id: true, branchId: true, hallId: true },
-    });
-
-    if (!table) {
-      throw new NotFoundException("Table not found");
-    }
-
-    return table;
+    branchId: string,
+  ): Promise<boolean> {
+    const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
+      'SELECT "id" FROM "halls" WHERE "id" = $1 AND "branchId" = $2 FOR UPDATE',
+      id,
+      branchId,
+    );
+    return locked.length === 1;
   }
 
-  private async assertHall(id: string, user: AuthenticatedUser): Promise<void> {
-    const scope = await resolveRestaurantScope(this.prisma, user);
-    const hall = await this.prisma.hall.findFirst({
-      where: {
-        id,
-        ...(scope.branchId
-          ? { branchId: scope.branchId }
-          : { branch: { tenantId: scope.tenantId } }),
-      },
-      select: { id: true, branchId: true },
-    });
-
-    if (!hall) {
-      throw new NotFoundException("Hall not found");
-    }
+  private async lockTable(
+    tx: Prisma.TransactionClient,
+    id: string,
+    branchId: string,
+  ): Promise<boolean> {
+    const locked = await tx.$queryRawUnsafe<{ id: string }[]>(
+      'SELECT "id" FROM "restaurant_tables" WHERE "id" = $1 AND "branchId" = $2 FOR UPDATE',
+      id,
+      branchId,
+    );
+    return locked.length === 1;
   }
 
   private async assertEmployeeInBranch(
@@ -737,6 +881,9 @@ export class TablesService {
     return `${value
       .trim()
       .toUpperCase()
-      .replace(/[^A-Z0-9]+/g, "_")}_${Date.now().toString(36).toUpperCase()}`;
+      .replace(/[^A-Z0-9]+/g, "_")}_${randomUUID()
+      .replaceAll("-", "")
+      .slice(0, 12)
+      .toUpperCase()}`;
   }
 }

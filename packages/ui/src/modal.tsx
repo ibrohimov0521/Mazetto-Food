@@ -52,9 +52,20 @@ export function Modal({
      * yozishni boshlash uchun avval Tab bosishi kerak edi. Yopish tugmasi
      * o'tkazib yuboriladi — u birinchi bo'lsa ham maqsad emas.
      */
-    const initial = panelRef.current?.querySelector<HTMLElement>(
-      'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), a[href], button:not([disabled]):not([data-mz-modal-close]), [tabindex]:not([tabindex="-1"])',
+    const input = panelRef.current?.querySelector<HTMLElement>(
+      'input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled])',
     );
+    const primaryCandidate = panelRef.current?.querySelector<HTMLElement>(
+      "button[data-keyboard-primary]",
+    );
+    const primary =
+      primaryCandidate && !primaryCandidate.hasAttribute("disabled")
+        ? primaryCandidate
+        : null;
+    const initial =
+      input ??
+      primary ??
+      panelRef.current;
     (initial ?? panelRef.current)?.focus();
 
     function handleKeyDown(event: KeyboardEvent): void {
@@ -162,7 +173,7 @@ export function Modal({
         {children ? <div className="px-4 py-4">{children}</div> : null}
 
         {footer ? (
-          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-mz-border bg-mz-surface-sunken px-4 py-3">
+          <div className="flex flex-wrap items-center justify-end gap-2 border-t border-mz-border bg-mz-surface-sunken px-4 py-3" data-keyboard-actions>
             {footer}
           </div>
         ) : null}

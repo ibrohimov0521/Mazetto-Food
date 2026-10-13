@@ -26,7 +26,7 @@ test("tenant role options include active restaurant roles and exclude platform r
   };
   const service = new PlatformTenantMembershipService(
     prisma as never,
-    { disconnectStaffUser: () => {} } as never,
+    { disconnectTenantMembership: () => {} } as never,
   );
 
   assert.deepEqual(await service.listAssignableRoles("tenant-a"), [
@@ -51,7 +51,7 @@ test("tenant role options reject unknown tenants", async () => {
         },
       },
     } as never,
-    { disconnectStaffUser: () => {} } as never,
+    { disconnectTenantMembership: () => {} } as never,
   );
 
   await assert.rejects(

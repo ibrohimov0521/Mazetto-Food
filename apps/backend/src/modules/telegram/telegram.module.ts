@@ -12,6 +12,7 @@ import { PrismaModule } from "../../prisma/prisma.module";
 import { TelegramController } from "./telegram.controller";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
 import { TelegramCustomerOrderingService } from "./telegram-customer-ordering.service";
+import { TelegramCustomerProductConfiguratorService } from "./telegram-customer-product-configurator.service";
 import { TelegramCartService } from "./telegram-cart.service";
 import { TelegramCheckoutService } from "./telegram-checkout.service";
 import { TelegramCheckoutSessionService } from "./telegram-checkout-session.service";
@@ -21,7 +22,16 @@ import { TelegramCustomerOrderHistoryService } from "./telegram-customer-order-h
 import { TelegramStaffService } from "./telegram-staff.service";
 
 @Module({
-  imports: [PrismaModule, BranchesModule, KitchenModule, TablesModule, CashRegisterModule, forwardRef(() => OrdersModule), PaymentsModule, GeocodingModule],
+  imports: [
+    PrismaModule,
+    BranchesModule,
+    KitchenModule,
+    TablesModule,
+    CashRegisterModule,
+    forwardRef(() => OrdersModule),
+    PaymentsModule,
+    GeocodingModule,
+  ],
   controllers: [TelegramController],
   providers: [
     CustomerCourierService,
@@ -34,6 +44,7 @@ import { TelegramStaffService } from "./telegram-staff.service";
     TelegramCheckoutService,
     TelegramCustomerOrderHistoryService,
     TelegramCustomerOrderingService,
+    TelegramCustomerProductConfiguratorService,
     TelegramStaffService,
   ],
   exports: [TelegramOrderNotificationService, TelegramCustomerAuthService],

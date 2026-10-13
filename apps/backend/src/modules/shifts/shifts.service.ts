@@ -14,6 +14,8 @@ import {
   ShiftStatus,
   ShiftType,
 } from "@prisma/client";
+import { hasPermission } from "../../common/auth/authorization";
+import { PERMISSIONS } from "../../common/auth/permissions";
 import { resolveRequiredBranchScope } from "../../common/auth/access-scope";
 import { IdempotencyService } from "../../common/idempotency/idempotency.service";
 import {
@@ -37,6 +39,8 @@ import type {
   ForceCashHandoverDto,
   OpenShiftDto,
 } from "./dto/shift.dto";
+import { countOrdersForShifts } from "./shift-order-count";
+import { calculateCashBalance } from "../cash-register/cash-balance";
 
 @Injectable()
 export class ShiftsService {
@@ -81,20 +85,53 @@ export class ShiftsService {
       take: query.limit,
       include: {
         ...this.shiftInclude(),
-        cashTransactions: { select: { amount: true, type: true } },
       },
     });
 
+    const openShifts = shifts.filter(
+      (shift) => shift.status === ShiftStatus.OPEN,
+    );
+    const openShiftIds = openShifts.map((shift) => shift.id);
+    const [orderCounts, cashTransactionTotals] = await Promise.all([
+      countOrdersForShifts(
+        this.prisma,
+        shifts.map((shift) => shift.id),
+      ),
+      openShiftIds.length
+        ? this.prisma.cashTransaction.groupBy({
+            by: ["shiftId", "type"],
+            where: {
+              OR: openShifts.map((shift) => ({
+                shiftId: shift.id,
+                branchId: shift.branchId,
+              })),
+            },
+            _sum: { amount: true },
+          })
+        : Promise.resolve([]),
+    ]);
+    const transactionsByShift = new Map<
+      string,
+      { amount: Prisma.Decimal; type: CashTransactionType }[]
+    >();
+    for (const total of cashTransactionTotals) {
+      const transactions = transactionsByShift.get(total.shiftId) ?? [];
+      transactions.push({
+        type: total.type,
+        amount: total._sum.amount ?? new Prisma.Decimal(0),
+      });
+      transactionsByShift.set(total.shiftId, transactions);
+    }
     return shifts.map((shift) => ({
       ...shift,
+      orderCount: orderCounts.get(shift.id) ?? 0,
       currentCash:
         shift.status === ShiftStatus.OPEN
-          ? this.calculateCashBalance(
+          ? calculateCashBalance(
               shift.openingBalance,
-              shift.cashTransactions,
+              transactionsByShift.get(shift.id) ?? [],
             )
           : null,
-      cashTransactions: undefined,
     }));
   }
 
@@ -173,10 +210,10 @@ export class ShiftsService {
         }
 
         const transactions = await tx.cashTransaction.findMany({
-          where: { shiftId: source.id },
+          where: { shiftId: source.id, branchId: source.branchId },
           select: { amount: true, type: true },
         });
-        const balance = this.calculateCashBalance(
+        const balance = calculateCashBalance(
           source.openingBalance,
           transactions,
         );
@@ -522,11 +559,16 @@ export class ShiftsService {
               throw new BadRequestException("Shift is already closed");
             }
 
+            await assertBranchBelongsToActor(tx, user, shift.branchId);
             await this.assertEmployeeInBranch(tx, employeeId, shift.branchId);
             this.assertCanOperateShift(user, shift.employeeId);
 
             const pendingTransfer = await tx.cashTransfer.findFirst({
-              where: { fromShiftId: id, status: CashTransferStatus.PENDING },
+              where: {
+                fromShiftId: id,
+                branchId: shift.branchId,
+                status: CashTransferStatus.PENDING,
+              },
               select: { id: true },
             });
             if (pendingTransfer) {
@@ -536,7 +578,11 @@ export class ShiftsService {
             }
 
             const pendingIncomingTransfer = await tx.cashTransfer.findFirst({
-              where: { toShiftId: id, status: CashTransferStatus.PENDING },
+              where: {
+                toShiftId: id,
+                branchId: shift.branchId,
+                status: CashTransferStatus.PENDING,
+              },
               select: { id: true },
             });
             if (pendingIncomingTransfer) {
@@ -648,7 +694,11 @@ export class ShiftsService {
             const tenantId = await assertBranchBelongsToActor(tx, user, shift.branchId);
 
             const pendingTransfers = await tx.cashTransfer.updateMany({
-              where: { fromShiftId: id, status: CashTransferStatus.PENDING },
+              where: {
+                fromShiftId: id,
+                branchId: shift.branchId,
+                status: CashTransferStatus.PENDING,
+              },
               data: {
                 status: CashTransferStatus.DISPUTED,
                 reason:
@@ -658,7 +708,11 @@ export class ShiftsService {
               },
             });
             const pendingIncomingTransfers = await tx.cashTransfer.updateMany({
-              where: { toShiftId: id, status: CashTransferStatus.PENDING },
+              where: {
+                toShiftId: id,
+                branchId: shift.branchId,
+                status: CashTransferStatus.PENDING,
+              },
               data: { toShiftId: null },
             });
 
@@ -887,6 +941,26 @@ export class ShiftsService {
         );
       }
 
+      const amount = new Prisma.Decimal(dto.amount);
+      if (
+        dto.type === CashTransactionType.EXPENSE ||
+        dto.type === CashTransactionType.WITHDRAW
+      ) {
+        const cashTransactions = await tx.cashTransaction.findMany({
+          where: { shiftId, branchId: shift.branchId },
+          select: { amount: true, type: true },
+        });
+        const currentCash = calculateCashBalance(
+          shift.openingBalance,
+          cashTransactions,
+        );
+        if (amount.greaterThan(currentCash)) {
+          throw new BadRequestException(
+            `Kassada yetarli naqd pul yo'q. Joriy qoldiq: ${currentCash.toFixed(2)} so'm.`,
+          );
+        }
+      }
+
       return tx.cashTransaction.create({
         data: {
           branchId: shift.branchId,
@@ -895,7 +969,7 @@ export class ShiftsService {
           orderId: dto.orderId ?? null,
           paymentId: dto.paymentId ?? null,
           type: dto.type,
-          amount: new Prisma.Decimal(dto.amount),
+          amount,
           reason: dto.reason ?? null,
           createdById: user.id,
         },
@@ -983,13 +1057,20 @@ export class ShiftsService {
       return null;
     }
 
+    const cashTransactions = shift.cashTransactions.filter(
+      (transaction) => transaction.branchId === shift.branchId,
+    );
+    const outgoingCashTransfers = shift.outgoingCashTransfers.filter(
+      (transfer) => transfer.branchId === shift.branchId,
+    );
     return {
       ...shift,
-      currentCash: this.calculateCashBalance(
+      currentCash: calculateCashBalance(
         shift.openingBalance,
-        shift.cashTransactions,
+        cashTransactions,
       ),
-      cashTransactions: shift.cashTransactions.slice(0, 200),
+      cashTransactions: cashTransactions.slice(0, 200),
+      outgoingCashTransfers,
     };
   }
 
@@ -1152,10 +1233,10 @@ export class ShiftsService {
       }
 
       const transactions = await tx.cashTransaction.findMany({
-        where: { shiftId: current.id },
+        where: { shiftId: current.id, branchId: current.branchId },
         select: { amount: true, type: true },
       });
-      const balance = this.calculateCashBalance(
+      const balance = calculateCashBalance(
         current.openingBalance,
         transactions,
       );
@@ -1254,7 +1335,7 @@ export class ShiftsService {
     }
 
     await assertBranchBelongsToActor(this.prisma, user, transfer.branchId);
-    this.assertCanInspectShift(user, transfer.fromShift.employeeId);
+    await this.assertCanInspectCashTransfer(user, transfer);
     return transfer;
   }
 
@@ -1757,33 +1838,6 @@ export class ShiftsService {
     }
   }
 
-  private calculateCashBalance(
-    openingBalance: Prisma.Decimal,
-    transactions: { amount: Prisma.Decimal; type: CashTransactionType }[],
-  ) {
-    const hasOpeningTransaction = transactions.some(
-      (transaction) =>
-        transaction.type === CashTransactionType.OPENING ||
-        transaction.type === CashTransactionType.OPENING_BALANCE,
-    );
-    const startingBalance = hasOpeningTransaction
-      ? new Prisma.Decimal(0)
-      : openingBalance;
-
-    return transactions.reduce((balance, transaction) => {
-      const outgoingTypes: CashTransactionType[] = [
-        CashTransactionType.EXPENSE,
-        CashTransactionType.REFUND,
-        CashTransactionType.WITHDRAW,
-        CashTransactionType.CASH_OUT,
-      ];
-      const outgoing = outgoingTypes.includes(transaction.type);
-      return outgoing
-        ? balance.sub(transaction.amount)
-        : balance.add(transaction.amount);
-    }, startingBalance);
-  }
-
   /**
    * Free cash is reconstructed as FIFO source buckets. Every debit consumes
    * the oldest remaining source; the new handover snapshots the exact buckets
@@ -1798,10 +1852,10 @@ export class ShiftsService {
   ) {
     const shift = await tx.shift.findUniqueOrThrow({
       where: { id: shiftId },
-      select: { openingBalance: true },
+      select: { branchId: true, openingBalance: true },
     });
     const transactions = await tx.cashTransaction.findMany({
-      where: { shiftId },
+      where: { shiftId, branchId: shift.branchId },
       orderBy: [{ occurredAt: "asc" }, { createdAt: "asc" }],
       select: {
         id: true,
@@ -1970,18 +2024,41 @@ export class ShiftsService {
     return labels[type] ?? type;
   }
 
-  private assertCanInspectShift(
+  private async assertCanInspectCashTransfer(
     user: AuthenticatedUser,
-    shiftEmployeeId: string,
-  ): void {
+    transfer: {
+      branchId: string;
+      fromShift: { employeeId: string };
+      toShift: { employeeId: string } | null;
+      toShiftId: string | null;
+      status: CashTransferStatus;
+    },
+  ): Promise<void> {
     if (
-      user.employeeId === shiftEmployeeId ||
-      user.roles.some((role) =>
-        ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role),
-      )
+      user.employeeId === transfer.fromShift.employeeId ||
+      user.employeeId === transfer.toShift?.employeeId ||
+      hasPermission(user, PERMISSIONS.SHIFT_VIEW_BRANCH)
     ) {
       return;
     }
+
+    if (
+      transfer.status === CashTransferStatus.PENDING &&
+      !transfer.toShiftId &&
+      user.employeeId
+    ) {
+      this.assertCashReceiver(user);
+      const receiverShift = await this.prisma.shift.findFirst({
+        where: {
+          employeeId: user.employeeId,
+          branchId: transfer.branchId,
+          status: ShiftStatus.OPEN,
+        },
+        select: { id: true },
+      });
+      if (receiverShift) return;
+    }
+
     throw new ForbiddenException("Boshqa xodim smenasini ko'rish mumkin emas");
   }
 
@@ -2071,11 +2148,10 @@ export class ShiftsService {
 
   private async loadShiftCloseSnapshot(
     tx: Prisma.TransactionClient,
-    shift: { id: string; openingBalance: Prisma.Decimal },
+    shift: { id: string; branchId: string; openingBalance: Prisma.Decimal },
   ) {
-    const shiftRevenue = { shiftId: shift.id };
-    const [payments, cashTransactions, orderCount] = await Promise.all([
-      tx.payment.findMany({
+    const shiftRevenue = { shiftId: shift.id, branchId: shift.branchId };
+    const payments = await tx.payment.findMany({
         where: {
           status: {
             in: [
@@ -2090,17 +2166,23 @@ export class ShiftsService {
           },
         },
         include: { method: true },
-      }),
-      tx.cashTransaction.findMany({ where: shiftRevenue }),
-      tx.order.count({
+      });
+    const cashTransactions = await tx.cashTransaction.findMany({
+      where: shiftRevenue,
+    });
+    const orderCount = await tx.order.count({
         where: {
-          OR: [
-            { shiftId: shift.id },
-            { revenueRecords: { some: shiftRevenue } },
+          branchId: shift.branchId,
+          AND: [
+            {
+              OR: [
+                { shiftId: shift.id },
+                { revenueRecords: { some: shiftRevenue } },
+              ],
+            },
           ],
         },
-      }),
-    ]);
+      });
     const totals = this.calculateShiftTotals(
       payments,
       cashTransactions,
@@ -2114,7 +2196,7 @@ export class ShiftsService {
         totals,
         cashTransactions,
       ),
-      currentCash: this.calculateCashBalance(
+      currentCash: calculateCashBalance(
         shift.openingBalance,
         cashTransactions,
       ),
@@ -2230,9 +2312,7 @@ export class ShiftsService {
   }
 
   private canManageBranchShift(user: AuthenticatedUser): boolean {
-    return user.roles.some((role) =>
-      ["SUPER_ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"].includes(role),
-    );
+    return hasPermission(user, PERMISSIONS.SHIFT_VIEW_BRANCH);
   }
 
   private isRetryableTransactionConflict(error: unknown): boolean {

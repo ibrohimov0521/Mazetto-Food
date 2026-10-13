@@ -80,6 +80,7 @@ type BundleItem = {
 type ProductOption = { id: string; code: string; name: string };
 
 type AvailabilityStatus = "AVAILABLE" | "OUT_OF_STOCK" | "UNAVAILABLE";
+type ProductPrinterRouting = "KITCHEN" | "BAR" | "RECEIPT" | "NONE";
 
 type BranchAvailability = {
   id: string;
@@ -101,6 +102,7 @@ type Product = {
   isAvailable: boolean;
   isRecommended: boolean;
   isCombo: boolean;
+  printerRouting?: ProductPrinterRouting;
   sortOrder: number;
   catalogVisibility: "CANONICAL" | "LEGACY" | "CUSTOM" | "INTERNAL";
   variants: Variant[];
@@ -166,6 +168,7 @@ type ProductFormState = {
   isRecommended: boolean;
   sortOrder: string;
   isCombo: boolean;
+  printerRouting: ProductPrinterRouting;
 };
 
 export function AdminProductEditor({ productId }: { productId?: string }) {
@@ -221,6 +224,7 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
     isRecommended: false,
     sortOrder: "0",
     isCombo: false,
+    printerRouting: "KITCHEN",
   });
 
   /*
@@ -337,6 +341,11 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
       isRecommended: nextProduct.isRecommended,
       sortOrder: String(nextProduct.sortOrder ?? 0),
       isCombo: nextProduct.isCombo,
+      printerRouting:
+        nextProduct.printerRouting === "RECEIPT" ||
+        nextProduct.printerRouting === "NONE"
+          ? nextProduct.printerRouting
+          : "KITCHEN",
     };
     const nextBundleItems = (nextProduct.bundleItems ?? []).map((item) => ({
       ...(item.id ? { id: item.id } : {}),
@@ -638,6 +647,7 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
       isRecommended: form.isRecommended,
       isCombo: form.isCombo,
       sortOrder: Number(form.sortOrder) || 0,
+      printerRouting: form.printerRouting,
       variants: cleanVariants.map((variant) => ({
         ...(variant.id ? { id: variant.id } : {}),
         name: variant.name.trim(),
@@ -832,6 +842,28 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                           setForm({ ...form, sortOrder: event.target.value })
                         }
                       />
+                    )}
+                  </FormField>
+                  <FormField
+                    hint="Ichimlik yoki oshxonada tayyorlanmaydigan mahsulot uchun faqat mijoz chekini tanlang."
+                    label="Chop etish yo'nalishi"
+                  >
+                    {(props) => (
+                      <Select
+                        {...props}
+                        value={form.printerRouting}
+                        onChange={(event) =>
+                          setForm({
+                            ...form,
+                            printerRouting: event.target
+                              .value as ProductPrinterRouting,
+                          })
+                        }
+                      >
+                        <option value="KITCHEN">Oshxona cheki</option>
+                        <option value="RECEIPT">Faqat mijoz cheki</option>
+                        <option value="NONE">Chop etilmasin</option>
+                      </Select>
                     )}
                   </FormField>
                 </div>

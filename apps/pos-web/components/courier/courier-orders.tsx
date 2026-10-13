@@ -848,7 +848,7 @@ export function CourierOrdersPage() {
               {error}
             </div>
           )}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               disabled={!!busyOrderId}
@@ -863,6 +863,7 @@ export function CourierOrdersPage() {
                   ? styles.danger
                   : styles.primary
               }
+              data-keyboard-primary
               disabled={!!busyOrderId}
               onClick={() => void updateStatus()}
               type="button"

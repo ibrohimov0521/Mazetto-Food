@@ -28,6 +28,7 @@ export type KitchenQueueResponse = {
   items: KitchenTicket[];
   hasMore: boolean;
   limit: number;
+  kitchenPosOrdersEnabled?: boolean;
 };
 
 export type KitchenTicket = {

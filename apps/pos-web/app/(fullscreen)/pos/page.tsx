@@ -28,9 +28,19 @@ import {
 } from "../../../components/staff/staff-shell";
 import styles from "../../../components/staff/staff.module.css";
 import { ApiRequestError, apiFetch } from "../../../lib/api";
+import {
+  getApiFreshnessScope,
+  isApiResponseCached,
+} from "../../../lib/offline-freshness.mjs";
 import { sanitizeCashInput } from "../../../lib/cash-entry.mjs";
+import {
+  canSubmitPosCheckout,
+  filterOfflinePaymentMethods,
+  isOfflineCatalogSnapshot,
+} from "../../../lib/offline-payment-methods.mjs";
 import { readOfflinePosCatalogSnapshot } from "../../../lib/offline-pos-bootstrap.mjs";
 import {
+  buildPosCheckoutPayloadSignature,
   parsePosCheckoutDraft,
   serializePosCheckoutDraft,
 } from "../../../lib/pos-checkout-draft.mjs";
@@ -47,6 +57,9 @@ type Variant = {
 };
 type Modifier = {
   isRequired: boolean;
+  minSelect?: number;
+  maxSelect?: number | null;
+  quantity?: number;
   modifier: { id: string; name: string; price: string };
 };
 type Product = {
@@ -149,7 +162,9 @@ function PosTerminal() {
   const [selectedVariantId, setSelectedVariantId] = useState<string | null>(
     null,
   );
-  const [selectedModifierIds, setSelectedModifierIds] = useState<string[]>([]);
+  const [selectedModifierQuantities, setSelectedModifierQuantities] = useState<
+    Record<string, number>
+  >({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [checkoutAttempt, setCheckoutAttempt] = useState<{
     key: string;
@@ -230,7 +245,16 @@ function PosTerminal() {
       }
       if (!controller.signal.aborted) {
         setCatalog(data);
-        setCatalogOffline(offlineSnapshotUsed);
+        setCatalogOffline(
+          isOfflineCatalogSnapshot(
+            offlineSnapshotUsed,
+            isApiResponseCached(
+              "/pos/catalog",
+              window.location.pathname,
+              getApiFreshnessScope(user ?? null),
+            ),
+          ),
+        );
         setLastUpdatedAt(catalogUpdatedAt);
       }
       return true;
@@ -321,15 +345,13 @@ function PosTerminal() {
     Number.isFinite(received) && received >= total && received >= 0;
   const change = Number.isFinite(received) ? Math.max(0, received - total) : 0;
   const availablePaymentMethods = catalog?.paymentMethods;
-  const paymentMethods =
-    availablePaymentMethods === undefined
-      ? fallbackPaymentMethods
-      : availablePaymentMethods
-          .filter((method) => !catalogOffline || method.code === cashMethodCode)
-          .map((method) => ({
-            ...method,
-            name: paymentMethodLabel(method.code),
-          }));
+  const paymentMethods = filterOfflinePaymentMethods(
+    availablePaymentMethods ?? fallbackPaymentMethods,
+    catalogOffline,
+  ).map((method) => ({
+    ...method,
+    name: paymentMethodLabel(method.code),
+  }));
   const isCashPayment = paymentCode === cashMethodCode;
   const tables = catalog?.tables ?? [];
   const isDineIn = orderType === "DINE_IN";
@@ -339,10 +361,14 @@ function PosTerminal() {
    * "qabul qilingan naqd" degan tushuncha yo'q, shuning uchun uni talab
    * qilish kartani bloklab qo'yardi.
    */
-  const canSubmit =
-    cart.length > 0 &&
-    (deferPayment ||
-      (paymentMethods.length > 0 && (!isCashPayment || validCash)));
+  const canSubmit = canSubmitPosCheckout({
+    catalogReady: catalog !== null,
+    hasItems: cart.length > 0,
+    deferredPayment: deferPayment,
+    paymentMethodCount: paymentMethods.length,
+    isCashPayment,
+    validCash,
+  });
 
   /*
    * Server tanlagan usulni bilmasa (masalan sozlamadan o'chirilgan),
@@ -373,19 +399,22 @@ function PosTerminal() {
    */
   const payloadSignature = useMemo(
     () =>
-      JSON.stringify({
+      buildPosCheckoutPayloadSignature({
         orderType,
         deferPayment,
         tableId: isDineIn ? tableId : null,
         paymentCode: deferPayment ? null : paymentCode,
         cashReceived: !deferPayment && isCashPayment ? received : null,
         total,
-        items: cart.map((line) => [
-          line.product.id,
-          line.variant?.id ?? null,
-          line.quantity,
-          line.modifiers.map((modifier) => modifier.modifier.id).sort(),
-        ]),
+        items: cart.map((line) => ({
+          productId: line.product.id,
+          variantId: line.variant?.id ?? null,
+          quantity: line.quantity,
+          modifiers: line.modifiers.map((modifier) => ({
+            modifierId: modifier.modifier.id,
+            quantity: modifier.quantity ?? 1,
+          })),
+        })),
       }),
     [
       orderType,
@@ -453,9 +482,21 @@ function PosTerminal() {
         : undefined;
       // Saqlangan variant endi mavjud bo'lmasa, qator tiklanmaydi.
       if (line.variantId && !variant) return [];
-      const modifiers = product.modifiers.filter((modifier) =>
-        line.modifierIds.includes(modifier.modifier.id),
-      );
+      const savedModifierQuantities =
+        line.modifierQuantities ??
+        Object.fromEntries(line.modifierIds.map((id) => [id, 1]));
+      const modifiers = product.modifiers.flatMap((modifier) => {
+        const minimum = Math.max(
+          modifier.minSelect ?? 0,
+          modifier.isRequired ? 1 : 0,
+        );
+        const maximum = modifier.maxSelect ?? Number.POSITIVE_INFINITY;
+        const quantity = Math.min(
+          maximum,
+          Math.max(minimum, savedModifierQuantities[modifier.modifier.id] ?? 0),
+        );
+        return quantity > 0 ? [{ ...modifier, quantity }] : [];
+      });
       return [
         {
           key: line.key,
@@ -494,6 +535,12 @@ function PosTerminal() {
             productId: line.product.id,
             variantId: line.variant?.id ?? null,
             modifierIds: line.modifiers.map((modifier) => modifier.modifier.id),
+            modifierQuantities: Object.fromEntries(
+              line.modifiers.map((modifier) => [
+                modifier.modifier.id,
+                modifier.quantity ?? 1,
+              ]),
+            ),
             quantity: line.quantity,
           })),
           checkoutAttempt: {
@@ -545,10 +592,15 @@ function PosTerminal() {
           product.variants[0]?.id ??
           null,
       );
-      setSelectedModifierIds(
-        product.modifiers
-          .filter((item) => item.isRequired)
-          .map((item) => item.modifier.id),
+      setSelectedModifierQuantities(
+        Object.fromEntries(
+          product.modifiers
+            .map((item) => [
+              item.modifier.id,
+              Math.max(item.minSelect ?? 0, item.isRequired ? 1 : 0),
+            ])
+            .filter(([, quantity]) => Number(quantity) > 0),
+        ),
       );
       return;
     }
@@ -568,7 +620,9 @@ function PosTerminal() {
     const key = [
       product.id,
       variant?.id ?? "base",
-      ...modifiers.map((item) => item.modifier.id).sort(),
+      ...modifiers
+        .map((item) => `${item.modifier.id}:${item.quantity ?? 1}`)
+        .sort(),
     ].join(":");
     setCart((current) =>
       current.some((line) => line.key === key)
@@ -643,6 +697,12 @@ function PosTerminal() {
                 modifierIds: line.modifiers.map(
                   (modifier) => modifier.modifier.id,
                 ),
+                modifierQuantities: Object.fromEntries(
+                  line.modifiers.map((modifier) => [
+                    modifier.modifier.id,
+                    modifier.quantity ?? 1,
+                  ]),
+                ),
                 quantity: line.quantity,
               })),
               checkoutAttempt: {
@@ -684,7 +744,7 @@ function PosTerminal() {
             quantity: line.quantity,
             modifiers: line.modifiers.map((modifier) => ({
               modifierId: modifier.modifier.id,
-              quantity: 1,
+              quantity: modifier.quantity ?? 1,
             })),
           })),
         }),
@@ -899,7 +959,7 @@ function PosTerminal() {
                         <p className={styles.muted}>
                           {line.variant?.name ?? "Standart"}
                           {line.modifiers.length
-                            ? ` · ${line.modifiers.map((item) => item.modifier.name).join(", ")}`
+                            ? ` · ${line.modifiers.map((item) => `${item.modifier.name}${(item.quantity ?? 1) > 1 ? ` ×${item.quantity}` : ""}`).join(", ")}`
                             : ""}
                         </p>
                       </div>
@@ -1142,6 +1202,7 @@ function PosTerminal() {
               <button
                 className={styles.primary}
                 disabled={isSubmitting || !canSubmit}
+                data-keyboard-primary
                 onClick={() => void submitOrder()}
                 type="button"
               >
@@ -1215,7 +1276,7 @@ function PosTerminal() {
             <span>Buyurtma summasi</span>
             <strong>{money(success.order.total)}</strong>
           </div>
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             {success.payLater && !success.offlineQueued && success.order.id ? (
               <button
                 className={styles.button}
@@ -1249,6 +1310,7 @@ function PosTerminal() {
             ) : null}
             <button
               className={styles.primary}
+              data-keyboard-primary
               onClick={() => setSuccess(null)}
               type="button"
             >
@@ -1283,30 +1345,57 @@ function PosTerminal() {
           {!!selectedProduct.modifiers.length && (
             <fieldset className={styles.choices}>
               <legend className={styles.subheading}>Qo'shimchalar</legend>
-              {selectedProduct.modifiers.map((modifier) => (
-                <label className={styles.choice} key={modifier.modifier.id}>
-                  <input
-                    type="checkbox"
-                    checked={selectedModifierIds.includes(modifier.modifier.id)}
-                    disabled={modifier.isRequired}
-                    onChange={(event) =>
-                      setSelectedModifierIds((current) =>
-                        event.target.checked
-                          ? [...current, modifier.modifier.id]
-                          : current.filter((id) => id !== modifier.modifier.id),
-                      )
-                    }
-                  />
-                  <span>
-                    {modifier.modifier.name}
-                    {modifier.isRequired ? " (majburiy)" : ""}
-                  </span>
-                  <strong>{money(modifier.modifier.price)}</strong>
-                </label>
-              ))}
+              {selectedProduct.modifiers.map((modifier) => {
+                const id = modifier.modifier.id;
+                const minimum = Math.max(
+                  modifier.minSelect ?? 0,
+                  modifier.isRequired ? 1 : 0,
+                );
+                const maximum = modifier.maxSelect ?? Number.POSITIVE_INFINITY;
+                const quantity = selectedModifierQuantities[id] ?? 0;
+
+                return (
+                  <div className={styles.choice} key={id}>
+                    <span>
+                      {modifier.modifier.name}
+                      {modifier.isRequired ? " (majburiy)" : ""}
+                    </span>
+                    <span className={styles.quantity}>
+                      <button
+                        aria-label={`${modifier.modifier.name}ni kamaytirish`}
+                        disabled={isSubmitting || quantity <= minimum}
+                        onClick={() =>
+                          setSelectedModifierQuantities((current) => ({
+                            ...current,
+                            [id]: Math.max(minimum, (current[id] ?? 0) - 1),
+                          }))
+                        }
+                        type="button"
+                      >
+                        <Minus size={16} />
+                      </button>
+                      <output>{quantity}</output>
+                      <button
+                        aria-label={`${modifier.modifier.name}ni ko'paytirish`}
+                        disabled={isSubmitting || quantity >= maximum}
+                        onClick={() =>
+                          setSelectedModifierQuantities((current) => ({
+                            ...current,
+                            [id]: Math.min(maximum, (current[id] ?? 0) + 1),
+                          }))
+                        }
+                        type="button"
+                      >
+                        <Plus size={16} />
+                      </button>
+                    </span>
+                    <strong>{money(modifier.modifier.price)} / dona</strong>
+                  </div>
+                );
+              })}
             </fieldset>
           )}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               onClick={() => setSelectedProduct(null)}
@@ -1316,15 +1405,18 @@ function PosTerminal() {
             </button>
             <button
               className={styles.primary}
+              data-keyboard-primary
               onClick={() => {
                 addLine(
                   selectedProduct,
                   selectedProduct.variants.find(
                     (item) => item.id === selectedVariantId,
                   ),
-                  selectedProduct.modifiers.filter((item) =>
-                    selectedModifierIds.includes(item.modifier.id),
-                  ),
+                  selectedProduct.modifiers.flatMap((item) => {
+                    const quantity =
+                      selectedModifierQuantities[item.modifier.id] ?? 0;
+                    return quantity > 0 ? [{ ...item, quantity }] : [];
+                  }),
                 );
                 setSelectedProduct(null);
               }}
@@ -1352,7 +1444,7 @@ function lineTotal(line: CartLine): number {
   return (
     (Number(line.variant?.sellingPrice ?? line.product.sellingPrice) +
       line.modifiers.reduce(
-        (sum, item) => sum + Number(item.modifier.price),
+        (sum, item) => sum + Number(item.modifier.price) * (item.quantity ?? 1),
         0,
       )) *
     line.quantity

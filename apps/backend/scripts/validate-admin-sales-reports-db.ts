@@ -1,3 +1,4 @@
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import {
   OrderSource,
   OrderStatus,
@@ -227,7 +228,8 @@ async function proveTodayReport(reports: ReportsService, fixture: Fixture): Prom
   assert.equal(report.categorySales[0]?.category.name, "Reports Lavash");
   assert.equal(report.timeSeries.grain, "day");
   assert.equal(report.period.timezone, "Asia/Tashkent");
-  assert.equal(report.refundHandling.supported, false);
+  assert.equal(report.refundHandling.supported, true);
+  assert.equal(money(report.refundHandling.amount), 0);
 }
 
 async function provePresetRanges(reports: ReportsService, fixture: Fixture): Promise<void> {
@@ -265,7 +267,7 @@ async function proveBranchScope(reports: ReportsService, fixture: Fixture): Prom
   assert.equal(money(ownBranch.totalSales), 55000);
   await assert.rejects(
     () => reports.getSalesReport({ preset: ReportPreset.LAST_7_DAYS, branchId: fixture.branchBId }, fixture.adminBranchA),
-    /another branch/i,
+    /Boshqa filialga kirish huquqi yo'q/i,
   );
 }
 
@@ -297,8 +299,13 @@ async function createPaidOrder(
   },
 ): Promise<void> {
   const status = input.status ?? OrderStatus.CONFIRMED;
+  const branch = await prisma.branch.findUniqueOrThrow({
+    where: { id: input.branchId },
+    select: { tenantId: true },
+  });
   const order = await prisma.order.create({
     data: {
+      tenantId: branch.tenantId,
       branchId: input.branchId,
       shiftId: input.shiftId ?? null,
       orderNumber: input.orderNumber,
@@ -340,8 +347,13 @@ async function createPaidOrder(
 }
 
 async function createPendingOrder(prisma: PrismaService, branchId: string, orderNumber: string): Promise<void> {
+  const branch = await prisma.branch.findUniqueOrThrow({
+    where: { id: branchId },
+    select: { tenantId: true },
+  });
   await prisma.order.create({
     data: {
+      tenantId: branch.tenantId,
       branchId,
       orderNumber,
       source: OrderSource.WEB,
@@ -380,11 +392,11 @@ function dateInput(date: Date): string {
 }
 
 function assertIsolatedDatabase(): void {
-  const databaseUrl = process.env.DATABASE_URL ?? "";
-
-  if (!/localhost|127\.0\.0\.1/.test(databaseUrl) || !/mazetto_reports_isolated/i.test(databaseUrl)) {
-    throw new Error("Refusing to run Admin Sales Reports DB validation outside an isolated localhost database");
-  }
+  assertDisposableLoopbackDatabase(
+    process.env.DATABASE_URL,
+    /^mazetto_reports_isolated(?:_[a-z0-9]+)*$/i,
+    ["5432", "5433"],
+  );
 }
 
 main().catch((error) => {

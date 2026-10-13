@@ -896,7 +896,7 @@ function PaymentTerminal() {
               {submitError}
             </p>
           ) : null}
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.button}
               disabled={isSubmitting}
@@ -908,6 +908,7 @@ function PaymentTerminal() {
             <button
               className={styles.primary}
               disabled={!canSubmit}
+              data-keyboard-primary
               onClick={() => void submitPayment()}
               type="button"
             >
@@ -953,7 +954,7 @@ function PaymentTerminal() {
             <span>Qaytim</span>
             <strong>{formatMoney(completion.change)}</strong>
           </div>
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             {!completion.offlineQueued &&
             new URLSearchParams(window.location.search).get("returnTo") ===
               "kitchen" ? (
@@ -972,6 +973,7 @@ function PaymentTerminal() {
             ) : null}
             <button
               className={styles.primary}
+              data-keyboard-primary
               onClick={resetForNextOrder}
               type="button"
             >

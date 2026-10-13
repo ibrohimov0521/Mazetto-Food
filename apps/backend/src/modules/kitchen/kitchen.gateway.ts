@@ -78,6 +78,7 @@ export class KitchenGateway implements OnGatewayConnection {
 
     if (auth.kind === "staff") {
       await client.join(this.staffUserRoom(auth.userId));
+      await client.join(this.staffMembershipRoom(auth.membershipId));
       const token = this.extractToken(client);
       const revalidated = token
         ? await this.authenticateStaff(
@@ -89,6 +90,7 @@ export class KitchenGateway implements OnGatewayConnection {
       if (
         !revalidated ||
         revalidated.kind !== "staff" ||
+        revalidated.membershipId !== auth.membershipId ||
         revalidated.userId !== auth.userId ||
         client.disconnected
       ) {
@@ -113,6 +115,11 @@ export class KitchenGateway implements OnGatewayConnection {
   disconnectStaffUser(userId: string): void {
     if (!this.server) return;
     this.server.in(this.staffUserRoom(userId)).disconnectSockets(true);
+  }
+
+  disconnectTenantMembership(membershipId: string): void {
+    if (!this.server) return;
+    this.server.in(this.staffMembershipRoom(membershipId)).disconnectSockets(true);
   }
 
   disconnectCustomerSession(sessionId: string): void {
@@ -322,6 +329,7 @@ export class KitchenGateway implements OnGatewayConnection {
     return {
       kind: "staff",
       userId: user.id,
+      membershipId: payload.membershipId,
       global,
       expiresAt: payload.exp * 1000,
       ...(user.branchId ? { branchId: user.branchId } : {}),
@@ -484,6 +492,10 @@ export class KitchenGateway implements OnGatewayConnection {
     return `customer-session:${sessionId}`;
   }
 
+  private staffMembershipRoom(membershipId: string): string {
+    return "staff-membership:" + membershipId;
+  }
+
   private branchRoom(branchId: string): string {
     return `branch:${branchId}`;
   }
@@ -507,6 +519,7 @@ type RealtimeAuth =
   | {
       kind: "staff";
       userId: string;
+      membershipId: string;
       branchId?: string;
       global: boolean;
       expiresAt: number;

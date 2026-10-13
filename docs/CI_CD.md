@@ -37,6 +37,7 @@ branch ──► PR ──► CI "verify" ── yashil bo'lishi SHART ──►
 
 | Bosqich                          | Nimani ushlaydi                                                                         |
 | -------------------------------- | --------------------------------------------------------------------------------------- |
+| Windows desktop installer       | Desktop shell, bundled POS UI va NSIS paketini Windows runner'da nashr qilmasdan yig'adi |
 | `pnpm install --frozen-lockfile` | lockfile va `package.json` mos kelmasligi                                               |
 | `prisma migrate deploy`          | migratsiya SQL'i toza PostgreSQL 18 ga qo'llanmasligi                                   |
 | `pnpm run ci` → prisma generate  | schema xatosi                                                                           |

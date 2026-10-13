@@ -15,7 +15,9 @@ import {
   maskPhone,
   parseCustomerOrderType,
   readCartModifiers,
+  requiredCartModifiers,
   requiredTelegramId,
+  summarizeRequiredCartModifiers,
   telegramProductButtonLabel,
   type BranchForCheckout,
 } from "../src/modules/telegram/telegram-customer-presentation";
@@ -181,15 +183,63 @@ test("nol yoki manfiy miqdor 1 ga tushadi", () => {
   ]);
 });
 
-test("variantsiz mahsulot konfiguratorsiz qo'shiladi", () => {
+test("required qo'shimchali mahsulot narx ko'rsatadigan konfiguratorni ochadi", () => {
   assert.equal(isSimpleQuickAddProduct({ variants: [] }), true);
   assert.equal(isSimpleQuickAddProduct({ variants: [{ id: "v1" }] }), true);
+  assert.equal(
+    isSimpleQuickAddProduct({ variants: [], modifiers: [{ minSelect: 0 }] }),
+    false,
+  );
+  assert.equal(
+    isSimpleQuickAddProduct({
+      variants: [{ id: "v1" }],
+      modifiers: [{ isRequired: true }],
+    }),
+    false,
+  );
+  assert.equal(
+    isSimpleQuickAddProduct({
+      variants: [{ id: "v1" }],
+      modifiers: [{ minSelect: 2 }],
+    }),
+    false,
+  );
   assert.equal(
     isSimpleQuickAddProduct({ variants: [{ id: "v1" }, { id: "v2" }] }),
     false,
   );
-  // Maydon umuman bo'lmasa ham yiqilmasligi kerak.
   assert.equal(isSimpleQuickAddProduct({}), true);
+});
+
+test("required modifier narxi konfigurator summasiga va yorlig'iga kiradi", () => {
+  const summary = summarizeRequiredCartModifiers([
+    {
+      modifierId: "m1",
+      isRequired: true,
+      minSelect: 2,
+      modifier: { name: "Pishloq", price: new Prisma.Decimal("2500") },
+    },
+    {
+      modifierId: "m2",
+      isRequired: false,
+      minSelect: 0,
+      modifier: { name: "Sous", price: new Prisma.Decimal("1000") },
+    },
+  ]);
+
+  assert.deepEqual(summary.selections, [{ modifierId: "m1", quantity: 2 }]);
+  assert.equal(summary.total.toString(), "5000");
+  assert.deepEqual(summary.labels, ["Pishloq ×2"]);
+});
+
+test("Telegram savatiga required modifier minimum miqdorda qo'shiladi", () => {
+  assert.deepEqual(
+    requiredCartModifiers([
+      { modifierId: "m1", isRequired: true, minSelect: 2 },
+      { modifierId: "m2", isRequired: false, minSelect: 0 },
+    ]),
+    [{ modifierId: "m1", quantity: 2 }],
+  );
 });
 
 test("tugmalar qatorlarga bo'linadi", () => {
@@ -204,7 +254,9 @@ test("'message is not modified' xatosi nosozlik emas", () => {
    * qaytaradi. Uni nosozlik deb hisoblash logni to'ldirib yuborardi.
    */
   assert.equal(
-    isMessageNotModifiedError(new Error("Bad Request: message is not modified")),
+    isMessageNotModifiedError(
+      new Error("Bad Request: message is not modified"),
+    ),
     true,
   );
   assert.equal(isMessageNotModifiedError("MESSAGE IS NOT MODIFIED"), true);
@@ -214,7 +266,13 @@ test("'message is not modified' xatosi nosozlik emas", () => {
 test("bo'sh Telegram id rad etiladi", () => {
   assert.equal(requiredTelegramId(12345, "chat id"), "12345");
   assert.equal(requiredTelegramId("999", "chat id"), "999");
-  assert.throws(() => requiredTelegramId(undefined, "chat id"), BadRequestException);
+  assert.throws(
+    () => requiredTelegramId(undefined, "chat id"),
+    BadRequestException,
+  );
   // Bo'sh satr ham yetishmayotgan deb hisoblanadi.
-  assert.throws(() => requiredTelegramId("   ", "chat id"), BadRequestException);
+  assert.throws(
+    () => requiredTelegramId("   ", "chat id"),
+    BadRequestException,
+  );
 });

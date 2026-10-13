@@ -93,6 +93,8 @@ export function readOfflineKitchenSnapshot(snapshot, expectedBranchId) {
     snapshot.branchId !== expectedBranchId ||
     typeof snapshot.generatedAt !== "string" ||
     !Number.isFinite(Date.parse(snapshot.generatedAt)) ||
+    (snapshot.kitchenPosOrdersEnabled !== undefined &&
+      typeof snapshot.kitchenPosOrdersEnabled !== "boolean") ||
     !isRecord(snapshot.kitchenQueue)
   ) {
     return null;
@@ -111,5 +113,10 @@ export function readOfflineKitchenSnapshot(snapshot, expectedBranchId) {
     return null;
   }
 
-  return { items, hasMore, limit };
+  return {
+    items,
+    hasMore,
+    limit,
+    kitchenPosOrdersEnabled: snapshot.kitchenPosOrdersEnabled === true,
+  };
 }

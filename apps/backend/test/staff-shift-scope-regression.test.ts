@@ -54,10 +54,13 @@ test("kitchen queue stays branch-scoped and history is paged without financial o
   const selectEnd = kitchenSource.indexOf("\n  private ", selectStart + 1);
   const historySelect = kitchenSource.slice(selectStart, selectEnd);
   assert.match(historySelect, /statusHistory/);
-  assert.doesNotMatch(historySelect, /payments|customerOrder|customerPhone|customerName|unitPrice|totalPrice/);
+  assert.doesNotMatch(
+    historySelect,
+    /payments|customerOrder|customerPhone|customerName|unitPrice|totalPrice/,
+  );
 });
 
-test("employee shift history stays scoped to the open shift and today", () => {
+test("employee shift orders stay scoped to the open shift across midnight", () => {
   const method = methodSource(cashSource, "getCurrentShiftOrders");
 
   assert.match(method, /const employeeId = this\.requireEmployee\(user\)/);
@@ -67,9 +70,15 @@ test("employee shift history stays scoped to the open shift and today", () => {
   );
   assert.doesNotMatch(method, /ShiftType\.CASHIER/);
   assert.match(method, /this\.assertCanViewShift\(user, shift\.employeeId\)/);
-  assert.match(method, /const day = this\.todayTashkentRange\(\)/);
   assert.match(method, /shiftId: shift\.id/);
-  assert.match(method, /createdAt: \{ gte: day\.start, lt: day\.end \}/);
+  assert.doesNotMatch(
+    method,
+    /todayTashkentRange|createdAt: \{ gte: day\.start/,
+  );
+  assert.match(
+    method,
+    /orderBy: \[\{ createdAt: "desc" \}, \{ id: "desc" \}\]/,
+  );
   assert.match(method, /take: this\.parseLimit\(query\.limit\)/);
 });
 

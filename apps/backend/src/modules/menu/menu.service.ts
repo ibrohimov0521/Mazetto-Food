@@ -496,6 +496,7 @@ export class MenuService {
           isCombo: dto.isCombo ?? false,
           isRecommended: dto.isRecommended ?? false,
           sortOrder: dto.sortOrder ?? 0,
+          printerRouting: dto.printerRouting ?? "KITCHEN",
         },
       });
 
@@ -582,6 +583,9 @@ export class MenuService {
             ? { preparationTime: dto.preparationTime }
             : {}),
           ...(dto.sortOrder !== undefined ? { sortOrder: dto.sortOrder } : {}),
+          ...(dto.printerRouting !== undefined
+            ? { printerRouting: dto.printerRouting }
+            : {}),
         },
       });
 

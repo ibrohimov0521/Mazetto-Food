@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { orderItemCancellationNeedsRefundPermission } from "../lib/order-item-cancellation.mjs";
+import {
+  orderItemCancellationNeedsRefundPermission,
+  orderItemCancellationRefundPlan,
+} from "../lib/order-item-cancellation.mjs";
 
 test("unpaid or still-underpaid item cancellations do not need refund permission", () => {
   assert.equal(
@@ -57,5 +60,49 @@ test("unknown monetary values fail closed", () => {
       payments: [],
     }),
     true,
+  );
+});
+
+test("cash refund plan blocks non-cash overpayment before the cashier submits", () => {
+  assert.deepEqual(
+    orderItemCancellationRefundPlan({
+      orderTotal: "100000",
+      itemTotal: "20000",
+      payments: [
+        {
+          amount: "100000",
+          status: "SUCCESS",
+          method: { code: "CLICK" },
+        },
+      ],
+    }),
+    { refundRequired: true, canRefundInCash: false },
+  );
+});
+
+test("cash refund plan allows mixed tender when refundable cash covers the adjustment", () => {
+  assert.deepEqual(
+    orderItemCancellationRefundPlan({
+      orderTotal: "100000",
+      itemTotal: "30000",
+      payments: [
+        { amount: "50000", status: "PAID", method: { code: "CASH" } },
+        { amount: "50000", status: "PAID", method: { code: "CARD" } },
+      ],
+    }),
+    { refundRequired: true, canRefundInCash: true },
+  );
+});
+
+test("cash refund plan allows cancelling an unpaid remainder without cash settlement", () => {
+  assert.deepEqual(
+    orderItemCancellationRefundPlan({
+      orderTotal: "100000",
+      itemTotal: "30000",
+      payments: [
+        { amount: "50000", status: "PAID", method: { code: "CLICK" } },
+      ],
+    }),
+    { refundRequired: false, canRefundInCash: true },
   );
 });

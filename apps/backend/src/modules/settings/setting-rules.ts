@@ -31,7 +31,7 @@ type SettingRule =
   | { kind: "csv-enum"; values: readonly string[]; fallback: string }
   | { kind: "string"; fallback: string };
 
-export const CASHIER_PAYMENT_METHOD_CODES = [
+const CASHIER_PAYMENT_METHOD_CODES = [
   "CASH",
   "CARD",
   "UZCARD",
@@ -103,6 +103,10 @@ const SETTING_RULES = {
     values: CASHIER_PAYMENT_METHOD_CODES,
     fallback: "CASH",
   },
+  // POS kassasida yaratilgan buyurtmalar oshxona navbatida ko'rinsinmi.
+  kitchen_pos_orders_enabled: BOOL(false),
+  // Har bir buyurtma manbasi va Toshkent sanasi uchun boshlang'ich raqam.
+  order_display_number_start: INT(1, 1_000_000, 101),
   // Yetkazish darvozasi. `false` — mijoz checkout'da yetkazishni tanlay
   // olmaydi. Kuryer ishi tugaguncha o'chiq (B bloki).
   customer_delivery_enabled: BOOL(false),
@@ -319,15 +323,23 @@ export function parseCsvSetting(
     throw new Error(`${key} CSV sozlamasi emas`);
   }
 
-  const source = stored?.trim() ? stored : rule.fallback;
+  const source = stored ?? rule.fallback;
   const entries = source
     .split(",")
     .map((entry) => entry.trim().toUpperCase())
     .filter((entry) => rule.values.some((value) => value === entry));
 
-  // Filtrlash hammasini olib tashlagan bo'lsa default'ga qaytamiz: bo'sh
-  // ro'yxat, masalan, to'lov usullarini butunlay yo'q qilardi.
-  return entries.length > 0 ? [...new Set(entries)] : [rule.fallback];
+  if (entries.length > 0) {
+    return [...new Set(entries)];
+  }
+
+  // A missing value uses the documented default, but a corrupt or explicitly
+  // empty cashier allowlist must not silently re-enable cash.
+  if (key === "cashier_payment_methods" && stored !== undefined) {
+    return [];
+  }
+
+  return [rule.fallback];
 }
 
 /** Reestrdagi default — sozlama hali yozilmagan bo'lsa shu ishlatiladi. */

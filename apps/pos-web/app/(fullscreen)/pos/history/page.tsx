@@ -14,22 +14,24 @@ import {
 import styles from "../../../../components/staff/staff.module.css";
 import { apiFetch } from "../../../../lib/api";
 import { hasPermission } from "../../../../lib/auth";
-import { orderItemCancellationNeedsRefundPermission } from "../../../../lib/order-item-cancellation.mjs";
+import { orderItemCancellationRefundPlan } from "../../../../lib/order-item-cancellation.mjs";
 import { formatMoney, orderStatusLabels } from "../../../../lib/order-display";
 
 type ShiftRow = {
   id: string;
   shiftNumber: number;
+  employeeId?: string | null;
   status: "OPEN" | "CLOSED";
   openedAt: string;
   closedAt?: string | null;
   openingBalance: string;
   closingBalance?: string | null;
   expectedCash?: string | null;
+  currentCash?: string | null;
   cashDifference?: string | null;
   orderCount?: number;
   branch?: { id: string; name: string };
-  employee?: { firstName: string; lastName?: string | null };
+  employee?: { id?: string; firstName: string; lastName?: string | null };
 };
 
 type OrderRow = {
@@ -252,9 +254,16 @@ export default function CashierHistoryPage() {
       orderRequest.current = controller;
       if (!shiftId) {
         setOrders([]);
+        setSelectedOrderId("");
         setHasMore(false);
         setLoadingOrders(false);
         return;
+      }
+      if (!append) {
+        setOrders([]);
+        setSelectedOrderId("");
+        setOffset(nextOffset);
+        setHasMore(false);
       }
       setLoadingOrders(true);
       setError("");
@@ -268,7 +277,13 @@ export default function CashierHistoryPage() {
       try {
         const page = await apiFetch<OrderRow[]>(
           `/cash-register/shift/${encodeURIComponent(shiftId)}/orders?${params}`,
-          { cache: "no-store", signal: AbortSignal.any([controller.signal, AbortSignal.timeout(15000)]) },
+          {
+            cache: "no-store",
+            signal: AbortSignal.any([
+              controller.signal,
+              AbortSignal.timeout(15000),
+            ]),
+          },
         );
         if (controller.signal.aborted) return;
         setOrders((current) =>
@@ -350,7 +365,12 @@ export default function CashierHistoryPage() {
   }
 
   async function cancelItem() {
-    if (!orderDetail || shift?.status !== "OPEN" || !cancelTarget || !cancelReason.trim()) return;
+    if (
+      !orderDetail ||
+      shift?.status !== "OPEN" ||
+      !cancelTarget
+    )
+      return;
     const itemId = cancelTarget.itemId;
     setCancellingItemId(itemId);
     setMessage("");
@@ -366,15 +386,13 @@ export default function CashierHistoryPage() {
             shiftId: shift.id,
             expectedVersion: orderDetail.version,
             reasonCode: "CASHIER_ITEM_CANCELLED",
-            reason: cancelReason.trim(),
+            ...(cancelReason.trim() ? { reason: cancelReason.trim() } : {}),
           }),
         },
       );
       setCancelTarget(null);
       setCancelReason("");
-      setMessage(
-        "Mahsulot bekor qilindi; zarur naqd qaytarish smenaga yozildi.",
-      );
+      setMessage("Mahsulot bekor qilindi va buyurtma yangilandi.");
       await loadOrders(0, false);
     } catch (caught) {
       setError(
@@ -441,7 +459,9 @@ export default function CashierHistoryPage() {
           </div>
         </div>
 
-        {shift?.status === "CLOSED" && <ShiftClosePrintReport key={shift.id} shift={shift} />}
+        {shift?.status === "CLOSED" && (
+          <ShiftClosePrintReport key={shift.id} shift={shift} />
+        )}
         <div className={styles.historyControls}>
           <label className={styles.field}>
             <span>Smena</span>
@@ -514,17 +534,31 @@ export default function CashierHistoryPage() {
         {shift ? (
           <section className={styles.stats} aria-label="Smena xulosasi">
             <div className={styles.stat}>
-              <span>Smenada yaratilgan</span>
+              <span>Smenadagi buyurtmalar</span>
               <strong>{shift.orderCount ?? sortedOrders.length}</strong>
             </div>
             <div className={styles.stat}>
-              <span>Kutilgan naqd</span>
-              <strong>{formatMoney(shift.expectedCash ?? 0)}</strong>
+              <span>
+                {shift.status === "OPEN" ? "Kassadagi naqd" : "Kutilgan naqd"}
+              </span>
+              <strong>
+                {formatMoney(
+                  shift.status === "OPEN"
+                    ? shift.currentCash
+                    : shift.expectedCash,
+                )}
+              </strong>
             </div>
             <div className={styles.stat}>
-              <span>Yakuniy naqd</span>
+              <span>
+                {shift.status === "OPEN" ? "Boshlang'ich naqd" : "Yakuniy naqd"}
+              </span>
               <strong>
-                {formatMoney(shift.closingBalance ?? shift.expectedCash ?? 0)}
+                {formatMoney(
+                  shift.status === "OPEN"
+                    ? shift.openingBalance
+                    : shift.closingBalance,
+                )}
               </strong>
             </div>
           </section>
@@ -640,24 +674,26 @@ export default function CashierHistoryPage() {
               <h3 className={styles.subheading}>Mahsulotlar</h3>
               <ul className={styles.itemList}>
                 {orderDetail.items.map((item) => {
-                  const refundPermissionRequired =
-                    orderItemCancellationNeedsRefundPermission({
-                      orderTotal: orderDetail.total,
-                      itemTotal: item.totalPrice,
-                      payments: orderDetail.payments ?? [],
-                    });
+                  const refundPlan = orderItemCancellationRefundPlan({
+                    orderTotal: orderDetail.total,
+                    itemTotal: item.totalPrice,
+                    payments: orderDetail.payments ?? [],
+                  });
                   const refundBlocked =
-                    refundPermissionRequired && !canRefundPayments;
+                    refundPlan.refundRequired &&
+                    (!canRefundPayments || !refundPlan.canRefundInCash);
+                  const refundBlockReason = !canRefundPayments
+                    ? "Pul qaytarish uchun alohida ruxsat kerak"
+                    : "Naqd qaytarish uchun kassada mos naqd to'lov yetarli emas; karta/Click/Payme qaytarimini provayder orqali alohida bajaring";
 
                   return (
                     <li className={styles.historyItemRow} key={item.id}>
                       <span>
                         {item.productName}
-                        {item.variantName ? ` · ${item.variantName}` : ""} ×{" "}
-                        {item.quantity}
-                        {item.status === "CANCELLED"
-                          ? " · Bekor qilingan"
-                          : ""}
+                        {item.variantName
+                          ? ` · ${item.variantName}`
+                          : ""} × {item.quantity}
+                        {item.status === "CANCELLED" ? " · Bekor qilingan" : ""}
                         {item.status === "CANCELLED" &&
                         item.cancellationReason ? (
                           <small className={styles.muted}>
@@ -675,19 +711,20 @@ export default function CashierHistoryPage() {
                             Boolean(cancellingItemId) ||
                             refundBlocked
                           }
-                          onClick={() =>
+                          onClick={() => {
+                            setCancelReason("");
                             setCancelTarget({
                               itemId: item.id,
                               productName: item.productName,
                               amount: item.totalPrice,
                               idempotencyKey: crypto.randomUUID(),
-                            })
-                          }
+                            });
+                          }}
                           title={
                             !isOnline
                               ? "Bekor qilish uchun internet kerak"
                               : refundBlocked
-                                ? "Pul qaytarish uchun alohida ruxsat kerak"
+                                ? refundBlockReason
                                 : "Mahsulotni bekor qilish"
                           }
                           type="button"
@@ -782,7 +819,7 @@ export default function CashierHistoryPage() {
                 (receipt) =>
                   !receipt.documentType || receipt.documentType === "RECEIPT",
               ).length ? (
-                <div className={styles.dialogActions}>
+                <div className={styles.dialogActions} data-keyboard-actions>
                   {orderDetail.receipts
                     .filter(
                       (receipt) =>
@@ -833,7 +870,7 @@ export default function CashierHistoryPage() {
             qaytarishi sozlanmagan bo'lsa amal rad etiladi.
           </p>
           <label className={styles.field}>
-            <span>Bekor qilish sababi</span>
+            <span>Bekor qilish sababi (ixtiyoriy)</span>
             <textarea
               className={styles.input}
               maxLength={500}
@@ -852,21 +889,25 @@ export default function CashierHistoryPage() {
               rows={3}
             />
           </label>
-          <div className={styles.dialogActions}>
+          <div className={styles.dialogActions} data-keyboard-actions>
             <button
               className={styles.secondary}
               disabled={Boolean(cancellingItemId)}
-              onClick={() => setCancelTarget(null)}
+              onClick={() => {
+                setCancelTarget(null);
+                setCancelReason("");
+              }}
               type="button"
             >
               Ortga
             </button>
             <button
               className={styles.danger}
+              data-keyboard-primary
               disabled={
                 !isOnline ||
                 Boolean(cancellingItemId) ||
-                cancelReason.trim().length < 3
+                (cancelReason.trim().length > 0 && cancelReason.trim().length < 3)
               }
               onClick={() => void cancelItem()}
               type="button"

@@ -14,6 +14,10 @@ import {
   type OrderStatus,
   type PaymentStatus,
 } from "../../lib/order-display";
+import {
+  tashkentDateEndUtc,
+  tashkentDateStartUtc,
+} from "../../lib/tashkent-date-range.mjs";
 import { useAuth } from "../auth/auth-provider";
 import { hasPermission } from "../../lib/auth";
 import { Badge } from "../admin-ui/badge";
@@ -31,6 +35,11 @@ import { Pagination } from "../admin-ui/pagination";
 import { InfoBox, StatGrid } from "../admin-ui/stat-box";
 import { useToast } from "../admin-ui/toast";
 import { moneyCell, numberCell } from "./admin-report-views";
+import {
+  receiptPrintState as getReceiptPrintState,
+  type ReceiptPrintJobStatus,
+} from "./receipt-print-state";
+import { receiptDisplaySnapshot } from "./receipt-snapshot";
 
 /*
  * Cheklar ro'yxati.
@@ -53,7 +62,7 @@ import { moneyCell, numberCell } from "./admin-report-views";
  */
 
 type Branch = { id: string; code: string; name: string };
-type PrintJobStatus = "PENDING" | "PROCESSING" | "PRINTED" | "SUBMITTED" | "DEAD_LETTER" | "CANCELLED";
+type PrintJobStatus = ReceiptPrintJobStatus;
 
 type Receipt = {
   id: string;
@@ -131,18 +140,7 @@ function printJobTone(status: PrintJob["status"]): "success" | "warning" | "dang
 }
 
 function receiptPrintState(receipt: Receipt) {
-  const jobs = receipt.printJobs ?? [];
-  if (jobs.some((job) => job.status === "PENDING" || job.status === "PROCESSING")) {
-    return { label: "Printer navbatida", tone: "info" as const };
-  }
-  if (jobs.some((job) => job.status === "SUBMITTED")) {
-    return { label: "Drayver qabul qildi", note: "Qog'ozni tekshiring", tone: "warning" as const };
-  }
-  if (jobs.some((job) => job.status === "PRINTED")) {
-    return { label: "Eski holat", note: "Qog'oz tasdiqlanmagan", tone: "warning" as const };
-  }
-  if (receipt.printed) return { label: "Qo'lda belgilangan", tone: "neutral" as const };
-  return { label: "Tasdiq yo'q", tone: "neutral" as const };
+  return getReceiptPrintState(receipt);
 }
 const pageSize = 25;
 
@@ -226,8 +224,8 @@ export function AdminReceiptsPage() {
       if (branchId) params.set("branchId", branchId);
       /* Serverdagi filtr — sahifalash bilan mos keladi. */
       if (printed) params.set("printed", printed === "PRINTED" ? "true" : "false");
-      if (from) params.set("from", `${from}T00:00:00.000Z`);
-      if (to) params.set("to", `${to}T23:59:59.999Z`);
+      if (from) params.set("from", tashkentDateStartUtc(from));
+      if (to) params.set("to", tashkentDateEndUtc(to));
       return apiFetch<Receipt[]>(`/receipts?${params.toString()}`);
     },
     [branchId, offset, printed, from, to, rangeError],
@@ -407,6 +405,13 @@ export function AdminReceiptsPage() {
       ),
     },
   ];
+
+  const receiptSnapshot = detail
+    ? receiptDisplaySnapshot(detail.content, {
+        items: detail.order?.items ?? null,
+        payments: detail.order?.payments ?? null,
+      })
+    : null;
 
   return (
     <div className="grid gap-5">
@@ -636,7 +641,7 @@ export function AdminReceiptsPage() {
               <div className="flex justify-between gap-4">
                 <dt className="text-mz-text-muted">Buyurtma</dt>
                 <dd className="font-semibold text-mz-text">
-                  {detail.order?.orderNumber ?? "—"}
+                  {receiptSnapshot?.orderNumber ?? detail.order?.orderNumber ?? "—"}
                 </dd>
               </div>
               <div className="flex justify-between gap-4">
@@ -655,26 +660,34 @@ export function AdminReceiptsPage() {
               ) : null}
             </dl>
 
-            {detail.order?.items && detail.order.items.length > 0 ? (
+            {receiptSnapshot && receiptSnapshot.items.length > 0 ? (
               <div className="rounded-mz-control border border-mz-border">
                 <p className="border-b border-mz-border bg-mz-surface-sunken px-3 py-2 text-[13px] font-bold uppercase tracking-wide text-mz-text-muted">
                   Tarkib
                 </p>
                 <ul className="divide-y divide-mz-border">
-                  {detail.order.items.map((item) => (
+                  {receiptSnapshot.items.map((item) => (
                     <li
                       className="flex items-baseline gap-3 px-3 py-2"
-                      key={item.id}
+                      key={item.key}
                     >
-                      <span className="min-w-0 flex-1 truncate text-mz-text">
-                        {item.productName}
-                        {item.variantName ? ` · ${item.variantName}` : ""}
-                      </span>
+                      <div className="min-w-0 flex-1">
+                        <span className="block truncate text-mz-text">
+                          {item.name}
+                          {item.variant ? ` · ${item.variant}` : ""}
+                        </span>
+                        {item.modifiers.map((modifier, index) => (
+                          <small className="block text-mz-text-muted" key={`${item.key}-modifier-${index}`}>
+                            + {modifier}
+                          </small>
+                        ))}
+                        {item.notes ? <small className="block text-mz-text-muted">Izoh: {item.notes}</small> : null}
+                      </div>
                       <span className="shrink-0 text-[13px] text-mz-text-muted">
-                        ×<span className={numberCell}>{Number(item.quantity)}</span>
+                        ×<span className={numberCell}>{item.quantity}</span>
                       </span>
                       <span className={`shrink-0 ${moneyCell}`}>
-                        {formatMoney(item.totalPrice)}
+                        {formatMoney(item.total)}
                       </span>
                     </li>
                   ))}
@@ -682,12 +695,12 @@ export function AdminReceiptsPage() {
               </div>
             ) : null}
 
-            {detail.order?.payments && detail.order.payments.length > 0 ? (
+            {receiptSnapshot && receiptSnapshot.payments.length > 0 ? (
               <dl className="grid gap-1 text-[13px]">
-                {detail.order.payments.map((payment) => (
-                  <div className="flex justify-between gap-4" key={payment.id}>
+                {receiptSnapshot.payments.map((payment) => (
+                  <div className="flex justify-between gap-4" key={payment.key}>
                     <dt className="text-mz-text-muted">
-                      {payment.method?.name ?? payment.method?.code ?? "To'lov"}
+                      {payment.method}
                     </dt>
                     <dd className={moneyCell}>{formatMoney(payment.amount)}</dd>
                   </div>

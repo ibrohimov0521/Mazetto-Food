@@ -10,7 +10,6 @@ export const sectionMotion = {} as const;
 export const buttonMotion = {} as const;
 
 export const MotionDiv = "div";
-export const MotionArticle = "article";
 export const MotionButton = "button";
 
 const countDuration = 180;
@@ -46,14 +45,19 @@ export function AnimatedNumber({ value }: { value: number }) {
     return () => cancelAnimationFrame(frameRef.current);
   }, [value]);
 
-  return <span>{Math.round(display).toLocaleString(locale === "ru" ? "ru-RU" : "uz-UZ")}</span>;
+  return (
+    <span>
+      {Math.round(display).toLocaleString(locale === "ru" ? "ru-RU" : "uz-UZ")}
+    </span>
+  );
 }
 
 export function AnimatedMoney({ value }: { value: number }) {
   const t = useTranslations("Customer");
   return (
     <>
-      <AnimatedNumber value={value} /> {t("so_m_ea86286f")}</>
+      <AnimatedNumber value={value} /> {t("so_m_ea86286f")}
+    </>
   );
 }
 

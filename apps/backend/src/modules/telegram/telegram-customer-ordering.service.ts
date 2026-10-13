@@ -1,5 +1,6 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { RedisCacheService } from "../../cache/redis-cache.service";
 import { PrismaService } from "../../prisma/prisma.service";
 import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
 import {
@@ -19,10 +20,16 @@ import {
   isSimpleQuickAddProduct,
   lavashTelegramRows,
   maskPhone,
+  cartModifierSignature,
   readCartModifiers,
+  requiredCartModifiers,
   requiredTelegramId,
   telegramProductButtonLabel,
 } from "./telegram-customer-presentation";
+import {
+  normalizeTelegramModifierSelections,
+  type TelegramModifierSelection,
+} from "./telegram-product-configurator";
 import { TelegramCustomerOrderHistoryService } from "./telegram-customer-order-history.service";
 import {
   TelegramCustomerScreenService,
@@ -36,6 +43,7 @@ import {
 } from "./telegram-checkout-session.service";
 import { TelegramCartService } from "./telegram-cart.service";
 import { TelegramCheckoutService } from "./telegram-checkout.service";
+import { TelegramCustomerProductConfiguratorService } from "./telegram-customer-product-configurator.service";
 
 type TelegramMessage = {
   chat?: { id?: number | string };
@@ -59,6 +67,11 @@ export class TelegramCustomerOrderingService {
     private readonly cart: TelegramCartService,
     private readonly checkout: TelegramCheckoutService,
     private readonly orderHistory: TelegramCustomerOrderHistoryService,
+    private readonly productConfigurator: TelegramCustomerProductConfiguratorService = new TelegramCustomerProductConfiguratorService(
+      prisma,
+      new RedisCacheService(),
+      screen,
+    ),
   ) {}
 
   async handleCustomerCallback(
@@ -129,11 +142,34 @@ export class TelegramCustomerOrderingService {
     if ((action === "prod" || action === "p") && values[0]) {
       await this.screen.answerCallback(callback);
       const legacyFormat = values.length >= 4;
-      await this.sendProductConfigurator(target, values[0], {
+      await this.productConfigurator.open(target, values[0], customer, {
         ...(legacyFormat ? { categoryId: values[1] } : {}),
         quantity: legacyFormat ? values[2] : values[1],
         variantId: legacyFormat ? values[3] : values[2],
       });
+      return true;
+    }
+
+    if (action === "pc" && values[0] && values[1]) {
+      await this.productConfigurator.handleControl(
+        target,
+        callback,
+        customer,
+        values[0],
+        values[1],
+        values[2],
+        values[3],
+      );
+      return true;
+    }
+
+    if (action === "pa" && values[0]) {
+      await this.handleConfiguredProductAdd(
+        target,
+        callback,
+        customer,
+        values[0],
+      );
       return true;
     }
 
@@ -651,10 +687,16 @@ export class TelegramCustomerOrderingService {
 
     const cartLabel = await this.cartButtonLabel(customerId);
     const productButtons = products.map((product) => ({
-      text: telegramProductButtonLabel(product.code, product.name, product.category?.code),
+      text: telegramProductButtonLabel(
+        product.code,
+        product.name,
+        product.category?.code,
+      ),
       callback_data: `${customerCallbackPrefix}:prod:${product.id}`,
     }));
-    const columns = productButtons.some((button) => button.text.length > 18) ? 1 : 2;
+    const columns = productButtons.some((button) => button.text.length > 18)
+      ? 1
+      : 2;
     const payload: CustomerScreenPayload = {
       text: [
         `🍽 <b>${escapeHtml(category?.name ?? "Mahsulotlar")}</b>`,
@@ -663,10 +705,7 @@ export class TelegramCustomerOrderingService {
       parse_mode: "HTML",
       reply_markup: {
         inline_keyboard: [
-          ...chunkButtons(
-            productButtons,
-            columns,
-          ),
+          ...chunkButtons(productButtons, columns),
           [
             {
               text: "⬅️ Bo'limlarga qaytish",
@@ -682,7 +721,9 @@ export class TelegramCustomerOrderingService {
         ],
       },
     };
-    const categoryPhotoUrl = products.find((product) => product.imageUrl)?.imageUrl ?? category?.imageUrl;
+    const categoryPhotoUrl =
+      products.find((product) => product.imageUrl)?.imageUrl ??
+      category?.imageUrl;
     if (categoryPhotoUrl) {
       await this.screen.renderCustomerPhotoScreen(target, {
         photo: categoryPhotoUrl,
@@ -724,7 +765,9 @@ export class TelegramCustomerOrderingService {
         },
       },
     });
-    const categoryPhotoUrl = products.find((product) => product.imageUrl)?.imageUrl ?? categoryImageUrl;
+    const categoryPhotoUrl =
+      products.find((product) => product.imageUrl)?.imageUrl ??
+      categoryImageUrl;
     const productByCode = new Map(
       products.map((product) => [product.code, product]),
     );
@@ -802,128 +845,46 @@ export class TelegramCustomerOrderingService {
     await this.screen.renderCustomerScreen(target, payload);
   }
 
-  private async sendProductConfigurator(
+  private async handleConfiguredProductAdd(
     target: CustomerScreenTarget,
-    productId: string,
-    selection: {
-      categoryId?: string | undefined;
-      quantity?: string | undefined;
-      variantId?: string | undefined;
-    } = {},
+    callback: TelegramCallbackQuery,
+    customer: LinkedCustomer,
+    token: string,
   ): Promise<void> {
-    const product = await this.prisma.product.findFirst({
-      where: {
-        id: productId,
-        isAvailable: true,
-        ...customerVisibleProductWhere(),
-      },
-      include: {
-        category: { select: { id: true, name: true } },
-        variants: {
-          where: { isAvailable: true },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-        },
-        modifiers: {
-          where: { modifier: { isActive: true } },
-          orderBy: { sortOrder: "asc" },
-          include: { modifier: true },
-        },
-      },
-    }) ?? await this.prisma.product.findFirst({
-      where: {
-        code: productId,
-        isAvailable: true,
-        ...customerVisibleProductWhere(),
-      },
-      include: {
-        category: { select: { id: true, name: true } },
-        variants: {
-          where: { isAvailable: true },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
-        },
-        modifiers: {
-          where: { modifier: { isActive: true } },
-          orderBy: { sortOrder: "asc" },
-          include: { modifier: true },
-        },
-      },
-    });
-
-    if (!product) {
-      await this.screen.renderCustomerScreen(target, {
-        text: "Mahsulot topilmadi yoki hozir mavjud emas.",
-      });
+    const state = await this.productConfigurator.getState(
+      token,
+      customer.id,
+      target.chatId,
+    );
+    if (!state) {
+      await this.productConfigurator.expire(target, callback);
+      return;
+    }
+    const claim = await this.productConfigurator.claimAdd(
+      token,
+      customer.id,
+      target.chatId,
+    );
+    if (claim !== true) {
+      const message =
+        claim === null
+          ? "Telegram hozir mahsulotni savatga qo'sha olmadi. Qayta urinib ko'ring."
+          : "Bu tanlov allaqachon ishlatilgan.";
+      await this.screen.answerCallback(callback, message, true);
       return;
     }
 
-    const categoryId = selection.categoryId || product.category.id;
-    const quantity = Math.max(1, Math.min(99, Number(selection.quantity) || 1));
-    const selectedVariant =
-      product.variants.find((variant) => variant.id === selection.variantId) ??
-      product.variants.find((variant) => variant.isDefault) ??
-      product.variants[0] ??
-      null;
-    const price = selectedVariant?.sellingPrice ?? product.sellingPrice;
-    const productToken = this.callbackToken(product) ?? product.id;
-    const state = (
-      nextQuantity: number,
-      variantToken = this.callbackToken(selectedVariant) ?? "-",
-    ) =>
-      `${customerCallbackPrefix}:p:${productToken}:${nextQuantity}:${variantToken}`;
-    const controls = [
-      ...(product.variants.length > 1
-        ? product.variants.map((variant) => [
-            {
-              text: `${variant.id === selectedVariant?.id ? "✓ " : ""}${variant.name} · ${formatMoney(variant.sellingPrice)}`,
-              callback_data: state(quantity, this.callbackToken(variant) ?? variant.id),
-            },
-          ])
-        : []),
-      [
-        { text: "−", callback_data: state(Math.max(1, quantity - 1)) },
-        { text: String(quantity), callback_data: state(quantity) },
-        { text: "+", callback_data: state(Math.min(99, quantity + 1)) },
-      ],
-      [
-        {
-          text: "🛒 Savatga qo'shish",
-          callback_data: `${customerCallbackPrefix}:a:${productToken}:${this.callbackToken(selectedVariant) ?? "-"}:${quantity}`,
-        },
-      ],
-      [
-        {
-          text: "⬅️ Orqaga",
-          callback_data: `${customerCallbackPrefix}:cat:${categoryId}`,
-        },
-      ],
-    ];
-    const payload = {
-      text: [
-        `🍽 <b>${escapeHtml(product.name)}</b>`,
-        `Narxi: <b>${formatMoney(price)}</b>`,
-        "",
-        escapeHtml(product.description ?? "Buyurtmadan keyin tayyorlanadi."),
-        product.modifiers.length
-          ? "\nQo'shimchalarni savatda mahsulotga biriktirasiz."
-          : "",
-      ]
-        .filter(Boolean)
-        .join("\n"),
-      parse_mode: "HTML" as const,
-      reply_markup: { inline_keyboard: controls },
-    };
-
-    if (product.imageUrl) {
-      await this.screen.renderCustomerPhotoScreen(target, {
-        photo: product.imageUrl,
-        caption: payload.text,
-        parse_mode: payload.parse_mode,
-        reply_markup: payload.reply_markup,
-      });
-      return;
-    }
-
-    await this.screen.renderCustomerScreen(target, payload);
+    await this.addProductToCart(
+      target,
+      callback,
+      customer,
+      state.productId,
+      state.variantId ?? "-",
+      String(state.quantity),
+      state.categoryId,
+      state.modifiers,
+    );
+    await this.productConfigurator.clear(token);
   }
 
   private async quickAddSimpleProduct(
@@ -933,57 +894,58 @@ export class TelegramCustomerOrderingService {
     productId: string,
     categoryId?: string,
   ): Promise<void> {
-    const product = await this.prisma.product.findFirst({
-      where: {
-        id: productId,
-        isAvailable: true,
-        ...customerVisibleProductWhere(),
-      },
-      include: {
-        category: { select: { code: true, name: true } },
-        variants: {
-          where: { isAvailable: true },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+    const product =
+      (await this.prisma.product.findFirst({
+        where: {
+          id: productId,
+          isAvailable: true,
+          ...customerVisibleProductWhere(),
         },
-        modifiers: {
-          where: { modifier: { isActive: true } },
-          orderBy: { sortOrder: "asc" },
-          include: { modifier: true },
+        include: {
+          category: { select: { code: true, name: true } },
+          variants: {
+            where: { isAvailable: true },
+            orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          },
+          modifiers: {
+            where: { modifier: { isActive: true } },
+            orderBy: { sortOrder: "asc" },
+            include: { modifier: true },
+          },
         },
-      },
-    }) ?? await this.prisma.product.findFirst({
-      where: {
-        code: productId,
-        isAvailable: true,
-        ...customerVisibleProductWhere(),
-      },
-      include: {
-        category: { select: { code: true, name: true } },
-        variants: {
-          where: { isAvailable: true },
-          orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+      })) ??
+      (await this.prisma.product.findFirst({
+        where: {
+          code: productId,
+          isAvailable: true,
+          ...customerVisibleProductWhere(),
         },
-        modifiers: {
-          where: { modifier: { isActive: true } },
-          orderBy: { sortOrder: "asc" },
-          include: { modifier: true },
+        include: {
+          category: { select: { code: true, name: true } },
+          variants: {
+            where: { isAvailable: true },
+            orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
+          },
+          modifiers: {
+            where: { modifier: { isActive: true } },
+            orderBy: { sortOrder: "asc" },
+            include: { modifier: true },
+          },
         },
-      },
-    });
+      }));
 
-    if (
-      !product ||
-      !customerVisibleProductCodeSet.has(product.code) ||
-      !isSimpleQuickAddProduct(product)
-    ) {
+    if (!product || !customerVisibleProductCodeSet.has(product.code)) {
       await this.screen.answerCallback(
         callback,
         "Bu mahsulotni qayta tanlang.",
         true,
       );
-      if (product) {
-        await this.sendProductConfigurator(target, product.id);
-      }
+      return;
+    }
+
+    if (!isSimpleQuickAddProduct(product)) {
+      await this.screen.answerCallback(callback, "Mahsulot tanlovini ochdim");
+      await this.productConfigurator.open(target, product.id, customer);
       return;
     }
 
@@ -1042,7 +1004,13 @@ export class TelegramCustomerOrderingService {
       return;
     }
 
-    await this.addCartItem(customer.id, variant.productId, variant.id);
+    await this.addCartItem(
+      customer.id,
+      variant.productId,
+      variant.id,
+      1,
+      requiredCartModifiers(variant.product.modifiers),
+    );
     await this.screen.answerCallback(callback, "Savatga qo'shildi ✅");
     await this.sendProductsForCategory(
       target,
@@ -1059,34 +1027,37 @@ export class TelegramCustomerOrderingService {
     rawVariantId?: string,
     rawQuantity?: string,
     categoryId?: string,
+    selectedModifiers?: TelegramModifierSelection[],
   ): Promise<void> {
-    const product = await this.prisma.product.findFirst({
-      where: {
-        id: productId,
-        isAvailable: true,
-        ...customerVisibleProductWhere(),
-      },
-      include: {
-        modifiers: {
-          where: { modifier: { isActive: true } },
-          orderBy: { sortOrder: "asc" },
-          include: { modifier: true },
+    const product =
+      (await this.prisma.product.findFirst({
+        where: {
+          id: productId,
+          isAvailable: true,
+          ...customerVisibleProductWhere(),
         },
-      },
-    }) ?? await this.prisma.product.findFirst({
-      where: {
-        code: productId,
-        isAvailable: true,
-        ...customerVisibleProductWhere(),
-      },
-      include: {
-        modifiers: {
-          where: { modifier: { isActive: true } },
-          orderBy: { sortOrder: "asc" },
-          include: { modifier: true },
+        include: {
+          modifiers: {
+            where: { modifier: { isActive: true } },
+            orderBy: { sortOrder: "asc" },
+            include: { modifier: true },
+          },
         },
-      },
-    });
+      })) ??
+      (await this.prisma.product.findFirst({
+        where: {
+          code: productId,
+          isAvailable: true,
+          ...customerVisibleProductWhere(),
+        },
+        include: {
+          modifiers: {
+            where: { modifier: { isActive: true } },
+            orderBy: { sortOrder: "asc" },
+            include: { modifier: true },
+          },
+        },
+      }));
 
     if (!product) {
       await this.screen.answerCallback(
@@ -1102,21 +1073,22 @@ export class TelegramCustomerOrderingService {
 
     const variant =
       rawVariantId && rawVariantId !== "-"
-        ? (await this.prisma.productVariant.findFirst({
+        ? ((await this.prisma.productVariant.findFirst({
             where: {
               id: rawVariantId,
               productId: product.id,
               isAvailable: true,
             },
             select: { id: true },
-          }) ?? await this.prisma.productVariant.findFirst({
+          })) ??
+          (await this.prisma.productVariant.findFirst({
             where: {
               code: rawVariantId,
               productId: product.id,
               isAvailable: true,
             },
             select: { id: true },
-          }))
+          })))
         : null;
     if (rawVariantId && rawVariantId !== "-" && !variant) {
       await this.screen.answerCallback(
@@ -1124,7 +1096,7 @@ export class TelegramCustomerOrderingService {
         "Tanlangan tur hozir mavjud emas.",
         true,
       );
-      await this.sendProductConfigurator(target, product.id, {
+      await this.productConfigurator.open(target, product.id, customer, {
         ...(categoryId ? { categoryId } : {}),
       });
       return;
@@ -1136,6 +1108,10 @@ export class TelegramCustomerOrderingService {
       product.id,
       variant?.id ?? null,
       quantity,
+      normalizeTelegramModifierSelections(
+        product.modifiers,
+        selectedModifiers ?? requiredCartModifiers(product.modifiers),
+      ),
     );
     await this.screen.answerCallback(callback, "Savatga qo'shildi ✅");
     await this.sendProductsForCategory(
@@ -1150,6 +1126,7 @@ export class TelegramCustomerOrderingService {
     productId: string,
     variantId: string | null,
     quantity = 1,
+    modifiers: Array<{ modifierId: string; quantity: number }> = [],
   ) {
     return this.prisma.$transaction(async (tx) => {
       await this.cart.lockTelegramCart(tx, customerId);
@@ -1174,7 +1151,9 @@ export class TelegramCustomerOrderingService {
         },
       });
       const existing = existingItems.find(
-        (item) => readCartModifiers(item.modifierSnapshot).length === 0,
+        (item) =>
+          cartModifierSignature(readCartModifiers(item.modifierSnapshot)) ===
+          cartModifierSignature(modifiers),
       );
 
       if (existing) {
@@ -1193,7 +1172,12 @@ export class TelegramCustomerOrderingService {
           productId,
           variantId,
           quantity: new Prisma.Decimal(quantity),
-          modifierSnapshot: [],
+          modifierSnapshot: modifiers.map(
+            ({ modifierId, quantity: count }) => ({
+              modifierId,
+              quantity: count,
+            }),
+          ),
         },
         select: { id: true },
       });
@@ -1244,19 +1228,43 @@ export class TelegramCustomerOrderingService {
       const count = await this.cart.clearCart(customer.id);
       await this.screen.renderCustomerScreen(target, {
         text: count ? "🗑 Savat bo'shatildi." : "🛒 Savat allaqachon bo'sh.",
-        reply_markup: { inline_keyboard: [
-          [{ text: "🍽 Menyu", callback_data: `${customerCallbackPrefix}:menu` }],
-          [{ text: "🏠 Bosh menyu", callback_data: `${customerCallbackPrefix}:home` }],
-        ] },
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: "🍽 Menyu",
+                callback_data: `${customerCallbackPrefix}:menu`,
+              },
+            ],
+            [
+              {
+                text: "🏠 Bosh menyu",
+                callback_data: `${customerCallbackPrefix}:home`,
+              },
+            ],
+          ],
+        },
       });
       return;
     }
     await this.screen.renderCustomerScreen(target, {
       text: "Savatdagi barcha mahsulotlar o'chiriladi. Davom etasizmi?",
-      reply_markup: { inline_keyboard: [
-        [{ text: "🗑 Ha, bo'shatish", callback_data: `${customerCallbackPrefix}:clear:confirm` }],
-        [{ text: "⬅️ Savatga qaytish", callback_data: `${customerCallbackPrefix}:cart` }],
-      ] },
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: "🗑 Ha, bo'shatish",
+              callback_data: `${customerCallbackPrefix}:clear:confirm`,
+            },
+          ],
+          [
+            {
+              text: "⬅️ Savatga qaytish",
+              callback_data: `${customerCallbackPrefix}:cart`,
+            },
+          ],
+        ],
+      },
     });
   }
 
@@ -1273,11 +1281,16 @@ export class TelegramCustomerOrderingService {
     }
 
     if (step === "ADDRESS_CONFIRM") {
-      const session = await this.checkoutSession.getActiveCheckoutSession(customer.id, chatId);
+      const session = await this.checkoutSession.getActiveCheckoutSession(
+        customer.id,
+        chatId,
+      );
       const branch = session?.branchId
         ? await this.checkoutSession.findBranchForCheckout(session.branchId)
         : null;
-      await this.checkoutSession.upsertCheckoutSession(customer.id, chatId, { step: "ADDRESS" });
+      await this.checkoutSession.upsertCheckoutSession(customer.id, chatId, {
+        step: "ADDRESS",
+      });
       if (branch) {
         await this.checkout.askDeliveryAddress(target, branch);
         return;
@@ -1306,13 +1319,18 @@ export class TelegramCustomerOrderingService {
     await this.cart.sendCart(target, customer);
   }
 
-  private async findLinkedCustomer(telegramUserId: number | string | undefined) {
+  private async findLinkedCustomer(
+    telegramUserId: number | string | undefined,
+  ) {
     if (telegramUserId === undefined || telegramUserId === null) return null;
 
     const tenantId = await resolveSoleActiveTenantId(this.prisma);
     return this.prisma.customer.findUnique({
       where: {
-        tenantId_telegramUserId: { tenantId, telegramUserId: String(telegramUserId) },
+        tenantId_telegramUserId: {
+          tenantId,
+          telegramUserId: String(telegramUserId),
+        },
       },
       select: { id: true, name: true, phone: true, bonusBalance: true },
     });

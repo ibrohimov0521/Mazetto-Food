@@ -8,6 +8,7 @@ import { formatMoney } from "../../lib/order-display";
 import {
   draftUnitPrice,
   maxLineQuantity,
+  modifierMinimum,
   type LineDraft,
   type MenuProduct,
 } from "./waiter-model";
@@ -46,12 +47,41 @@ export function ItemDialog({
   onSubmit: (draft: LineDraft) => void;
 }) {
   const [draft, setDraft] = useState<LineDraft>(initial);
-  const requiredIds = (product?.modifiers ?? [])
-    .filter((entry) => entry.isRequired)
-    .map((entry) => entry.modifier.id);
-  const missingRequired = requiredIds.some(
-    (id) => !draft.modifierIds.includes(id),
-  );
+  const missingRequired = (product?.modifiers ?? []).some((entry) => {
+    const quantity =
+      draft.modifierQuantities[entry.modifier.id] ??
+      (draft.modifierIds.includes(entry.modifier.id) ? 1 : 0);
+    return quantity < modifierMinimum(entry);
+  });
+
+  function changeModifierQuantity(
+    modifierId: string,
+    delta: number,
+    minimum: number,
+    maximum: number,
+  ) {
+    setDraft((current) => {
+      const quantity = Math.min(
+        maximum,
+        Math.max(
+          minimum,
+          (current.modifierQuantities[modifierId] ??
+            (current.modifierIds.includes(modifierId) ? 1 : 0)) + delta,
+        ),
+      );
+      const modifierIds = new Set(current.modifierIds);
+      if (quantity > 0) modifierIds.add(modifierId);
+      else modifierIds.delete(modifierId);
+      return {
+        ...current,
+        modifierIds: [...modifierIds],
+        modifierQuantities: {
+          ...current.modifierQuantities,
+          [modifierId]: quantity,
+        },
+      };
+    });
+  }
   const unitPrice = draftUnitPrice(product, draft, fallbackUnitPrice);
 
   function setQuantity(next: number) {
@@ -91,30 +121,47 @@ export function ItemDialog({
       {!!product?.modifiers.length && (
         <fieldset className={styles.choices}>
           <legend className={styles.subheading}>Qo&apos;shimchalar</legend>
-          {product.modifiers.map((entry) => (
-            <label className={styles.choice} key={entry.modifier.id}>
-              <input
-                type="checkbox"
-                disabled={busy || entry.isRequired}
-                checked={draft.modifierIds.includes(entry.modifier.id)}
-                onChange={(event) =>
-                  setDraft((current) => ({
-                    ...current,
-                    modifierIds: event.target.checked
-                      ? [...current.modifierIds, entry.modifier.id]
-                      : current.modifierIds.filter(
-                          (id) => id !== entry.modifier.id,
-                        ),
-                  }))
-                }
-              />
-              <span>
-                {entry.modifier.name}
-                {entry.isRequired ? " (majburiy)" : ""}
-              </span>
-              <strong>{formatMoney(entry.modifier.price)}</strong>
-            </label>
-          ))}
+          {product.modifiers.map((entry) => {
+            const id = entry.modifier.id;
+            const minimum = modifierMinimum(entry);
+            const maximum = entry.maxSelect ?? Number.POSITIVE_INFINITY;
+            const quantity =
+              draft.modifierQuantities[id] ??
+              (draft.modifierIds.includes(id) ? 1 : 0);
+
+            return (
+              <div className={styles.choice} key={id}>
+                <span>
+                  {entry.modifier.name}
+                  {entry.isRequired ? " (majburiy)" : ""}
+                  <small> · {formatMoney(entry.modifier.price)} / dona</small>
+                </span>
+                <span className={styles.quantity}>
+                  <button
+                    aria-label={`${entry.modifier.name}ni kamaytirish`}
+                    disabled={busy || quantity <= minimum}
+                    onClick={() =>
+                      changeModifierQuantity(id, -1, minimum, maximum)
+                    }
+                    type="button"
+                  >
+                    <Minus size={16} />
+                  </button>
+                  <output>{quantity}</output>
+                  <button
+                    aria-label={`${entry.modifier.name}ni ko'paytirish`}
+                    disabled={busy || quantity >= maximum}
+                    onClick={() =>
+                      changeModifierQuantity(id, 1, minimum, maximum)
+                    }
+                    type="button"
+                  >
+                    <Plus size={16} />
+                  </button>
+                </span>
+              </div>
+            );
+          })}
         </fieldset>
       )}
 
@@ -166,7 +213,7 @@ export function ItemDialog({
         </p>
       )}
 
-      <div className={styles.dialogActions}>
+      <div className={styles.dialogActions} data-keyboard-actions>
         <button
           className={styles.button}
           disabled={busy}
@@ -177,6 +224,7 @@ export function ItemDialog({
         </button>
         <button
           className={styles.primary}
+          data-keyboard-primary
           disabled={busy || missingRequired}
           onClick={() => onSubmit(draft)}
           type="button"

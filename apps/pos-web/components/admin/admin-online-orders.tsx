@@ -253,15 +253,6 @@ export function AdminOnlineOrdersPage() {
 
       const trimmed = reason.trim();
 
-      /*
-       * Bekor qilish MIJOZGA ko'rinadi va qaytarilmaydi, shuning uchun
-       * sabab majburiy — u `orderStatusHistory.reason` ga yoziladi.
-       */
-      if (pending.status === "CANCELLED" && !trimmed) {
-        setReasonError("Bekor qilish sababini yozing.");
-        return;
-      }
-
       setIsSaving(true);
 
       try {
@@ -274,7 +265,9 @@ export function AdminOnlineOrdersPage() {
               : {}),
             reason:
               trimmed ||
-              `Online buyurtma: ${orderStatusLabels[pending.status]} (admin)`,
+              (pending.status === "CANCELLED"
+                ? "Buyurtma bekor qilindi"
+                : `Online buyurtma: ${orderStatusLabels[pending.status]} (admin)`),
           }),
         });
         showToast(
@@ -655,7 +648,7 @@ export function AdminOnlineOrdersPage() {
         description={
           pending?.kind === "status"
             ? pending.status === "CANCELLED"
-              ? "Bekor qilish mijozga ko'rinadi va qaytarilmaydi. Sabab majburiy."
+              ? "Bekor qilish mijozga ko'rinadi va qaytarilmaydi. Izoh ixtiyoriy."
               : "Buyurtma tasdiqlanadi va oshxonaga yuboriladi."
             : "Biriktirish kuryerning ekranida darhol ko'rinadi."
         }
@@ -710,9 +703,8 @@ export function AdminOnlineOrdersPage() {
           {pending?.kind === "status" ? (
             <FormField
               error={reasonError}
-              hint="Sabab buyurtma tarixida qoladi."
+              hint="Ixtiyoriy. Kiritilsa buyurtma tarixida qoladi."
               label="Sabab"
-              required={pending.status === "CANCELLED"}
             >
               {(props) => (
                 <Textarea

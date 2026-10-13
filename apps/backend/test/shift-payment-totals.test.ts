@@ -1,19 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { CashTransactionType, Prisma } from "@prisma/client";
+import { calculateCashBalance } from "../src/modules/cash-register/cash-balance";
 import { ShiftsService } from "../src/modules/shifts/shifts.service";
 
 test("legacy OPENING ledger rows are included once in the current cash balance", () => {
-  const service = new ShiftsService({} as never);
-  const calculate = (
-    service as unknown as {
-      calculateCashBalance: (
-        openingBalance: Prisma.Decimal,
-        cashTransactions: { amount: Prisma.Decimal; type: CashTransactionType }[],
-      ) => Prisma.Decimal;
-    }
-  ).calculateCashBalance.bind(service);
-  const currentCash = calculate(new Prisma.Decimal(100000), [
+  const currentCash = calculateCashBalance(new Prisma.Decimal(100000), [
     { amount: new Prisma.Decimal(100000), type: CashTransactionType.OPENING },
     { amount: new Prisma.Decimal(25000), type: CashTransactionType.SALE },
     { amount: new Prisma.Decimal(10000), type: CashTransactionType.EXPENSE },
@@ -67,6 +59,12 @@ test("smena yopilishi to'lovsiz zal buyurtmasini sanaydi va keyingi refundni qay
   let closeData: Record<string, unknown> | undefined;
   const tx = {
     $queryRawUnsafe: async () => [],
+    restaurantTenant: {
+      findFirst: async () => ({ id: "tenant-a" }),
+    },
+    branch: {
+      findFirst: async () => ({ id: "branch-a" }),
+    },
     shift: {
       findUnique: async () => ({ ...shiftState }),
       updateMany: async ({ data }: { data: Record<string, unknown> }) => {
@@ -82,12 +80,13 @@ test("smena yopilishi to'lovsiz zal buyurtmasini sanaydi va keyingi refundni qay
       findMany: async (args: {
         where: {
           revenueRecords: {
-            some: { shiftId: string; source: string };
+            some: { shiftId: string; branchId: string; source: string };
           };
         };
       }) => {
         assert.deepEqual(args.where.revenueRecords.some, {
           shiftId: "shift-b",
+          branchId: "branch-a",
           source: "ORDER",
         });
         return [];
@@ -101,17 +100,21 @@ test("smena yopilishi to'lovsiz zal buyurtmasini sanaydi va keyingi refundni qay
     },
     order: {
       count: async (args: {
-        where: {
-          OR: [
-            { shiftId: string },
-            { revenueRecords: { some: { shiftId: string } } },
-          ];
-        };
+        where: { branchId: string; AND: unknown[] };
       }) => {
-        assert.deepEqual(args.where.OR, [
-          { shiftId: "shift-b" },
-          { revenueRecords: { some: { shiftId: "shift-b" } } },
-        ]);
+        assert.deepEqual(args.where, {
+          branchId: "branch-a",
+          AND: [{
+            OR: [
+              { shiftId: "shift-b" },
+              {
+                revenueRecords: {
+                  some: { shiftId: "shift-b", branchId: "branch-a" },
+                },
+              },
+            ],
+          }],
+        });
         // The direct shift order is an unpaid DINE_IN order; the other is a
         // legacy/refund-linked order that only has a revenue-record relation.
         return 2;
@@ -146,4 +149,66 @@ test("smena yopilishi to'lovsiz zal buyurtmasini sanaydi va keyingi refundni qay
   assert.equal((closeData.salesTotal as Prisma.Decimal).toFixed(0), "0");
   assert.equal(closeData.orderCount, 2);
   assert.equal((closeData.cashDifference as Prisma.Decimal).toFixed(0), "0");
+});
+
+test("shift close rejects a branch outside the actor tenant before writes", async () => {
+  let shiftCloseWrites = 0;
+  let cashTransactionWrites = 0;
+  const shift = {
+    id: "foreign-shift",
+    branchId: "branch-b",
+    employeeId: "employee-b",
+    status: "OPEN",
+    openingBalance: new Prisma.Decimal(0),
+  };
+  const tx = {
+    $queryRawUnsafe: async () => [],
+    restaurantTenant: {
+      findFirst: async () => ({ id: "tenant-a" }),
+    },
+    branch: {
+      findFirst: async () => null,
+    },
+    shift: {
+      findUnique: async () => shift,
+      updateMany: async () => {
+        shiftCloseWrites += 1;
+        return { count: 1 };
+      },
+    },
+    employee: {
+      findFirst: async () => ({ id: "employee-a" }),
+    },
+    cashTransaction: {
+      create: async () => {
+        cashTransactionWrites += 1;
+        return { id: "closing-row" };
+      },
+    },
+  };
+  const service = new ShiftsService({
+    $transaction: async <T>(callback: (database: typeof tx) => Promise<T>) =>
+      callback(tx),
+  } as never);
+
+  await assert.rejects(
+    () =>
+      service.closeShift(
+        "foreign-shift",
+        { closingBalance: 0 },
+        {
+          id: "restaurant-admin-a",
+          employeeId: "employee-a",
+          tenantId: "tenant-a",
+          membershipId: "membership-a",
+          isGlobalScope: true,
+          roles: ["SUPER_ADMIN"],
+          permissions: ["SHIFT_CLOSE"],
+        },
+      ),
+    /Branch not found/,
+  );
+
+  assert.equal(shiftCloseWrites, 0);
+  assert.equal(cashTransactionWrites, 0);
 });

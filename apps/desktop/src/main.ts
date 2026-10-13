@@ -1,4 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  safeStorage,
+  shell,
+} from "electron";
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
@@ -31,9 +38,10 @@ import {
   type DesktopApiError,
 } from "./api-error-reference.js";
 import {
-  normalizeSavedCredentialIdentifier,
   parseSavedDesktopCredentials,
+  resolveDesktopLoginPassword,
   removeSavedDesktopCredential,
+  shouldOfferDesktopCredentialSave,
   upsertSavedDesktopCredential,
   type SavedDesktopCredential,
 } from "./saved-credentials.js";
@@ -100,9 +108,12 @@ if (!hasLock) {
     }
   });
 
-  void app.whenReady().then(startDesktop).catch((error) => {
-    console.error("[desktop] startup failed", error);
-  });
+  void app
+    .whenReady()
+    .then(startDesktop)
+    .catch((error) => {
+      console.error("[desktop] startup failed", error);
+    });
 }
 
 app.on("window-all-closed", () => {
@@ -176,21 +187,33 @@ async function startDesktop(): Promise<void> {
   deviceAuthToken = readProtectedDeviceToken();
   printWorker = new DesktopPrintWorker({
     apiUrl: UPSTREAM_API_URL,
-    printerHost: store.getSetting("printer_host") || process.env.MAZETTO_PRINTER_HOST?.trim() || null,
-    printerPort: Number(store.getSetting("printer_port") || process.env.MAZETTO_PRINTER_PORT || 9100),
+    printerHost:
+      store.getSetting("printer_host") ||
+      process.env.MAZETTO_PRINTER_HOST?.trim() ||
+      null,
+    printerPort: Number(
+      store.getSetting("printer_port") ||
+        process.env.MAZETTO_PRINTER_PORT ||
+        9100,
+    ),
     agentId: `desktop-${store.deviceId()}`,
     deviceId: store.deviceId(),
     deviceToken: deviceAuthToken,
     systemPrinters: readSystemPrinterTargets(),
     printSystem: silentPrintReceipt,
     localQueue: {
-      claim: (documentTypes) => store?.claimLocalPrintJob(documentTypes) ?? null,
+      claim: (documentTypes) =>
+        store?.claimLocalPrintJob(documentTypes) ?? null,
       markPrinting: (id) => store?.markLocalPrintJobPrinting(id) ?? false,
       complete: (id, attemptId) => store?.completeLocalPrintJob(id, attemptId),
       fail: (id, error, ambiguous, attemptId) =>
         store?.failLocalPrintJob(id, error, new Date(), ambiguous, attemptId),
-      wasPrinted: (orderId, documentType) =>
-        store?.wasLocalDocumentPrinted(orderId, documentType) ?? false,
+      wasPrinted: (orderId, documentType, printerName) =>
+        store?.wasLocalDocumentPrinted(orderId, documentType, printerName) ??
+        false,
+      wasAmbiguousLocallyOn: (orderId, documentType, printerName) =>
+        store?.wasLocalDocumentAmbiguous(orderId, documentType, printerName) ??
+        false,
       wasTargetPrinted: (scope, jobId, printerName) =>
         store?.wasPrintTargetPrinted(scope, jobId, printerName) ?? false,
       wasTargetAmbiguous: (scope, jobId, printerName) =>
@@ -223,9 +246,11 @@ async function startDesktop(): Promise<void> {
   setupSupportControls();
   await gateway.start();
   printTimer = setInterval(() => {
-    void printWorker?.tick().catch((error) =>
-      console.error("[desktop] print worker tick failed", error),
-    );
+    void printWorker
+      ?.tick()
+      .catch((error) =>
+        console.error("[desktop] print worker tick failed", error),
+      );
   }, 1_000);
   printTimer.unref();
   setupAutoUpdater();
@@ -501,22 +526,48 @@ function setupDeviceEnrollment(): void {
   ipcMain.handle(
     "desktop:device:enroll",
     async (_event, input: { deviceId?: unknown; enrollmentCode?: unknown }) => {
-      const deviceId = typeof input?.deviceId === "string" ? input.deviceId.trim() : "";
-      const enrollmentCode = typeof input?.enrollmentCode === "string" ? input.enrollmentCode.trim().toUpperCase() : "";
-      if (!deviceId || !enrollmentCode) throw new Error("Qurilma ID va ulanish kodini kiriting");
+      const deviceId =
+        typeof input?.deviceId === "string" ? input.deviceId.trim() : "";
+      const enrollmentCode =
+        typeof input?.enrollmentCode === "string"
+          ? input.enrollmentCode.trim().toUpperCase()
+          : "";
+      if (!deviceId || !enrollmentCode)
+        throw new Error("Qurilma ID va ulanish kodini kiriting");
       const response = await fetch(UPSTREAM_API_URL + "/devices/enroll", {
         method: "POST",
-        headers: { Accept: "application/json", "Content-Type": "application/json" },
-        body: JSON.stringify({ deviceId, enrollmentCode, softwareVersion: app.getVersion() }),
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          deviceId,
+          enrollmentCode,
+          softwareVersion: app.getVersion(),
+        }),
         signal: AbortSignal.timeout(15_000),
       });
-      const payload = (await response.json().catch(() => null)) as { data?: unknown; error?: { message?: string | string[] } } | null;
+      const payload = (await response.json().catch(() => null)) as {
+        data?: unknown;
+        error?: { message?: string | string[] };
+      } | null;
       const message = payload?.error?.message;
-      if (!response.ok) throw new Error(Array.isArray(message) ? message.join(", ") : message || "Qurilmani ulashda server xatosi (" + response.status + ")");
-      const result = (payload?.data ?? payload) as Record<string, unknown> | null;
+      if (!response.ok)
+        throw new Error(
+          Array.isArray(message)
+            ? message.join(", ")
+            : message ||
+              "Qurilmani ulashda server xatosi (" + response.status + ")",
+        );
+      const result = (payload?.data ?? payload) as Record<
+        string,
+        unknown
+      > | null;
       if (!result) throw new Error("Server qurilma ma'lumotini qaytarmadi");
-      const deviceToken = typeof result?.deviceToken === "string" ? result.deviceToken : "";
-      if (!deviceToken) throw new Error("Server qurilma maxfiy kalitini qaytarmadi");
+      const deviceToken =
+        typeof result?.deviceToken === "string" ? result.deviceToken : "";
+      if (!deviceToken)
+        throw new Error("Server qurilma maxfiy kalitini qaytarmadi");
       saveProtectedDeviceToken(deviceToken);
       deviceAuthToken = deviceToken;
       printWorker?.setDeviceToken(deviceToken);
@@ -538,32 +589,52 @@ function setupPrinterControls(): void {
   ipcMain.removeHandler("desktop:receipt-profiles:save");
   ipcMain.removeHandler("desktop:receipt-profiles:reset");
   ipcMain.removeHandler("desktop:receipt-profiles:preview");
-  ipcMain.handle("desktop:printer:status", () => printWorker?.status() ?? { configured: false, host: null, port: 9100, managedPrinters: 0, managedPrinterDetails: [] });
-  ipcMain.handle("desktop:printer:save", async (_event, input: { host?: unknown; port?: unknown }) => {
-    const host = typeof input?.host === "string" ? input.host.trim() : "";
-    const port = Number(input?.port);
-    if (!host || host.length > 253 || !/^[a-zA-Z0-9.-]+$/.test(host)) throw new Error("Printer manzilini to‘g‘ri kiriting");
-    if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Printer porti 1–65535 oralig‘ida bo‘lishi kerak");
-    store?.setSetting("printer_host", host);
-    store?.setSetting("printer_port", String(port));
-    printWorker?.configure(host, port);
-    return printWorker?.status();
-  });
+  ipcMain.handle(
+    "desktop:printer:status",
+    () =>
+      printWorker?.status() ?? {
+        configured: false,
+        host: null,
+        port: 9100,
+        managedPrinters: 0,
+        managedPrinterDetails: [],
+      },
+  );
+  ipcMain.handle(
+    "desktop:printer:save",
+    async (_event, input: { host?: unknown; port?: unknown }) => {
+      const host = typeof input?.host === "string" ? input.host.trim() : "";
+      const port = Number(input?.port);
+      if (!host || host.length > 253 || !/^[a-zA-Z0-9.-]+$/.test(host))
+        throw new Error("Printer manzilini to‘g‘ri kiriting");
+      if (!Number.isInteger(port) || port < 1 || port > 65535)
+        throw new Error("Printer porti 1–65535 oralig‘ida bo‘lishi kerak");
+      store?.setSetting("printer_host", host);
+      store?.setSetting("printer_port", String(port));
+      printWorker?.configure(host, port);
+      return printWorker?.status();
+    },
+  );
   ipcMain.handle("desktop:printer:test", () => printWorker?.testConnection());
   ipcMain.removeHandler("desktop:printer:test-managed");
-  ipcMain.handle("desktop:printer:test-managed", () => printWorker?.testManagedConnections());
+  ipcMain.handle("desktop:printer:test-managed", () =>
+    printWorker?.testManagedConnections(),
+  );
   ipcMain.handle("desktop:printer:list-system", async () => {
     if (!mainWindow) return [];
     const printers = await mainWindow.webContents.getPrintersAsync();
     return printers.map((printer) => {
-      const extended = printer as typeof printer & { status?: number; isDefault?: boolean };
-      return ({
-      name: printer.name,
-      displayName: printer.displayName || printer.name,
-      description: printer.description || null,
-      status: extended.status ?? 0,
-      isDefault: extended.isDefault ?? false,
-    });
+      const extended = printer as typeof printer & {
+        status?: number;
+        isDefault?: boolean;
+      };
+      return {
+        name: printer.name,
+        displayName: printer.displayName || printer.name,
+        description: printer.description || null,
+        status: extended.status ?? 0,
+        isDefault: extended.isDefault ?? false,
+      };
     });
   });
   ipcMain.handle(
@@ -577,36 +648,52 @@ function setupPrinterControls(): void {
   );
   ipcMain.handle(
     "desktop:printer:test-system",
-    async (_event, input: {
-      name?: unknown;
-      role?: unknown;
-      paperFormat?: unknown;
-      paperWidthMm?: unknown;
-      paperHeightMm?: unknown;
-    }) => {
+    async (
+      _event,
+      input: {
+        name?: unknown;
+        role?: unknown;
+        paperFormat?: unknown;
+        paperWidthMm?: unknown;
+        paperHeightMm?: unknown;
+      },
+    ) => {
       const name = typeof input?.name === "string" ? input.name.trim() : "";
       if (!name) throw new Error("Windows printerini tanlang");
       const role = typeof input?.role === "string" ? input.role : "RECEIPT";
       const paperSettings = normalizeWindowsPaperSettings(input, name);
-      await silentPrintReceipt(name, {
-        receiptNumber: "TEST",
-        documentType: role,
-        content: {
+      await silentPrintReceipt(
+        name,
+        {
+          receiptNumber: "TEST",
           documentType: role,
-          statusLabel: role === "KITCHEN" ? "OSHXONA TEST CHEKI" : "PRINTER TEST CHEKI",
-          branchName: "MAZETTO FOOD",
-          orderNumber: "TEST-001",
-          displayOrderNumber: "TEST-001",
-          items: [{ productName: "Test mahsulot", quantity: "1", totalPrice: "1000" }],
-          payments: [{ method: "CASH", amount: "1000" }],
-          total: "1000",
-          dateTime: new Date().toISOString(),
+          content: {
+            documentType: role,
+            statusLabel:
+              role === "KITCHEN" ? "OSHXONA TEST CHEKI" : "PRINTER TEST CHEKI",
+            branchName: "MAZETTO FOOD",
+            orderNumber: "TEST-001",
+            displayOrderNumber: "TEST-001",
+            items: [
+              {
+                productName: "Test mahsulot",
+                quantity: "1",
+                totalPrice: "1000",
+              },
+            ],
+            payments: [{ method: "CASH", amount: "1000" }],
+            total: "1000",
+            dateTime: new Date().toISOString(),
+          },
         },
-      }, paperSettings);
+        paperSettings,
+      );
       return { ok: true };
     },
   );
-  ipcMain.handle("desktop:receipt-profiles:load", () => loadReceiptPrintProfile());
+  ipcMain.handle("desktop:receipt-profiles:load", () =>
+    loadReceiptPrintProfile(),
+  );
   ipcMain.handle("desktop:receipt-profiles:save", (_event, input: unknown) => {
     if (!store) throw new Error("Desktop ma'lumotlar bazasi tayyor emas");
     const profile = normalizeReceiptPrintProfile(input);
@@ -621,14 +708,18 @@ function setupPrinterControls(): void {
   });
   ipcMain.handle(
     "desktop:receipt-profiles:preview",
-    async (_event, input: { kind?: unknown; profile?: unknown; paperWidthMm?: unknown }) => {
+    async (
+      _event,
+      input: { kind?: unknown; profile?: unknown; paperWidthMm?: unknown },
+    ) => {
       const kind = receiptKinds.includes(input?.kind as ReceiptKind)
-        ? input.kind as ReceiptKind
+        ? (input.kind as ReceiptKind)
         : "RECEIPT";
       const width = Number(input?.paperWidthMm);
-      const paperInput = width === 210
-        ? { paperFormat: "A4", paperWidthMm: 210 }
-        : { paperFormat: "ROLL", paperWidthMm: width };
+      const paperInput =
+        width === 210
+          ? { paperFormat: "A4", paperWidthMm: 210 }
+          : { paperFormat: "ROLL", paperWidthMm: width };
       const sample = sampleReceipt(kind);
       return printableReceiptHtml(
         sample,
@@ -663,7 +754,14 @@ async function loadReceiptLogoDataUrl(): Promise<string | null> {
   if (receiptLogoDataUrl !== undefined) return receiptLogoDataUrl;
   const logoPath = app.isPackaged
     ? join(process.resourcesPath, "assets", "header-logo.webp")
-    : join(app.getAppPath(), "..", "pos-web", "public", "brand", "header-logo.webp");
+    : join(
+        app.getAppPath(),
+        "..",
+        "pos-web",
+        "public",
+        "brand",
+        "header-logo.webp",
+      );
   try {
     const image = await readFile(logoPath);
     receiptLogoDataUrl = `data:image/webp;base64,${image.toString("base64")}`;
@@ -697,13 +795,15 @@ function sampleReceipt(kind: ReceiptKind): PrintableReceipt {
       orderNotes: "Namunaviy buyurtma izohi",
       cancellationReason: "Mijoz so'rovi",
       refundReason: "To'lov qaytarildi",
-      items: [{
-        name: "Katta lavash",
-        quantity: 2,
-        total: "72 000 so'm",
-        notes: "Achchiq bo'lsin",
-        modifiers: [{ name: "Qo'shimcha pishloq" }],
-      }],
+      items: [
+        {
+          name: "Katta lavash",
+          quantity: 2,
+          total: "72 000 so'm",
+          notes: "Achchiq bo'lsin",
+          modifiers: [{ name: "Qo'shimcha pishloq" }],
+        },
+      ],
       payments: [{ method: "Naqd", amount: "72 000 so'm" }],
       total: "72 000 so'm",
     },
@@ -712,54 +812,51 @@ function sampleReceipt(kind: ReceiptKind): PrintableReceipt {
 
 function setupAuthControls(): void {
   ipcMain.removeHandler("desktop:auth:credentials:list");
-  ipcMain.removeHandler("desktop:auth:credentials:get");
-  ipcMain.removeHandler("desktop:auth:credentials:save");
   ipcMain.removeHandler("desktop:auth:credentials:remove");
   ipcMain.handle("desktop:auth:credentials:list", () =>
     readSavedDesktopCredentials().map(({ identifier }) => identifier),
   );
-  ipcMain.handle("desktop:auth:credentials:get", (_event, value: unknown) => {
-    const identifier = typeof value === "string"
-      ? normalizeSavedCredentialIdentifier(value)
-      : "";
-    return readSavedDesktopCredentials().find(
-      (entry) => normalizeSavedCredentialIdentifier(entry.identifier) === identifier,
-    ) ?? null;
-  });
   ipcMain.handle(
-    "desktop:auth:credentials:save",
-    (_event, input: { identifier?: unknown; password?: unknown }) => {
-      if (typeof input?.identifier !== "string" || typeof input.password !== "string") {
-        throw new Error("Saqlanadigan login ma'lumoti noto'g'ri");
+    "desktop:auth:credentials:remove",
+    (_event, value: unknown) => {
+      if (typeof value !== "string") {
+        throw new Error("O'chiriladigan login ma'lumoti noto'g'ri");
       }
-      const credentials = upsertSavedDesktopCredential(
+      const credentials = removeSavedDesktopCredential(
         readSavedDesktopCredentials(),
-        input.identifier,
-        input.password,
+        value,
       );
-      saveProtectedSetting(SAVED_LOGIN_CREDENTIALS_KEY, JSON.stringify(credentials));
+      saveProtectedSetting(
+        SAVED_LOGIN_CREDENTIALS_KEY,
+        JSON.stringify(credentials),
+      );
       return credentials.map(({ identifier }) => identifier);
     },
   );
-  ipcMain.handle("desktop:auth:credentials:remove", (_event, value: unknown) => {
-    if (typeof value !== "string") {
-      throw new Error("O'chiriladigan login ma'lumoti noto'g'ri");
-    }
-    const credentials = removeSavedDesktopCredential(
-      readSavedDesktopCredentials(),
-      value,
-    );
-    saveProtectedSetting(SAVED_LOGIN_CREDENTIALS_KEY, JSON.stringify(credentials));
-    return credentials.map(({ identifier }) => identifier);
-  });
 
   ipcMain.removeHandler("desktop:auth:login");
   ipcMain.handle(
     "desktop:auth:login",
-    async (_event, input: { identifier?: unknown; password?: unknown }) => {
-      const identifier = typeof input?.identifier === "string" ? input.identifier.trim() : "";
-      const password = typeof input?.password === "string" ? input.password : "";
-      if (!identifier || !password) throw new Error("Login va parolni kiriting");
+    async (
+      _event,
+      input: {
+        identifier?: unknown;
+        password?: unknown;
+        useSavedCredential?: unknown;
+      },
+    ) => {
+      const identifier =
+        typeof input?.identifier === "string" ? input.identifier.trim() : "";
+      if (!identifier) throw new Error("Loginni kiriting");
+      const enteredPassword =
+        typeof input?.password === "string" ? input.password : "";
+      const password = resolveDesktopLoginPassword(
+        readSavedDesktopCredentials(),
+        identifier,
+        enteredPassword,
+        input?.useSavedCredential === true,
+      );
+      if (!password) throw new Error("Login va parolni kiriting");
 
       const response = await fetch(`${UPSTREAM_API_URL}/auth/login`, {
         method: "POST",
@@ -767,7 +864,9 @@ function setupAuthControls(): void {
           Accept: "application/json",
           "Content-Type": "application/json",
           "x-mazetto-device-id": store?.deviceId() ?? "",
-          ...(deviceAuthToken ? { "x-mazetto-device-token": deviceAuthToken } : {}),
+          ...(deviceAuthToken
+            ? { "x-mazetto-device-token": deviceAuthToken }
+            : {}),
         },
         body: JSON.stringify({ identifier, password }),
         signal: AbortSignal.timeout(15_000),
@@ -777,42 +876,30 @@ function setupAuthControls(): void {
         data?: { tokens?: { accessToken?: string; tokenType?: string } };
         error?: DesktopApiError;
       } | null;
-      if (!response.ok || !payload?.success || !payload.data?.tokens?.accessToken) {
-        throw new Error(formatDesktopApiError(
-          payload?.error,
-          response.status,
-          "Login amalga oshmadi",
-        ));
+      if (
+        !response.ok ||
+        !payload?.success ||
+        !payload.data?.tokens?.accessToken
+      ) {
+        throw new Error(
+          formatDesktopApiError(
+            payload?.error,
+            response.status,
+            "Login amalga oshmadi",
+          ),
+        );
       }
 
-      const heartbeat = await fetch(`${UPSTREAM_API_URL}/devices/heartbeat`, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json",
-          Authorization: `${payload.data.tokens.tokenType ?? "Bearer"} ${payload.data.tokens.accessToken}`,
-          "x-mazetto-device-id": store?.deviceId() ?? "",
-          ...(deviceAuthToken ? { "x-mazetto-device-token": deviceAuthToken } : {}),
-        },
-        body: JSON.stringify({ softwareVersion: app.getVersion() }),
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!heartbeat.ok) {
-        const heartbeatPayload = (await heartbeat.json().catch(() => null)) as {
-          error?: DesktopApiError;
-        } | null;
-        throw new Error(formatDesktopApiError(
-          heartbeatPayload?.error,
-          heartbeat.status,
-          "Qurilma tasdiqlanmagan yoki ushbu foydalanuvchiga ruxsat berilmagan",
-        ));
-      }
-
-      // Native login local gatewayni chetlab o'tishi mumkin. Printer worker ham
-      // shu sessiya bilan server navbatini olishi uchun tokenni bevosita beramiz.
+      // Login session must reach the renderer so an unapproved desktop can be
+      // enrolled there. The renderer checks heartbeat and routes to enrollment.
       printWorker?.setAuthorization(
         `${payload.data.tokens.tokenType ?? "Bearer"} ${payload.data.tokens.accessToken}`,
       );
+      try {
+        await offerSaveDesktopCredentials(identifier, password);
+      } catch {
+        console.warn("[desktop] credential save prompt failed");
+      }
       return payload.data;
     },
   );
@@ -822,29 +909,43 @@ function setupApiControls(): void {
   ipcMain.removeHandler("desktop:api:request");
   ipcMain.handle(
     "desktop:api:request",
-    async (_event, input: {
-      path?: unknown;
-      method?: unknown;
-      body?: unknown;
-      headers?: unknown;
-    }) => {
+    async (
+      _event,
+      input: {
+        path?: unknown;
+        method?: unknown;
+        body?: unknown;
+        headers?: unknown;
+      },
+    ) => {
       const path = typeof input?.path === "string" ? input.path : "";
-      const method = typeof input?.method === "string" ? input.method.toUpperCase() : "GET";
+      const method =
+        typeof input?.method === "string" ? input.method.toUpperCase() : "GET";
       const body = typeof input?.body === "string" ? input.body : undefined;
-      if (!path.startsWith("/") || path.startsWith("//") || !/^[A-Z]+$/.test(method)) {
+      if (
+        !path.startsWith("/") ||
+        path.startsWith("//") ||
+        !/^[A-Z]+$/.test(method)
+      ) {
         throw new Error("Desktop API so'rovi noto'g'ri");
       }
 
       const requestHeaders = new Headers({ Accept: "application/json" });
       if (input?.headers && typeof input.headers === "object") {
-        for (const [name, value] of Object.entries(input.headers as Record<string, unknown>)) {
-          if (typeof value === "string" && /^(authorization|content-type|idempotency-key)$/i.test(name)) {
+        for (const [name, value] of Object.entries(
+          input.headers as Record<string, unknown>,
+        )) {
+          if (
+            typeof value === "string" &&
+            /^(authorization|content-type|idempotency-key)$/i.test(name)
+          ) {
             requestHeaders.set(name, value);
           }
         }
       }
       requestHeaders.set("x-mazetto-device-id", store?.deviceId() ?? "");
-      if (deviceAuthToken) requestHeaders.set("x-mazetto-device-token", deviceAuthToken);
+      if (deviceAuthToken)
+        requestHeaders.set("x-mazetto-device-token", deviceAuthToken);
 
       /*
        * The renderer already talks to the local gateway in desktop mode, but
@@ -860,7 +961,9 @@ function setupApiControls(): void {
       });
       return {
         body: await response.text(),
-        contentType: response.headers.get("content-type") ?? "application/json; charset=utf-8",
+        contentType:
+          response.headers.get("content-type") ??
+          "application/json; charset=utf-8",
         status: response.status,
         desktopSource: response.headers.get("X-Mazetto-Desktop"),
         cachedAt: response.headers.get("X-Mazetto-Cached-At"),
@@ -881,20 +984,37 @@ function readSystemPrinterTargets(): SystemPrinterTarget[] {
 
 function normalizeSystemPrinterTargets(value: unknown): SystemPrinterTarget[] {
   if (!Array.isArray(value)) return [];
-  const validRoles = new Set(["RECEIPT", "KITCHEN", "CANCELLATION", "REFUND", "BAR"]);
+  const validRoles = new Set([
+    "RECEIPT",
+    "KITCHEN",
+    "CANCELLATION",
+    "REFUND",
+    "BAR",
+    "SHIFT_REPORT",
+  ]);
   return value.flatMap((entry) => {
     if (!entry || typeof entry !== "object") return [];
     const record = entry as Record<string, unknown>;
     const name = typeof record.name === "string" ? record.name.trim() : "";
     if (!name || name.length > 260) return [];
-    const displayName = typeof record.displayName === "string" && record.displayName.trim()
-      ? record.displayName.trim()
-      : name;
+    const displayName =
+      typeof record.displayName === "string" && record.displayName.trim()
+        ? record.displayName.trim()
+        : name;
     const roles = Array.isArray(record.roles)
-      ? [...new Set(record.roles.filter((role): role is string => typeof role === "string" && validRoles.has(role)))]
+      ? [
+          ...new Set(
+            record.roles.filter(
+              (role): role is string =>
+                typeof role === "string" && validRoles.has(role),
+            ),
+          ),
+        ]
       : [];
     const paperSettings = normalizeWindowsPaperSettings(record, name);
-    return roles.length > 0 ? [{ name, displayName, roles, ...paperSettings }] : [];
+    return roles.length > 0
+      ? [{ name, displayName, roles, ...paperSettings }]
+      : [];
   });
 }
 
@@ -909,15 +1029,25 @@ async function silentPrintReceipt(
   const paperWidthMm = paper.paperWidthMm;
   const window = new BrowserWindow({
     show: false,
-    width: paperWidthMm === 210 ? 900 : Math.min(1_600, Math.max(420, Math.round(paperWidthMm * 4.25 + 80))),
-    height: paper.paperFormat === "LABEL"
-      ? Math.max(300, Math.round((paper.paperHeightMm ?? 80) * 4.25 + 80))
-      : 800,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
+    width:
+      paperWidthMm === 210
+        ? 900
+        : Math.min(1_600, Math.max(420, Math.round(paperWidthMm * 4.25 + 80))),
+    height:
+      paper.paperFormat === "LABEL"
+        ? Math.max(300, Math.round((paper.paperHeightMm ?? 80) * 4.25 + 80))
+        : 800,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
   });
   try {
     await withTimeout(
-      window.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt, paper, profile, logo))}`),
+      window.loadURL(
+        `data:text/html;charset=utf-8,${encodeURIComponent(printableReceiptHtml(receipt, paper, profile, logo))}`,
+      ),
       10_000,
       () => new Error("Chek oynasi 10 soniyada tayyor bo'lmadi"),
     );
@@ -946,9 +1076,7 @@ async function silentPrintReceipt(
             success
               ? resolve()
               : reject(
-                  new Error(
-                    failureReason || "Printer chop etishni rad etdi",
-                  ),
+                  new Error(failureReason || "Printer chop etishni rad etdi"),
                 ),
         );
       }),
@@ -998,7 +1126,11 @@ function setupSupportControls(): void {
       updates: updateStatus,
       upstreamOrigin: new URL(UPSTREAM_API_URL).origin,
     };
-    await writeFile(selected.filePath, `${JSON.stringify(bundle, null, 2)}\n`, "utf8");
+    await writeFile(
+      selected.filePath,
+      `${JSON.stringify(bundle, null, 2)}\n`,
+      "utf8",
+    );
     shell.showItemInFolder(selected.filePath);
     return { path: selected.filePath };
   });
@@ -1080,9 +1212,10 @@ function syncPrinterAuthorization(serialized: string | null): void {
       printWorker?.setAuthorization(undefined);
       return;
     }
-    const tokenType = typeof value.tokens?.tokenType === "string"
-      ? value.tokens.tokenType
-      : "Bearer";
+    const tokenType =
+      typeof value.tokens?.tokenType === "string"
+        ? value.tokens.tokenType
+        : "Bearer";
     printWorker?.setAuthorization(`${tokenType} ${accessToken}`);
   } catch {
     printWorker?.setAuthorization(undefined);
@@ -1119,4 +1252,64 @@ function saveProtectedSetting(key: string, value: string): void {
   }
   const encrypted = safeStorage.encryptString(value).toString("base64");
   store?.setSetting(key, encrypted);
+}
+
+async function offerSaveDesktopCredentials(
+  identifier: string,
+  password: string,
+): Promise<void> {
+  if (
+    !mainWindow ||
+    !shouldOfferDesktopCredentialSave(
+      readSavedDesktopCredentials(),
+      identifier,
+      password,
+    )
+  ) {
+    return;
+  }
+
+  if (!safeStorage.isEncryptionAvailable()) {
+    await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      buttons: ["Tushunarli"],
+      defaultId: 0,
+      title: "Login saqlanmadi",
+      message: "Bu qurilmada xavfsiz saqlash xizmati mavjud emas.",
+      detail: "Login muvaffaqiyatli. Parol ushbu qurilmada saqlanmadi.",
+    });
+    return;
+  }
+
+  const choice = await dialog.showMessageBox(mainWindow, {
+    type: "question",
+    buttons: ["Eslab qolish", "Hozir emas"],
+    defaultId: 0,
+    cancelId: 1,
+    title: "Login ma'lumotlarini eslab qolish",
+    message: "Keyingi safar tez kirish uchun login va parol eslab qolinsinmi?",
+    detail: "Parol Windows xavfsiz saqlash xizmatida shifrlanadi.",
+  });
+  if (choice.response !== 0) return;
+
+  try {
+    const credentials = upsertSavedDesktopCredential(
+      readSavedDesktopCredentials(),
+      identifier,
+      password,
+    );
+    saveProtectedSetting(
+      SAVED_LOGIN_CREDENTIALS_KEY,
+      JSON.stringify(credentials),
+    );
+  } catch {
+    await dialog.showMessageBox(mainWindow, {
+      type: "warning",
+      buttons: ["Tushunarli"],
+      defaultId: 0,
+      title: "Login saqlanmadi",
+      message: "Login muvaffaqiyatli, ammo ma'lumotni eslab qolib bo'lmadi.",
+      detail: "Ilovada parol saqlanmadi. Keyinroq qayta urinib ko'ring.",
+    });
+  }
 }

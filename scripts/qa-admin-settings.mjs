@@ -52,8 +52,25 @@ const settings = [
     },
     fallback: "CASH",
   },
+  {
+    key: "order_display_number_start",
+    value: "101",
+    isStored: false,
+    isPublic: false,
+    affectsCustomer: false,
+    rule: { kind: "int", min: 1, max: 1000000, fallback: 101 },
+    fallback: "101",
+  },
+  {
+    key: "kitchen_pos_orders_enabled",
+    value: "false",
+    isStored: false,
+    isPublic: false,
+    affectsCustomer: false,
+    rule: { kind: "bool", fallback: false },
+    fallback: "false",
+  },
 ];
-
 const browser = await chromium.launch({ headless: true });
 try {
   for (const viewport of [
@@ -66,6 +83,10 @@ try {
     let savedValue = null;
     let savedCashierMethods = null;
     let cashierMethods = "CASH";
+    let orderDisplayNumberStart = "101";
+    let kitchenPosOrdersEnabled = "false";
+    let savedOrderDisplayNumberStart = null;
+    let savedKitchenPosOrdersEnabled = null;
 
     await page.addInitScript(() => {
       localStorage.setItem(
@@ -94,11 +115,18 @@ try {
           contentType: "application/json",
           body: JSON.stringify({
             success: true,
-            data: settings.map((row) =>
-              row.key === "cashier_payment_methods"
-                ? { ...row, value: cashierMethods }
-                : row,
-            ),
+            data: settings.map((row) => {
+              if (row.key === "cashier_payment_methods") {
+                return { ...row, value: cashierMethods };
+              }
+              if (row.key === "order_display_number_start") {
+                return { ...row, value: orderDisplayNumberStart };
+              }
+              if (row.key === "kitchen_pos_orders_enabled") {
+                return { ...row, value: kitchenPosOrdersEnabled };
+              }
+              return row;
+            }),
           }),
         });
       }
@@ -115,6 +143,24 @@ try {
             success: true,
             data: { value: cashierMethods },
           }),
+        });
+      }
+      const settingKey = url.pathname.match(
+        /\/settings\/(order_display_number_start|kitchen_pos_orders_enabled)$/
+      )?.[1];
+      if (request.method() === "PATCH" && settingKey) {
+        const value = String(JSON.parse(request.postData() ?? "{}").value);
+        if (settingKey === "order_display_number_start") {
+          savedOrderDisplayNumberStart = value;
+          orderDisplayNumberStart = value;
+        } else {
+          savedKitchenPosOrdersEnabled = value;
+          kitchenPosOrdersEnabled = value;
+        }
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({ success: true, data: { value } }),
         });
       }
       if (
@@ -158,6 +204,54 @@ try {
         `to'lov usuli ko'rinmadi: ${method.label}`,
       );
     }
+    assert.equal(
+      await page
+        .getByLabel("Buyurtma raqamining boshlanishi")
+        .inputValue(),
+      "101",
+    );
+    await page.getByLabel("Buyurtma raqamining boshlanishi").fill("1");
+    const saveOrderNumberStart = page.waitForResponse(
+      (response) =>
+        response.url().includes("/settings/order_display_number_start") &&
+        response.request().method() === "PATCH",
+    );
+    await page.getByRole("button", { name: "Saqlash", exact: true }).click();
+    await saveOrderNumberStart;
+    assert.equal(savedOrderDisplayNumberStart, "1");
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    assert.equal(
+      await page
+        .getByLabel("Buyurtma raqamining boshlanishi")
+        .inputValue(),
+      "1",
+      "buyurtma boshlang'ich raqami qayta yuklanganda saqlanishi kerak",
+    );
+    const kitchenOrdersToggle = page.getByRole("switch", {
+      name: "Ichki buyurtmalarni oshxonada ko'rsatish",
+    });
+    assert.equal(await kitchenOrdersToggle.getAttribute("aria-checked"), "false");
+    const saveKitchenOrdersSetting = page.waitForResponse(
+      (response) =>
+        response.url().includes("/settings/kitchen_pos_orders_enabled") &&
+        response.request().method() === "PATCH",
+    );
+    await kitchenOrdersToggle.click();
+    await saveKitchenOrdersSetting;
+    assert.equal(savedKitchenPosOrdersEnabled, "true");
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    assert.equal(
+      await page
+        .getByRole("switch", {
+          name: "Ichki buyurtmalarni oshxonada ko'rsatish",
+        })
+        .getAttribute("aria-checked"),
+      "true",
+      "oshxona ko'rinishi sozlamasi qayta yuklanganda saqlanishi kerak",
+    );
+
     await page.getByLabel("Tekin yetkazish radiusi").fill("1500");
     await page.getByRole("button", { name: "Saqlash", exact: true }).click();
     await page
@@ -231,10 +325,11 @@ try {
       "CASH,CLICK,PAYME",
       "offline xavf tasdiqlanmaguncha sozlama saqlanmasligi kerak",
     );
-    assert.ok(
-      await page
-        .getByText(/Internetga ulanmagan Desktop kassa/)
-        .isVisible(),
+    const confirmationDialog = page.getByRole("dialog");
+    assert.ok(await confirmationDialog.isVisible());
+    assert.match(
+      await confirmationDialog.innerText(),
+      /Oflayn Desktop kassa/,
       "o'chirilayotgan to'lov usuli uchun offline ogohlantirishi ko'rinishi kerak",
     );
     const disableClickSave = page.waitForResponse(
@@ -272,6 +367,28 @@ try {
       true,
       "oxirgi yoqilgan to'lov usuli o'chirilmasligi kerak",
     );
+
+    cashierMethods = "UNKNOWN";
+    await page.reload({ waitUntil: "domcontentloaded" });
+    const cashMethod = page.getByRole("button", {
+      name: "Naqd pul",
+      exact: true,
+    });
+    await cashMethod.waitFor();
+    assert.equal(
+      await cashMethod.getAttribute("aria-pressed"),
+      "false",
+      "noma'lum saqlangan qiymat to'lov usulini o'zidan-o'zi yoqmasligi kerak",
+    );
+    await cashMethod.click();
+    const repairCashSetting = page.waitForResponse(
+      (response) =>
+        response.url().includes("/settings/cashier_payment_methods") &&
+        response.request().method() === "PATCH",
+    );
+    await page.getByRole("button", { name: "Saqlash", exact: true }).click();
+    await repairCashSetting;
+    assert.equal(savedCashierMethods, "CASH");
 
     assert.ok(
       await page.evaluate(

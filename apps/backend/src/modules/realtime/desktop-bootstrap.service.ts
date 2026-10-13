@@ -20,9 +20,11 @@ import {
   MAX_ACTIVE_KITCHEN_TICKETS,
   trimKitchenQueue,
 } from "../kitchen/kitchen-queue-window";
+import { kitchenPosOrderVisibilityWhere } from "../kitchen/kitchen-order-visibility";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import { SettingsService } from "../settings/settings.service";
+import { resolveEffectiveBranchPaymentMethods } from "../payments/payment-method-resolution";
 import { customerVisibleProductWhere } from "../customers/customer-catalog-visibility";
 import { unavailableProductWhere } from "../orders/order-rules";
 import { encodeBranchRevisionCursor } from "./realtime.service";
@@ -38,6 +40,7 @@ export class RealtimeBootstrapService {
     branchId: string | undefined,
     user: AuthenticatedUser,
     panel?: string,
+    deviceHardwareId?: string,
   ) {
     if (panel !== undefined && panel !== "kitchen") {
       throw new BadRequestException("Snapshot panel noto'g'ri.");
@@ -53,18 +56,35 @@ export class RealtimeBootstrapService {
         if (!scope.branchId) {
           throw new BadRequestException("Filial tanlanishi shart.");
         }
+        const scopedBranchId = scope.branchId;
         const enabledCashierPaymentMethods = new Set(
           this.settings
             ? await this.settings.getCsv(
                 "cashier_payment_methods",
                 scope.tenantId,
+                tx,
               )
             : ["CASH"],
         );
+        const orderDisplayNumberStart = this.settings
+          ? await this.settings.getInt(
+              "order_display_number_start",
+              scope.tenantId,
+              tx,
+            )
+          : 101;
 
         const canViewKitchen = user.permissions.includes(
           PERMISSIONS.KITCHEN_VIEW,
         );
+        const kitchenPosOrdersEnabled =
+          kitchenPanel && this.settings
+            ? await this.settings.getBool(
+                "kitchen_pos_orders_enabled",
+                scope.tenantId,
+                tx,
+              )
+            : false;
         if (kitchenPanel && !canViewKitchen) {
           throw new ForbiddenException("Oshxona snapshoti uchun ruxsat yo'q.");
         }
@@ -116,20 +136,33 @@ export class RealtimeBootstrapService {
           },
         });
         if (!branch) throw new NotFoundException("Branch not found");
+        const device =
+          canUsePosCatalog && deviceHardwareId?.trim()
+            ? await tx.device.findFirst({
+                where: {
+                  hardwareId: deviceHardwareId.trim(),
+                  branchId: branch.id,
+                  isActive: true,
+                  enrolledAt: { not: null },
+                  branch: { tenantId: scope.tenantId },
+                },
+                select: { id: true },
+              })
+            : null;
 
         const [categories, products, configuredPaymentMethods, tables, halls] =
-          await Promise.all([
+          await (async () => [
             canViewMenu
-              ? tx.category.findMany({
+              ? await tx.category.findMany({
                   where: {
                     isActive: true,
-                    OR: [{ branchId: scope.branchId }, { branchId: null }],
+                    OR: [{ branchId: scopedBranchId }, { branchId: null }],
                     products: {
                       some: {
                         ...customerVisibleProductWhere(),
                         isAvailable: true,
-                        OR: [{ branchId: scope.branchId }, { branchId: null }],
-                        ...unavailableProductWhere(scope.branchId),
+                        OR: [{ branchId: scopedBranchId }, { branchId: null }],
+                        ...unavailableProductWhere(scopedBranchId),
                       },
                     },
                   },
@@ -145,14 +178,14 @@ export class RealtimeBootstrapService {
                     sortOrder: true,
                   },
                 })
-              : Promise.resolve([]),
+              : [],
             canViewMenu
-              ? tx.product.findMany({
+              ? await tx.product.findMany({
                   where: {
                     ...customerVisibleProductWhere(),
                     isAvailable: true,
-                    OR: [{ branchId: scope.branchId }, { branchId: null }],
-                    ...unavailableProductWhere(scope.branchId),
+                    OR: [{ branchId: scopedBranchId }, { branchId: null }],
+                    ...unavailableProductWhere(scopedBranchId),
                   },
                   orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
                   select: {
@@ -222,29 +255,25 @@ export class RealtimeBootstrapService {
                     },
                   },
                 })
-              : Promise.resolve([]),
+              : [],
             canUsePosCatalog
-              ? tx.paymentMethod.findMany({
+              ? await tx.paymentMethod.findMany({
                   where: {
-                    isActive: true,
-                    OR: [{ branchId: scope.branchId }, { branchId: null }],
+                    OR: [{ branchId: scopedBranchId }, { branchId: null }],
                   },
-                  orderBy: [
-                    { branchId: "desc" },
-                    { sortOrder: "asc" },
-                    { name: "asc" },
-                  ],
+                  orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
                   select: {
                     branchId: true,
                     code: true,
                     name: true,
                     sortOrder: true,
+                    isActive: true,
                   },
                 })
-              : Promise.resolve([]),
+              : [],
             canViewTables
-              ? tx.restaurantTable.findMany({
-                  where: { branchId: scope.branchId, isActive: true },
+              ? await tx.restaurantTable.findMany({
+                  where: { branchId: scopedBranchId, isActive: true },
                   orderBy: [
                     { hall: { sortOrder: "asc" } },
                     { sortOrder: "asc" },
@@ -300,10 +329,10 @@ export class RealtimeBootstrapService {
                       : {}),
                   },
                 })
-              : Promise.resolve([]),
+              : [],
             canViewTables
-              ? tx.hall.findMany({
-                  where: { branchId: scope.branchId, isActive: true },
+              ? await tx.hall.findMany({
+                  where: { branchId: scopedBranchId, isActive: true },
                   orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
                   select: {
                     id: true,
@@ -314,8 +343,8 @@ export class RealtimeBootstrapService {
                     sortOrder: true,
                   },
                 })
-              : Promise.resolve([]),
-          ]);
+              : [],
+          ])();
 
         const kitchenQueue = kitchenPanel
           ? trimKitchenQueue(
@@ -323,6 +352,7 @@ export class RealtimeBootstrapService {
                 where: {
                   order: {
                     branchId: scope.branchId,
+                    ...kitchenPosOrderVisibilityWhere(kitchenPosOrdersEnabled),
                     status: {
                       notIn: [
                         OrderStatus.SERVED,
@@ -409,19 +439,20 @@ export class RealtimeBootstrapService {
             )
           : undefined;
 
-        const seenPaymentMethodCodes = new Set<string>();
-        const paymentMethods = configuredPaymentMethods
+        const paymentMethods = resolveEffectiveBranchPaymentMethods(
+          configuredPaymentMethods,
+          scope.branchId,
+        )
           .filter((method) => {
-            if (
-              !enabledCashierPaymentMethods.has(method.code) ||
-              seenPaymentMethodCodes.has(method.code)
-            )
-              return false;
-            seenPaymentMethodCodes.add(method.code);
-            return true;
+            const code = method.code.trim().toUpperCase();
+            return method.isActive && enabledCashierPaymentMethods.has(code);
           })
           .sort((left, right) => left.sortOrder - right.sortOrder)
-          .map(({ code, name }) => ({ code, name, active: true }));
+          .map(({ code, name }) => ({
+            code: code.trim().toUpperCase(),
+            name,
+            active: true,
+          }));
 
         return {
           schemaVersion: 2,
@@ -441,11 +472,15 @@ export class RealtimeBootstrapService {
           },
           ...(canViewMenu ? { menu: { categories, products } } : {}),
           ...(canViewTables ? { halls, tables } : {}),
-          ...(kitchenQueue ? { kitchenQueue } : {}),
+          ...(kitchenQueue ? { kitchenQueue, kitchenPosOrdersEnabled } : {}),
           ...(canUsePosCatalog
             ? {
                 catalog: {
                   branchId: branch.id,
+                  orderDisplayNumberStart,
+                  offlineDisplayNumberSuffix: device
+                    ? `D${device.id.toUpperCase()}`
+                    : null,
                   categories: categories.map(({ id, name }) => ({ id, name })),
                   products,
                   paymentMethods,

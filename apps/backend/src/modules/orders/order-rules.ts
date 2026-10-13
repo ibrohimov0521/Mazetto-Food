@@ -109,7 +109,7 @@ export function assertPosCheckoutType(dto: CreatePosCheckoutDto): OrderType {
 }
 
 /** Kod bo'yicha qidirish uchun bir xil shaklga keltirish. */
-export function normalizePaymentMethodCode(code: string): string {
+function normalizePaymentMethodCode(code: string): string {
   return code.trim().toUpperCase();
 }
 
@@ -247,6 +247,9 @@ export function createPosCheckoutRequestHash(
   const normalized = {
     branchId,
     employeeId,
+    offlineDisplayOrderDate: dto.offlineDisplayOrderDate ?? null,
+    offlineDisplayOrderNumber: dto.offlineDisplayOrderNumber ?? null,
+    offlineDisplayOrderSequence: dto.offlineDisplayOrderSequence ?? null,
     type: dto.type ?? OrderType.TAKEAWAY,
     payLater: dto.payLater === true,
     tableId: dto.tableId ?? null,
@@ -315,9 +318,18 @@ export async function withUniqueConstraintRetry<T>(
  * yozuvdan birini rad etadi va u qayta yuborilishi kerak.
  */
 export function isRetryableTransactionConflict(error: unknown): boolean {
+  if (!(error instanceof Prisma.PrismaClientKnownRequestError)) return false;
+  if (error.code === "P2034") return true;
+  if (error.code !== "P2010") return false;
+
+  const metadataCode = error.meta?.code;
+  const metadataMessage = error.meta?.message;
   return (
-    error instanceof Prisma.PrismaClientKnownRequestError &&
-    error.code === "P2034"
+    metadataCode === "40001" ||
+    metadataCode === "40P01" ||
+    (typeof metadataMessage === "string" &&
+      /could not serialize access|deadlock detected/i.test(metadataMessage)) ||
+    /could not serialize access|deadlock detected/i.test(error.message)
   );
 }
 

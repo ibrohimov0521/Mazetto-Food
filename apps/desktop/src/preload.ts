@@ -19,36 +19,53 @@ type UpdateStatus = {
 contextBridge.exposeInMainWorld("mazettoDesktop", {
   printer: {
     status: () => ipcRenderer.invoke("desktop:printer:status"),
-    save: (input: { host: string; port: number }) => ipcRenderer.invoke("desktop:printer:save", input),
+    save: (input: { host: string; port: number }) =>
+      ipcRenderer.invoke("desktop:printer:save", input),
     test: () => ipcRenderer.invoke("desktop:printer:test"),
     testManaged: () => ipcRenderer.invoke("desktop:printer:test-managed"),
     listSystem: () => ipcRenderer.invoke("desktop:printer:list-system"),
-    saveSystem: (input: { printers: Array<{ name: string; displayName: string; roles: string[]; paperFormat?: "ROLL" | "A4" | "LABEL"; paperWidthMm?: number; paperHeightMm?: number }> }) =>
-      ipcRenderer.invoke("desktop:printer:save-system", input),
-    testSystem: (input: { name: string; role: string; paperFormat?: "ROLL" | "A4" | "LABEL"; paperWidthMm?: number; paperHeightMm?: number }) =>
-      ipcRenderer.invoke("desktop:printer:test-system", input),
+    saveSystem: (input: {
+      printers: Array<{
+        name: string;
+        displayName: string;
+        roles: string[];
+        paperFormat?: "ROLL" | "A4" | "LABEL";
+        paperWidthMm?: number;
+        paperHeightMm?: number;
+      }>;
+    }) => ipcRenderer.invoke("desktop:printer:save-system", input),
+    testSystem: (input: {
+      name: string;
+      role: string;
+      paperFormat?: "ROLL" | "A4" | "LABEL";
+      paperWidthMm?: number;
+      paperHeightMm?: number;
+    }) => ipcRenderer.invoke("desktop:printer:test-system", input),
   },
   receiptProfiles: {
     load: () => ipcRenderer.invoke("desktop:receipt-profiles:load"),
-    save: (profile: unknown) => ipcRenderer.invoke("desktop:receipt-profiles:save", profile),
+    save: (profile: unknown) =>
+      ipcRenderer.invoke("desktop:receipt-profiles:save", profile),
     reset: () => ipcRenderer.invoke("desktop:receipt-profiles:reset"),
-    preview: (input: { kind: string; profile: unknown; paperWidthMm: number }) =>
-      ipcRenderer.invoke("desktop:receipt-profiles:preview", input),
+    preview: (input: {
+      kind: string;
+      profile: unknown;
+      paperWidthMm: number;
+    }) => ipcRenderer.invoke("desktop:receipt-profiles:preview", input),
   },
   device: {
     enroll: (input: { deviceId: string; enrollmentCode: string }) =>
       ipcRenderer.invoke("desktop:device:enroll", input),
   },
   auth: {
-    login: (input: { identifier: string; password: string }) =>
-      ipcRenderer.invoke("desktop:auth:login", input),
+    login: (input: {
+      identifier: string;
+      password: string;
+      useSavedCredential?: boolean;
+    }) => ipcRenderer.invoke("desktop:auth:login", input),
     credentials: {
       list: (): Promise<string[]> =>
         ipcRenderer.invoke("desktop:auth:credentials:list"),
-      get: (identifier: string): Promise<{ identifier: string; password: string } | null> =>
-        ipcRenderer.invoke("desktop:auth:credentials:get", identifier),
-      save: (input: { identifier: string; password: string }): Promise<string[]> =>
-        ipcRenderer.invoke("desktop:auth:credentials:save", input),
       remove: (identifier: string): Promise<string[]> =>
         ipcRenderer.invoke("desktop:auth:credentials:remove", identifier),
     },
@@ -97,7 +114,6 @@ contextBridge.exposeInMainWorld("mazettoDesktop", {
       ipcRenderer.invoke("desktop:session:load"),
     save: (serialized: string): Promise<void> =>
       ipcRenderer.invoke("desktop:session:save", serialized),
-    clear: (): Promise<void> =>
-      ipcRenderer.invoke("desktop:session:clear"),
+    clear: (): Promise<void> => ipcRenderer.invoke("desktop:session:clear"),
   },
 });

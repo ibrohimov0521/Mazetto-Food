@@ -29,9 +29,10 @@ import { useToast } from "../admin-ui/toast";
 /*
  * Qo'shimchalar (modifier) katalogi.
  *
- * O'chirish endpoint'i yo'q va ataylab qo'shilmadi: modifier buyurtma
- * tarixidagi `modifierSnapshot` bilan bog'liq. Uni nofaol qilish
- * (`isActive: false`) tarixiy yaxlitlikni saqlaydi.
+ * Qo'shimchani nofaol qilish tarixiy yaxlitlikni saqlab, yangi buyurtmada
+ * tanlanishini to'xtatadi. Butunlay o'chirish faqat birorta mahsulotga
+ * ulanmagan qo'shimcha uchun ruxsat etiladi; ulangan qo'shimcha avval
+ * mahsulotlardan ajratilishi kerak.
  *
  * Bu qayta ishlashda tuzatilganlar:
  *   - "Nofaol qilish" QIZIL `danger` tugma edi. U qaytariladigan amal —

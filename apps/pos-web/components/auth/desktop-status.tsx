@@ -1,8 +1,17 @@
 "use client";
 
-import { AlertTriangle, Cloud, CloudOff, GitCompareArrows, RefreshCw, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Cloud,
+  CloudOff,
+  GitCompareArrows,
+  LockKeyhole,
+  RefreshCw,
+  X,
+} from "lucide-react";
 import Link from "next/link";
 import { apiFetch } from "../../lib/api";
+import { readSession } from "../../lib/session";
 import { useEffect, useState } from "react";
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
@@ -29,6 +38,7 @@ type OutboxCommand = {
   aggregateId: string | null;
   state: "pending" | "sending" | "acknowledged" | "conflict" | "dead_letter";
   attempts: number;
+  canCancel: boolean;
   createdAt: string;
   nextAttemptAt: string | null;
   lastError: string | null;
@@ -71,6 +81,7 @@ type ConflictComparison = {
     aggregateId: string | null;
     idempotencyKey: string;
     baseVersion: number | null;
+    canCancel: boolean;
     payload: { method?: string; pathname?: string; body: unknown };
     lastError: string | null;
   };
@@ -89,7 +100,10 @@ export function DesktopStatusBadge() {
   const [outboxError, setOutboxError] = useState("");
   const [busyCommandId, setBusyCommandId] = useState<string | null>(null);
   const [busyPrintId, setBusyPrintId] = useState<string | null>(null);
-  const [comparison, setComparison] = useState<{ commandId: string; data: ConflictComparison } | null>(null);
+  const [comparison, setComparison] = useState<{
+    commandId: string;
+    data: ConflictComparison;
+  } | null>(null);
   const [comparisonBusyId, setComparisonBusyId] = useState<string | null>(null);
   const [supportBusy, setSupportBusy] = useState(false);
 
@@ -123,8 +137,8 @@ export function DesktopStatusBadge() {
 
     void refresh();
     const timer = window.setInterval(() => void refresh(), 5_000);
-  
-  return () => {
+
+    return () => {
       active = false;
       window.clearInterval(timer);
     };
@@ -132,8 +146,9 @@ export function DesktopStatusBadge() {
 
   useEffect(() => {
     const sendHeartbeat = () => {
-      const version =
-        window.navigator.userAgent.match(/MAZETTO-Desktop\/([^\s]+)/)?.[1];
+      const version = window.navigator.userAgent.match(
+        /MAZETTO-Desktop\/([^\s]+)/,
+      )?.[1];
       void apiFetch("/devices/heartbeat", {
         method: "POST",
         body: JSON.stringify(version ? { softwareVersion: version } : {}),
@@ -142,8 +157,8 @@ export function DesktopStatusBadge() {
 
     sendHeartbeat();
     const timer = window.setInterval(sendHeartbeat, 30_000);
-  
-  return () => window.clearInterval(timer);
+
+    return () => window.clearInterval(timer);
   }, []);
 
   async function exportSupportBundle(): Promise<void> {
@@ -156,7 +171,11 @@ export function DesktopStatusBadge() {
         setOutboxError("Diagnostika fayli saqlandi.");
       }
     } catch (error) {
-      setOutboxError(error instanceof Error ? error.message : "Diagnostika fayli yaratilmadi.");
+      setOutboxError(
+        error instanceof Error
+          ? error.message
+          : "Diagnostika fayli yaratilmadi.",
+      );
     } finally {
       setSupportBusy(false);
     }
@@ -170,8 +189,10 @@ export function DesktopStatusBadge() {
     mode === "online" ? "Jonli" : mode === "offline" ? "Oflayn" : "Ulanmoqda";
   const pending = status?.pendingCommands ?? 0;
   const sending = status?.sendingCommands ?? 0;
-  const blocked = (status?.conflictCommands ?? 0) + (status?.deadLetterCommands ?? 0);
-  const failedPrintJobs = outbox?.printJobs?.filter((job) => job.state === "dead_letter") ?? [];
+  const blocked =
+    (status?.conflictCommands ?? 0) + (status?.deadLetterCommands ?? 0);
+  const failedPrintJobs =
+    outbox?.printJobs?.filter((job) => job.state === "dead_letter") ?? [];
   const uncertainPrintJobs = failedPrintJobs.filter(isUncertainPrintJob);
   const Icon =
     mode === "online" ? Cloud : mode === "offline" ? CloudOff : RefreshCw;
@@ -223,6 +244,14 @@ export function DesktopStatusBadge() {
     commandId: string,
     action: "retry" | "cancel",
   ): Promise<void> {
+    if (
+      action === "cancel" &&
+      !window.confirm(
+        "Faqat hali yuborilmagan amal va chop etilmagan hujjatlar bekor qilinadi. Davom etasizmi?",
+      )
+    ) {
+      return;
+    }
     setBusyCommandId(commandId);
     setOutboxError("");
     try {
@@ -241,7 +270,6 @@ export function DesktopStatusBadge() {
     }
   }
 
-
   async function compareCommand(command: OutboxCommand): Promise<void> {
     setComparisonBusyId(command.id);
     setOutboxError("");
@@ -252,7 +280,9 @@ export function DesktopStatusBadge() {
       setComparison({ commandId: command.id, data });
     } catch (caught) {
       setOutboxError(
-        caught instanceof Error ? caught.message : "Taqqoslashni olib bo'lmadi.",
+        caught instanceof Error
+          ? caught.message
+          : "Taqqoslashni olib bo'lmadi.",
       );
     } finally {
       setComparisonBusyId(null);
@@ -263,11 +293,11 @@ export function DesktopStatusBadge() {
       <button
         aria-live="polite"
         className={`flex h-7 shrink-0 items-center gap-1 rounded-mz-pill border px-2 text-[10px] font-bold ${
-        mode === "online"
-          ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-100"
-          : mode === "offline"
-            ? "border-amber-300/50 bg-amber-300/10 text-amber-100"
-            : "border-white/20 bg-white/5 text-mz-shell-fg-muted"
+          mode === "online"
+            ? "border-emerald-400/40 bg-emerald-400/10 text-emerald-100"
+            : mode === "offline"
+              ? "border-amber-300/50 bg-amber-300/10 text-amber-100"
+              : "border-white/20 bg-white/5 text-mz-shell-fg-muted"
         }`}
         onClick={() => {
           setOutboxOpen(true);
@@ -315,16 +345,26 @@ export function DesktopStatusBadge() {
 
           <div className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-sm font-semibold text-mz-text">Ulanish holati</p>
+              <p className="text-sm font-semibold text-mz-text">
+                Ulanish holati
+              </p>
               <Badge
-                tone={mode === "online" ? "success" : mode === "offline" ? "warning" : "neutral"}
+                tone={
+                  mode === "online"
+                    ? "success"
+                    : mode === "offline"
+                      ? "warning"
+                      : "neutral"
+                }
                 withDot
               >
                 {label}
               </Badge>
             </div>
             <div className="mt-2 grid gap-1 text-[12px] text-mz-text-muted sm:grid-cols-2">
-              <span>Oxirgi jonli ulanish: {formatDesktopTime(status?.lastOnlineAt)}</span>
+              <span>
+                Oxirgi jonli ulanish: {formatDesktopTime(status?.lastOnlineAt)}
+              </span>
               <span>Kesh: {status?.cachedResponses ?? 0} ta endpoint</span>
             </div>
           </div>
@@ -339,14 +379,22 @@ export function DesktopStatusBadge() {
           </Link>
           <DesktopUpdateControls />
           <div className="flex justify-end">
-            <Button isLoading={supportBusy} onClick={() => void exportSupportBundle()} size="sm" variant="ghost">
+            <Button
+              isLoading={supportBusy}
+              onClick={() => void exportSupportBundle()}
+              size="sm"
+              variant="ghost"
+            >
               Diagnostika fayli
             </Button>
           </div>
 
           <div className="grid grid-cols-4 gap-2">
             <QueueStat label="Kutmoqda" value={status?.pendingCommands ?? 0} />
-            <QueueStat label="Yuborilyapti" value={status?.sendingCommands ?? 0} />
+            <QueueStat
+              label="Yuborilyapti"
+              value={status?.sendingCommands ?? 0}
+            />
             <QueueStat label="Bloklangan" value={blocked} />
             <QueueStat label="Cheklar" value={status?.pendingPrintJobs ?? 0} />
           </div>
@@ -355,7 +403,9 @@ export function DesktopStatusBadge() {
             <div className="grid gap-2 rounded-mz-card border border-mz-danger-accent bg-mz-danger-bg p-3">
               {uncertainPrintJobs.length ? (
                 <p className="text-xs text-mz-danger" role="note">
-                  {uncertainPrintJobs.length} ta chek natijasi noaniq. Qayta yuborishdan oldin printerdan qog'oz chiqqanini tekshiring; avtomatik dublikat chiqarilmaydi.
+                  {uncertainPrintJobs.length} ta chek natijasi noaniq. Qayta
+                  yuborishdan oldin printerdan qog'oz chiqqanini tekshiring;
+                  avtomatik dublikat chiqarilmaydi.
                 </p>
               ) : null}
               <p className="text-sm font-semibold text-mz-danger">
@@ -390,16 +440,37 @@ export function DesktopStatusBadge() {
                   </div>
                   {job.attemptHistory?.length ? (
                     <div className="rounded-mz-control bg-mz-surface-sunken p-3">
-                      <p className="text-xs font-semibold text-mz-text">Chop etish tarixi</p>
+                      <p className="text-xs font-semibold text-mz-text">
+                        Chop etish tarixi
+                      </p>
                       <ol className="mt-2 grid gap-2 text-xs text-mz-text-muted">
-                        {job.attemptHistory.slice(-3).reverse().map((attempt) => (
-                          <li className="grid gap-1 sm:grid-cols-[1fr_auto]" key={attempt.attemptNumber}>
-                            <span>
-                              {getPrintAttemptLabel(attempt)} - {new Date(attempt.startedAt).toLocaleString("uz-UZ")}
-                            </span>
-                            {attempt.errorMessage ? <span className={attempt.errorCode === "operator_action" ? "text-mz-text-muted" : "text-mz-danger"}>{attempt.errorMessage}</span> : null}
-                          </li>
-                        ))}
+                        {job.attemptHistory
+                          .slice(-3)
+                          .reverse()
+                          .map((attempt) => (
+                            <li
+                              className="grid gap-1 sm:grid-cols-[1fr_auto]"
+                              key={attempt.attemptNumber}
+                            >
+                              <span>
+                                {getPrintAttemptLabel(attempt)} -{" "}
+                                {new Date(attempt.startedAt).toLocaleString(
+                                  "uz-UZ",
+                                )}
+                              </span>
+                              {attempt.errorMessage ? (
+                                <span
+                                  className={
+                                    attempt.errorCode === "operator_action"
+                                      ? "text-mz-text-muted"
+                                      : "text-mz-danger"
+                                  }
+                                >
+                                  {attempt.errorMessage}
+                                </span>
+                              ) : null}
+                            </li>
+                          ))}
                       </ol>
                     </div>
                   ) : null}
@@ -435,7 +506,8 @@ export function DesktopStatusBadge() {
                       ) : null}
                     </div>
                     <div className="flex shrink-0 gap-1">
-                      {command.state === "conflict" || command.state === "dead_letter" ? (
+                      {command.state === "conflict" ||
+                      command.state === "dead_letter" ? (
                         <Button
                           aria-label="Server holati bilan taqqoslash"
                           disabled={comparisonBusyId === command.id}
@@ -457,15 +529,31 @@ export function DesktopStatusBadge() {
                       >
                         Qayta
                       </Button>
-                      <Button
-                        disabled={command.state === "sending"}
-                        isLoading={busyCommandId === command.id}
-                        onClick={() => void mutateCommand(command.id, "cancel")}
-                        size="sm"
-                        variant="danger"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </Button>
+                      {command.canCancel ? (
+                        <Button
+                          aria-label="Sinxronlanmagan amalni bekor qilish"
+                          disabled={command.state === "sending"}
+                          isLoading={busyCommandId === command.id}
+                          onClick={() =>
+                            void mutateCommand(command.id, "cancel")
+                          }
+                          size="sm"
+                          title="Sinxronlanmagan amalni bekor qilish"
+                          variant="danger"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      ) : (
+                        <span
+                          className="inline-flex h-9 items-center px-2 text-mz-text-muted"
+                          title="Pul, savdo, yuborilgan yoki chop etilgan/qaram amalni xavfsiz bekor qilib bo'lmaydi."
+                        >
+                          <LockKeyhole
+                            aria-label="Bekor qilish mumkin emas"
+                            size={15}
+                          />
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -481,9 +569,12 @@ export function DesktopStatusBadge() {
             <div className="rounded-mz-card border border-mz-warning-accent bg-mz-warning-bg p-3">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-mz-text">Konflikt taqqoslanishi</p>
+                  <p className="text-sm font-semibold text-mz-text">
+                    Konflikt taqqoslanishi
+                  </p>
                   <p className="mt-1 text-[12px] text-mz-text-muted">
-                    Lokal amal va serverdagi hozirgi holat yonma-yon tekshirildi.
+                    Lokal amal va serverdagi hozirgi holat yonma-yon
+                    tekshirildi.
                   </p>
                 </div>
                 <Button
@@ -498,39 +589,67 @@ export function DesktopStatusBadge() {
               </div>
               <div className="mt-3 grid gap-2 text-[12px] text-mz-text-muted sm:grid-cols-2">
                 <span>Amal: {comparison.data.command.commandType}</span>
-                <span>Kutilgan versiya: {comparison.data.comparison.expectedVersion ?? "ko'rsatilmagan"}</span>
-                <span>Server javobi: {comparison.data.comparison.server.status}</span>
+                <span>
+                  Kutilgan versiya:{" "}
+                  {comparison.data.comparison.expectedVersion ??
+                    "ko'rsatilmagan"}
+                </span>
+                <span>
+                  Server javobi: {comparison.data.comparison.server.status}
+                </span>
                 <span>Resurs: {comparison.data.comparison.resourcePath}</span>
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 <div>
-                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mz-text-muted">Lokal yuborilgan qiymat</p>
-                  <pre className="max-h-40 overflow-auto rounded-mz-control bg-mz-surface p-2 text-[11px] text-mz-text">{JSON.stringify(comparison.data.command.payload.body, null, 2)}</pre>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mz-text-muted">
+                    Lokal yuborilgan qiymat
+                  </p>
+                  <pre className="max-h-40 overflow-auto rounded-mz-control bg-mz-surface p-2 text-[11px] text-mz-text">
+                    {JSON.stringify(
+                      comparison.data.command.payload.body,
+                      null,
+                      2,
+                    )}
+                  </pre>
                 </div>
                 <div>
-                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mz-text-muted">Serverdagi hozirgi qiymat</p>
-                  <pre className="max-h-40 overflow-auto rounded-mz-control bg-mz-surface p-2 text-[11px] text-mz-text">{JSON.stringify(comparison.data.comparison.server.body, null, 2)}</pre>
+                  <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-mz-text-muted">
+                    Serverdagi hozirgi qiymat
+                  </p>
+                  <pre className="max-h-40 overflow-auto rounded-mz-control bg-mz-surface p-2 text-[11px] text-mz-text">
+                    {JSON.stringify(
+                      comparison.data.comparison.server.body,
+                      null,
+                      2,
+                    )}
+                  </pre>
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap justify-end gap-2">
                 <Button
                   disabled={busyCommandId === comparison.commandId}
                   isLoading={busyCommandId === comparison.commandId}
-                  onClick={() => void mutateCommand(comparison.commandId, "retry")}
+                  onClick={() =>
+                    void mutateCommand(comparison.commandId, "retry")
+                  }
                   size="sm"
                   variant="ghost"
                 >
                   Qayta yuborish
                 </Button>
-                <Button
-                  disabled={busyCommandId === comparison.commandId}
-                  isLoading={busyCommandId === comparison.commandId}
-                  onClick={() => void mutateCommand(comparison.commandId, "cancel")}
-                  size="sm"
-                  variant="danger"
-                >
-                  Bekor qilish
-                </Button>
+                {comparison.data.command.canCancel ? (
+                  <Button
+                    disabled={busyCommandId === comparison.commandId}
+                    isLoading={busyCommandId === comparison.commandId}
+                    onClick={() =>
+                      void mutateCommand(comparison.commandId, "cancel")
+                    }
+                    size="sm"
+                    variant="danger"
+                  >
+                    Bekor qilish
+                  </Button>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -541,7 +660,6 @@ export function DesktopStatusBadge() {
 }
 
 function QueueStat({ label, value }: { label: string; value: number }) {
-
   return (
     <div className="rounded-mz-card border border-mz-border bg-mz-surface-sunken p-2">
       <p className="text-[11px] text-mz-text-muted">{label}</p>
@@ -591,13 +709,19 @@ function formatDesktopTime(value: string | null | undefined): string {
     month: "2-digit",
   });
 }
-async function desktopFetch<T>(
-  path: string,
-  init?: RequestInit,
-): Promise<T> {
+async function desktopFetch<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  const session = readSession();
+  if (session) {
+    headers.set(
+      "Authorization",
+      session.tokens.tokenType + " " + session.tokens.accessToken,
+    );
+  }
   const response = await fetch(`http://127.0.0.1:7359${path}`, {
-    cache: "no-store",
     ...init,
+    headers,
+    cache: "no-store",
   });
   const payload = (await response.json()) as {
     ok?: boolean;

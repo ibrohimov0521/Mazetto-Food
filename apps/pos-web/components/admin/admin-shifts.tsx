@@ -7,6 +7,10 @@ import { useApiResource } from "../../lib/use-api-resource";
 import { canSwitchBranch } from "../../lib/admin-nav";
 import { hasPermission } from "../../lib/auth";
 import { formatDateTime, formatMoney } from "../../lib/order-display";
+import {
+  tashkentDateEndUtc,
+  tashkentDateStartUtc,
+} from "../../lib/tashkent-date-range.mjs";
 import { useAuth } from "../auth/auth-provider";
 import { Badge, type BadgeTone } from "../admin-ui/badge";
 import { Button, GuardedButton } from "../admin-ui/button";
@@ -69,6 +73,7 @@ type Employee = {
 type Shift = {
   id: string;
   shiftNumber: number;
+  employeeId?: string | null;
   status: "OPEN" | "CLOSED";
   openedAt: string;
   closedAt?: string | null;
@@ -265,9 +270,9 @@ export function AdminShiftsPage() {
       });
       if (status) params.set("status", status);
       if (branchId) params.set("branchId", branchId);
-      /* Backend `from`/`to` ni `openedAt` bo'yicha ISO8601 kutadi. */
-      if (from) params.set("from", `${from}T00:00:00.000Z`);
-      if (to) params.set("to", `${to}T23:59:59.999Z`);
+      /* Date inputs represent Tashkent calendar days, not UTC days. */
+      if (from) params.set("from", tashkentDateStartUtc(from));
+      if (to) params.set("to", tashkentDateEndUtc(to));
       return apiFetch<Shift[]>(`/shifts?${params.toString()}`);
     },
     [branchId, offset, status, from, to, rangeError],
@@ -447,7 +452,7 @@ export function AdminShiftsPage() {
     },
     {
       key: "orders",
-      header: "Smenada yaratilgan",
+      header: "Smenadagi buyurtmalar",
       align: "right",
       hideOnMobile: true,
       render: (shift) => (
@@ -1109,7 +1114,7 @@ function ShiftDetailModal({
               numeric
               value={formatMoney(shift.openingBalance)}
             />
-            <Row label="Smenada yaratilgan" value={`${shift.orderCount} ta`} />
+            <Row label="Smenadagi buyurtmalar" value={`${shift.orderCount} ta`} />
             <Row label="Savdo" numeric value={formatMoney(shift.salesTotal)} />
             <Row label="Naqd" numeric value={formatMoney(shift.cashTotal)} />
             <Row

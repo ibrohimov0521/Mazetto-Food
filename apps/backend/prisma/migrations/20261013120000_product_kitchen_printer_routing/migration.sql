@@ -1,0 +1,2 @@
+ALTER TABLE "products"
+ALTER COLUMN "printerRouting" SET DEFAULT 'KITCHEN';

@@ -1,6 +1,5 @@
 import {
   IsInt,
-  IsNotEmpty,
   IsOptional,
   IsString,
   MaxLength,
@@ -22,10 +21,10 @@ export class CompleteKitchenTicketActionDto extends KitchenTicketActionDto {
 }
 
 export class CancelKitchenTicketActionDto extends KitchenTicketActionDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(500)
-  reason!: string;
+  reason?: string;
 
   @IsOptional()
   @IsString()

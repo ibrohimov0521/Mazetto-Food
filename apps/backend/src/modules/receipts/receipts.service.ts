@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ConflictException, Injectable, NotFoundException } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { resolveBranchScope } from "../../common/auth/access-scope";
@@ -10,7 +10,10 @@ import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
 import type { ListReceiptsDto } from "./dto/list-receipts.dto";
 import type { ListPrintJobsDto } from "./dto/print-job.dto";
-import { queuePrintJobsForReceipt } from "./receipt-writer";
+import {
+  lockReceiptPrintQueue,
+  queuePrintJobsForReceipt,
+} from "./receipt-writer";
 import { writeAuditLog } from "../audit/audit-write";
 
 const AMBIGUOUS_RETRY_KEY = "__bestteamAllowAmbiguousRetry";
@@ -82,8 +85,7 @@ export class ReceiptsService {
         printedAt: true,
         printJobs: {
           orderBy: { createdAt: "desc" },
-          take: 1,
-          select: { status: true, submittedAt: true },
+          select: { status: true, submittedAt: true, createdAt: true },
         },
         createdAt: true,
         orderId: true,
@@ -148,6 +150,24 @@ export class ReceiptsService {
     for (const receipt of receipts) resolveBranchScope(user, receipt.branchId);
     if (receipts.length !== uniqueIds.length) throw new NotFoundException("Tanlangan cheklarning biri topilmadi");
     await this.prisma.$transaction(async (tx) => {
+      for (const id of [...uniqueIds].sort()) await lockReceiptPrintQueue(tx, id);
+      await tx.$queryRaw<Array<{ id: string }>>`
+        SELECT "id" FROM "print_jobs"
+        WHERE "receiptId" IN (${Prisma.join(uniqueIds)})
+        FOR UPDATE
+      `;
+      const unfinishedJobs = await tx.printJob.findMany({
+        where: {
+          receiptId: { in: uniqueIds },
+          status: { notIn: ["PRINTED", "CANCELLED"] },
+        },
+        select: { receiptId: true },
+      });
+      if (unfinishedJobs.length > 0) {
+        throw new ConflictException(
+          "Chop navbatida yoki tekshiruvda turgan chekni o'chirib bo'lmaydi. Navbat yakunlanishini kuting yoki chop xatosini tekshiring.",
+        );
+      }
       await tx.receipt.deleteMany({
         where: { id: { in: uniqueIds }, ...scope },
       });
@@ -177,6 +197,7 @@ export class ReceiptsService {
 
     for (const receipt of receipts) {
       await this.prisma.$transaction(async (tx) => {
+        await lockReceiptPrintQueue(tx, receipt.id);
         const existingJob = await tx.printJob.findFirst({
           where: { receiptId: receipt.id },
           select: { id: true },
@@ -245,15 +266,19 @@ export class ReceiptsService {
   }
 
   async markPrinted(id: string, user: AuthenticatedUser) {
-    await this.getReceipt(id, user);
-
-    await this.prisma.receipt.update({
-      where: { id },
+    const { tenantId, branchId } = await resolveRestaurantScope(this.prisma, user);
+    const updated = await this.prisma.receipt.updateMany({
+      where: {
+        id,
+        branch: { tenantId },
+        ...(branchId ? { branchId } : {}),
+      },
       data: {
         printed: true,
         printedAt: new Date(),
       },
     });
+    if (updated.count !== 1) throw new NotFoundException("Receipt not found");
 
     return this.getReceipt(id, user);
   }
@@ -664,9 +689,9 @@ export class ReceiptsService {
     const displayOrderNumber = textValue(content.displayOrderNumber) ?? receipt.order.displayOrderNumber ?? orderNumber;
     const dateTime = formatReceiptDateTime(textValue(content.dateTime), receipt.createdAt);
     const total = textValue(content.total) ?? receipt.total.toFixed(2);
-    const snapshotItems = objectArray(content.items);
-    const snapshotPayments = objectArray(content.payments);
-    const itemCommands = snapshotItems.length > 0
+    const snapshotItems = Array.isArray(content.items) ? objectArray(content.items) : null;
+    const snapshotPayments = Array.isArray(content.payments) ? objectArray(content.payments) : null;
+    const itemCommands = snapshotItems !== null
       ? snapshotItems.map((item) => ({
           type: "item",
           name: [textValue(item.name), textValue(item.variant)].filter(Boolean).join(" "),
@@ -681,7 +706,7 @@ export class ReceiptsService {
           quantity: formatReceiptQuantity(item.quantity.toFixed(3)),
           total: item.totalPrice.toFixed(2),
         }));
-    const paymentCommands = snapshotPayments.length > 0
+    const paymentCommands = snapshotPayments !== null
       ? snapshotPayments.map((payment) => ({
           type: "payment",
           method: textValue(payment.method) ?? "To'lov",
@@ -746,7 +771,7 @@ function formatReceiptOrderType(value: string): string {
     case "PICKUP":
       return "Olib ketish";
     default:
-      return value;
+      return "Noma'lum";
   }
 }
 

@@ -100,6 +100,21 @@ test("cashier payment methods can be toggled independently from customer checkou
   ]);
 });
 
+test("corrupt stored cashier payment allowlist fails closed instead of enabling cash", () => {
+  assert.deepEqual(
+    parseCsvSetting("cashier_payment_methods", undefined),
+    ["CASH"],
+  );
+  assert.deepEqual(parseCsvSetting("cashier_payment_methods", ""), []);
+  assert.deepEqual(
+    parseCsvSetting("cashier_payment_methods", "UNKNOWN"),
+    [],
+  );
+  assert.throws(() =>
+    validateSettingValue("cashier_payment_methods", ""),
+  );
+});
+
 test("buzuq radius default'ga tushadi", () => {
   assert.equal(
     parseIntSetting("customer_free_delivery_radius_meters", "salom"),

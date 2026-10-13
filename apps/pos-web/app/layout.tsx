@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { AuthProvider } from "../components/auth/auth-provider";
+import { KeyboardShortcuts } from "../components/keyboard-shortcuts";
+import { KitchenOrderAlert } from "../components/kitchen/kitchen-order-alert";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -43,7 +45,11 @@ export default function RootLayout({
   return (
     <html lang="uz">
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <KeyboardShortcuts />
+          <KitchenOrderAlert />
+          {children}
+        </AuthProvider>
       </body>
     </html>
   );

@@ -44,6 +44,24 @@ try {
       }));
       window.__printCount = 0;
       window.__printedHtml = "";
+      window.__queuedShiftReports = [];
+      if (window.innerWidth === 768) {
+        window.mazettoDesktop = {
+          api: {
+            request: async (input) => {
+              if (input.path !== "/desktop/prints/shift-report") {
+                return { status: 404, body: "{}", contentType: "application/json" };
+              }
+              window.__queuedShiftReports.push(JSON.parse(input.body));
+              return {
+                status: 202,
+                body: JSON.stringify({ success: true, data: { queued: true } }),
+                contentType: "application/json",
+              };
+            },
+          },
+        };
+      }
       // Captures the isolated frame's print call without touching a physical printer.
       const original = Element.prototype.append;
       Element.prototype.append = function (...nodes) {
@@ -86,14 +104,39 @@ try {
     await page.goto(base + "/shift", { waitUntil: "domcontentloaded" });
     await page.getByLabel("Haqiqiy naqd summa").fill("240000");
     await page.getByRole("button", { name: "Smenani yopish", exact: true }).click();
-    await page.getByRole("button", { name: "Yakunlash", exact: true }).click();
-    await page.waitForFunction(() => window.__printCount === 1);
+    await page.keyboard.press("Escape");
+    await page.locator("dialog[open]").waitFor({ state: "hidden" });
+    assert.equal(closeCalls, 0, "Escape dismisses without closing the shift");
+    await page.getByRole("button", { name: "Smenani yopish", exact: true }).click();
+    const confirmButton = page.getByRole("button", { name: "Yakunlash", exact: true });
+    await page.waitForFunction(() => {
+      const button = document.querySelector('dialog[open] button[data-keyboard-primary]');
+      return Boolean(button && !button.disabled);
+    });
+    assert.equal(await confirmButton.isEnabled(), true, "dialog primary action is ready before Enter");
+    await page.keyboard.press("Enter");
+    if (width === 768) {
+      await page.waitForFunction(() => window.__queuedShiftReports.length === 1);
+    } else {
+      await page.waitForFunction(() => window.__printCount === 1);
+    }
     assert.equal(closeCalls, 1);
     assert.equal(reportReads, width === 375 ? 1 : 3, "fetch all available pages after close");
-    assert.equal((await page.evaluate(() => window.__printedHtml)).match(/data-order-id=/g).length, 205);
-    if (width === 375) assert.match(await page.evaluate(() => window.__printedHtml), /Oflayn nusxa/);
+    if (width === 768) {
+      const queuedReport = await page.evaluate(() => window.__queuedShiftReports[0]);
+      assert.equal(queuedReport.orders.length, 205);
+      assert.equal(queuedReport.documentType, "SHIFT_REPORT");
+      assert.equal(queuedReport.branchId, "branch");
+    } else {
+      assert.equal((await page.evaluate(() => window.__printedHtml)).match(/data-order-id=/g).length, 205);
+      if (width === 375) assert.match(await page.evaluate(() => window.__printedHtml), /Oflayn nusxa/);
+    }
     await page.getByRole("button", { name: "Smena hisobotini chop etish" }).click();
-    await page.waitForFunction(() => window.__printCount === 2);
+    if (width === 768) {
+      await page.waitForFunction(() => window.__queuedShiftReports.length === 2);
+    } else {
+      await page.waitForFunction(() => window.__printCount === 2);
+    }
     assert.equal(closeCalls, 1, "reprinting must not close or charge again");
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
     assert.deepEqual(errors, []);
@@ -101,7 +144,7 @@ try {
     await page.close();
   }
   await writeFile(output + "/result.json", JSON.stringify({ orders: 205, printWidths: [302, 794], uiWidths: [375, 768, 1366], passed: true }, null, 2));
-  console.log("PASS: 205 orders; narrow/A4 print; offline fallback and automatic report dialog at 375/768/1366px");
+  console.log("PASS: 205 orders; narrow/A4 print; offline browser fallback, Desktop printer queue and browser dialog at 375/768/1366px");
 } finally {
   await browser.close();
 }

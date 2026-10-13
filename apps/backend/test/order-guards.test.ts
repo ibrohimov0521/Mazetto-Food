@@ -8,6 +8,7 @@ import {
   createModifierSnapshot,
   recalculateOrderTotals,
 } from "../src/modules/orders/order-guards";
+import { resolveBranchPaymentMethod } from "../src/modules/payments/payment-method-resolution";
 
 /*
  * Guardlar `tx` ni PARAMETR sifatida oladi, ya'ni ularni soxta
@@ -18,23 +19,70 @@ import {
 type Tx = Prisma.TransactionClient;
 
 test("filialga xos naqd usuli umumiysidan ustun", async () => {
-  /*
-   * `orderBy: { branchId: "desc" }` `null` ni oxiriga suradi. Filial o'z
-   * naqd kassasini sozlagan bo'lsa, o'shanisi olinishi kerak.
-   */
-  let capturedOrderBy: unknown;
+  const lookups: Record<string, unknown>[] = [];
   const tx = {
     paymentMethod: {
-      findFirst: async (args: { orderBy: unknown }) => {
-        capturedOrderBy = args.orderBy;
-        return { id: "pm1", code: "CASH", name: "Naqd" };
+      findFirst: async (args: { where: Record<string, unknown> }) => {
+        lookups.push(args.where);
+        return args.where.branchId === "b1"
+          ? {
+              id: "branch-cash",
+              code: "CASH",
+              name: "Filial naqd",
+              isActive: true,
+            }
+          : { id: "global-cash", code: "CASH", name: "Naqd" };
       },
     },
   } as unknown as Tx;
 
   const method = await assertCashPaymentMethod(tx, "b1");
-  assert.equal(method.id, "pm1");
-  assert.deepEqual(capturedOrderBy, { branchId: "desc" });
+  assert.equal(method.id, "branch-cash");
+  assert.deepEqual(lookups, [{ branchId: "b1", code: "CASH" }]);
+});
+
+test("o'chirilgan filial usuli umumiy faol usul bilan qayta yoqilmaydi", async () => {
+  let lookupCount = 0;
+  const tx = {
+    paymentMethod: {
+      findFirst: async () => {
+        lookupCount += 1;
+        return {
+          id: "branch-card",
+          code: "CARD",
+          name: "Filial karta",
+          isActive: false,
+        };
+      },
+    },
+  } as unknown as Tx;
+
+  await assert.rejects(
+    () => resolveBranchPaymentMethod(tx, "b1", "CARD"),
+    BadRequestException,
+  );
+  assert.equal(lookupCount, 1);
+});
+
+test("filial override bo'lmasa umumiy faol usul ishlatiladi", async () => {
+  const lookups: Record<string, unknown>[] = [];
+  const tx = {
+    paymentMethod: {
+      findFirst: async (args: { where: Record<string, unknown> }) => {
+        lookups.push(args.where);
+        return args.where.branchId === "b1"
+          ? null
+          : { id: "global-card", code: "CARD", name: "Karta" };
+      },
+    },
+  } as unknown as Tx;
+
+  const method = await resolveBranchPaymentMethod(tx, "b1", "CARD");
+  assert.equal(method.id, "global-card");
+  assert.deepEqual(lookups, [
+    { branchId: "b1", code: "CARD" },
+    { branchId: null, code: "CARD", isActive: true },
+  ]);
 });
 
 test("naqd usuli yo'q bo'lsa POS sotuvi to'xtaydi", async () => {
@@ -168,19 +216,108 @@ test("buyurtma topilmasa qayta hisoblash to'xtaydi", async () => {
   );
 });
 
-test("modifikatorsiz qator tashqi so'rov yubormaydi", async () => {
+test("modifikatorsiz qator ham mahsulot qoidalarini tekshiradi", async () => {
   let called = false;
   const tx = {
     productModifier: {
       findMany: async () => {
         called = true;
-        return [];
+        return [
+          {
+            modifierId: "m1",
+            isRequired: false,
+            minSelect: 0,
+            maxSelect: null,
+            modifier: {
+              id: "m1",
+              code: "C1",
+              name: "Sous",
+              price: new Prisma.Decimal(0),
+            },
+          },
+        ];
       },
     },
   } as unknown as Tx;
 
   assert.deepEqual(await createModifierSnapshot(tx, "p1", []), []);
-  assert.equal(called, false, "bo'sh ro'yxatda bazaga borilmasligi kerak");
+  assert.equal(called, true);
+});
+
+test("majburiy qo'shimcha buyurtmadan tushib qolsa rad etiladi", async () => {
+  const tx = {
+    productModifier: {
+      findMany: async () => [
+        {
+          modifierId: "m1",
+          isRequired: true,
+          minSelect: 2,
+          maxSelect: 3,
+          modifier: {
+            id: "m1",
+            code: "CHEESE",
+            name: "Pishloq",
+            price: new Prisma.Decimal(2000),
+          },
+        },
+      ],
+    },
+  } as unknown as Tx;
+
+  await assert.rejects(
+    () => createModifierSnapshot(tx, "p1", []),
+    BadRequestException,
+  );
+});
+
+test("qo'shimcha miqdori min/max chegarasida bo'lishi shart", async () => {
+  const tx = {
+    productModifier: {
+      findMany: async () => [
+        {
+          modifierId: "m1",
+          isRequired: true,
+          minSelect: 2,
+          maxSelect: 3,
+          modifier: {
+            id: "m1",
+            code: "CHEESE",
+            name: "Pishloq",
+            price: new Prisma.Decimal(2000),
+          },
+        },
+      ],
+    },
+  } as unknown as Tx;
+
+  await assert.rejects(
+    () => createModifierSnapshot(tx, "p1", [{ modifierId: "m1", quantity: 1 }]),
+    BadRequestException,
+  );
+  await assert.rejects(
+    () => createModifierSnapshot(tx, "p1", [{ modifierId: "m1", quantity: 4 }]),
+    BadRequestException,
+  );
+  const snapshot = await createModifierSnapshot(tx, "p1", [
+    { modifierId: "m1", quantity: 2 },
+  ]);
+  assert.equal(snapshot[0]?.quantity, "2.000");
+  assert.equal(snapshot[0]?.totalPrice, "4000.00");
+});
+
+test("takroriy qo'shimcha tanlovi rad etiladi", async () => {
+  const tx = {
+    productModifier: { findMany: async () => [] },
+  } as unknown as Tx;
+
+  await assert.rejects(
+    () =>
+      createModifierSnapshot(tx, "p1", [
+        { modifierId: "m1", quantity: 1 },
+        { modifierId: "m1", quantity: 1 },
+      ]),
+    BadRequestException,
+  );
 });
 
 test("mahsulotga biriktirilmagan modifikator rad etiladi", async () => {
@@ -224,6 +361,9 @@ test("snapshot narxni buyurtma paytidagi holatda yozadi", async () => {
       findMany: async () => [
         {
           modifierId: "m1",
+          isRequired: false,
+          minSelect: 0,
+          maxSelect: null,
           modifier: {
             id: "m1",
             code: "CHEESE",

@@ -1,25 +1,21 @@
 # MAZETTO FOOD
 
-MAZETTO FOOD is the foundation for a production-grade restaurant platform. The system is prepared for customer web experiences, POS, backend APIs, Telegram integration, local printing, PostgreSQL, Redis, and shared packages.
-
-This stage intentionally contains only the project foundation. Restaurant business features, ordering, authentication, payments, POS flows, Telegram integration, reporting, and printing will be added in later stages.
+MAZETTO FOOD is a restaurant operations platform for customer ordering and branch workflows. The monorepo contains customer and staff web apps, an offline-first desktop runtime, backend APIs, Telegram integration, printer services, media tooling, and platform monitoring.
 
 ## Monorepo Structure
 
 ```text
 apps/
-  customer-web/   Next.js customer web application
-  pos-web/        Next.js POS web application
-  desktop/        Electron offline-first branch runtime
-  backend/        NestJS backend API
-  telegram-bot/   Minimal TypeScript service entry point
-  print-agent/    Minimal TypeScript service entry point
+  backend/        NestJS API, restaurant operations, authentication, and reporting
+  customer-web/   Next.js online ordering and customer account experience
+  desktop/        Electron offline-first branch runtime and local printing
+  media/          Media container configuration, release, and validation tools
+  platform-web/   Platform and tenant monitoring interface
+  pos-web/        Next.js staff interface for POS and branch workflows
+  print-agent/    Printer job service
+  telegram-bot/   Telegram order and staff notifications
 packages/
   ui/             Shared React UI primitives
-  types/          Shared TypeScript types
-  config/         Shared project configuration package
-  api-client/     Shared API client package
-infrastructure/   Future infrastructure assets
 ```
 
 ## Requirements

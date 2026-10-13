@@ -42,6 +42,12 @@ export function getApiFreshnessSnapshot(
   };
 }
 
+/** @param {string} path @param {string | null} [panelPath] @param {string | null} [scopeKey] */
+export function isApiResponseCached(path, panelPath = null, scopeKey = null) {
+  const entry = cachedResponses.get(`${scopeKey ?? "anonymous"}\u0000${path}`);
+  return Boolean(entry && (panelPath === null || entry.panels.has(panelPath)));
+}
+
 /**
  * @param {{ cachedResponses: number; freshnessState: ApiFreshnessState; isOffline: boolean; isConnecting: boolean; refreshing: boolean }} state
  */

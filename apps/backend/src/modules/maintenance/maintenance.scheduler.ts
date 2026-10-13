@@ -34,14 +34,12 @@ const BATCH_SIZE = 1_000;
 const REVOKED_RETENTION_DAYS = 30;
 
 /*
- * Muddati o'tgan PENDING urinish.
+ * PENDING urinishlar muddati expiresAt maydonida saqlanadi.
  *
  * `CustomerOrderEngineService` uni allaqachon "eskirgan" deb tanidi va qayta
  * urinishda o'chiradi (AUD-004). Bu ish faqat qayta urinish KELMAGAN
  * holatlarni yig'ishtiradi.
  */
-const STALE_ATTEMPT_HOURS = 24;
-
 @Injectable()
 export class MaintenanceScheduler {
   private readonly logger = new Logger(MaintenanceScheduler.name);
@@ -130,11 +128,11 @@ export class MaintenanceScheduler {
 
   @Cron(CronExpression.EVERY_10_MINUTES)
   async cleanupStaleOrderAttempts(): Promise<void> {
-    const threshold = new Date(Date.now() - STALE_ATTEMPT_HOURS * 60 * 60 * 1000);
+    const now = new Date();
 
     await this.run("stale order attempts", async () => {
       /*
-       * FAQAT buyurtma YARATMAGAN urinishlar.
+       * FAQAT buyurtma YARATMAGAN va sozlamadagi muddati tugagan urinishlar.
        *
        * `customerOrderId` to'ldirilgan qator — muvaffaqiyatli checkout'ning
        * idempotentlik yozuvi. Uni o'chirish o'sha kalit bilan qayta kelgan
@@ -145,7 +143,7 @@ export class MaintenanceScheduler {
         where: {
           status: CustomerOrderAttemptStatus.PENDING,
           customerOrderId: null,
-          createdAt: { lt: threshold },
+          expiresAt: { lt: now },
         },
         select: { id: true },
         take: BATCH_SIZE,
@@ -156,7 +154,12 @@ export class MaintenanceScheduler {
       }
 
       const { count } = await this.prisma.customerOrderAttempt.deleteMany({
-        where: { id: { in: stale.map((row) => row.id) } },
+        where: {
+          id: { in: stale.map((row) => row.id) },
+          status: CustomerOrderAttemptStatus.PENDING,
+          customerOrderId: null,
+          expiresAt: { lt: now },
+        },
       });
       return count;
     });

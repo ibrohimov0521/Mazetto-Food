@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 import { URL } from "node:url";
 import { randomInt, randomUUID } from "node:crypto";
+import { assertDisposableLoopbackDatabaseUrl } from "../../../scripts/isolated-db-target.mjs";
 const require = createRequire(import.meta.url);
 process.loadEnvFile(new URL("../.env", import.meta.url));
-assert.equal(
-  new URL(process.env.DATABASE_URL).pathname,
-  "/mazetto_dev",
-  "Dev database only",
+assertDisposableLoopbackDatabaseUrl(
+  process.env.DATABASE_URL,
+  /^mazetto_dev$/,
+  ["5432", "5433"],
 );
 const { PrismaService } = require("../dist/prisma/prisma.service");
 const {

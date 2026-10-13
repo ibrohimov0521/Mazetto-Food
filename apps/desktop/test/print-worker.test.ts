@@ -42,7 +42,7 @@ test("local print attempt is persisted before sending data to the printer", asyn
     logicalKey: "local-print-order:RECEIPT",
     branchId: "branch-1",
     documentType: "RECEIPT",
-    payloadJson: JSON.stringify({ orderId: "local-print-order" }),
+    payloadJson: validOfflinePrintPayload("local-print-order"),
     attempts: 1,
   };
   let claimed = false;
@@ -150,9 +150,7 @@ test("failed ambiguous-job persistence after paper output cannot crash or keep p
     logicalKey: "local-ambiguous-persistence-failed:RECEIPT",
     branchId: "branch-1",
     documentType: "RECEIPT",
-    payloadJson: JSON.stringify({
-      orderId: "local-ambiguous-persistence-failed",
-    }),
+    payloadJson: validOfflinePrintPayload("local-ambiguous-persistence-failed"),
     attempts: 1,
   };
   const reported: unknown[] = [];
@@ -229,9 +227,7 @@ test("a printed receipt with failed result persistence is treated as ambiguous",
           logicalKey: "local-print-result-write-failed:RECEIPT",
           branchId: "branch-1",
           documentType: "RECEIPT",
-          payloadJson: JSON.stringify({
-            orderId: "local-print-result-write-failed",
-          }),
+          payloadJson: validOfflinePrintPayload("local-print-result-write-failed"),
           attempts: 1,
         };
       },
@@ -263,7 +259,7 @@ test("a printed target with failed persistence is not automatically printed twic
     logicalKey: "local-target-write-failed:RECEIPT",
     branchId: "branch-1",
     documentType: "RECEIPT",
-    payloadJson: JSON.stringify({ orderId: "local-target-write-failed" }),
+    payloadJson: validOfflinePrintPayload("local-target-write-failed"),
     attempts: 1,
   };
   const failures: Array<{ error: string; ambiguous?: boolean }> = [];
@@ -338,7 +334,7 @@ test("a local printer job is not sent if its durable attempt cannot be recorded"
           logicalKey: "local-print-untracked:RECEIPT",
           branchId: "branch-1",
           documentType: "RECEIPT",
-          payloadJson: JSON.stringify({ orderId: "local-print-untracked" }),
+          payloadJson: validOfflinePrintPayload("local-print-untracked"),
           attempts: 1,
         };
       },
@@ -370,10 +366,7 @@ test("offline receipt and kitchen documents print through selected Windows drive
       logicalKey: "order-1:RECEIPT",
       branchId: "branch-1",
       documentType: "RECEIPT",
-      payloadJson: JSON.stringify({
-        documentType: "RECEIPT",
-        orderId: "order-1",
-      }),
+      payloadJson: validOfflinePrintPayload("order-1", "RECEIPT"),
       attempts: 0,
     },
     {
@@ -381,10 +374,7 @@ test("offline receipt and kitchen documents print through selected Windows drive
       logicalKey: "order-1:KITCHEN",
       branchId: "branch-1",
       documentType: "KITCHEN",
-      payloadJson: JSON.stringify({
-        documentType: "KITCHEN",
-        orderId: "order-1",
-      }),
+      payloadJson: validOfflinePrintPayload("order-1", "KITCHEN"),
       attempts: 0,
     },
   ];
@@ -486,7 +476,7 @@ test("custom label profiles work through any installed Windows printer driver", 
           logicalKey: "order-label:RECEIPT",
           branchId: "branch-1",
           documentType: "RECEIPT",
-          payloadJson: JSON.stringify({ documentType: "RECEIPT" }),
+          payloadJson: validOfflinePrintPayload("order-label"),
           attempts: 0,
         };
       },
@@ -522,7 +512,7 @@ test("print worker stop waits for the active local paper job", async () => {
     logicalKey: "order-active:RECEIPT",
     branchId: "branch-1",
     documentType: "RECEIPT",
-    payloadJson: JSON.stringify({ orderId: "order-active" }),
+    payloadJson: validOfflinePrintPayload("order-active"),
     attempts: 0,
   };
   const worker = new DesktopPrintWorker({
@@ -576,7 +566,7 @@ test("failed local print is not retried again before its backoff is due", async 
     logicalKey: "order-retry:RECEIPT",
     branchId: "branch-1",
     documentType: "RECEIPT",
-    payloadJson: JSON.stringify({ orderId: "order-retry" }),
+    payloadJson: validOfflinePrintPayload("order-retry"),
     attempts: 0,
   };
   const worker = new DesktopPrintWorker({
@@ -619,7 +609,7 @@ test("offline print queue routes documents across multiple configured system pri
       logicalKey: "order-2:RECEIPT",
       branchId: "branch-1",
       documentType: "RECEIPT",
-      payloadJson: JSON.stringify({ orderId: "order-2" }),
+      payloadJson: validOfflinePrintPayload("order-2"),
       attempts: 0,
     },
     {
@@ -627,7 +617,7 @@ test("offline print queue routes documents across multiple configured system pri
       logicalKey: "order-2:KITCHEN",
       branchId: "branch-1",
       documentType: "KITCHEN",
-      payloadJson: JSON.stringify({ orderId: "order-2" }),
+      payloadJson: validOfflinePrintPayload("order-2"),
       attempts: 0,
     },
   ];
@@ -688,7 +678,7 @@ test("a failed printer target does not block other targets or duplicate successf
     logicalKey: "order-fanout-retry:RECEIPT",
     branchId: "branch-1",
     documentType: "RECEIPT",
-    payloadJson: JSON.stringify({ orderId: "order-fanout-retry" }),
+    payloadJson: validOfflinePrintPayload("order-fanout-retry"),
     attempts: 1,
   };
   const printedTargets = new Set<string>();
@@ -870,7 +860,7 @@ test("offline local print jobs keep draining while a timed-out server poll backs
               logicalKey: `${id}:RECEIPT`,
               branchId: "branch-1",
               documentType: "RECEIPT",
-              payloadJson: JSON.stringify({ orderId: id }),
+              payloadJson: validOfflinePrintPayload(id),
               attempts: 0,
             }
           : null;
@@ -1145,6 +1135,141 @@ test("server replay is completed without duplicate paper when local document alr
   await worker.tick();
 
   assert.equal(physicalPrints, 0);
+  assert.equal(completed, 1);
+});
+
+test("server replay does not repeat a locally ambiguous paper print", async () => {
+  let claimed = false;
+  let completed = 0;
+  let dispatching = 0;
+  let printed = 0;
+  let failure: { outcome?: string } | undefined;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Windows POS", displayName: "Windows POS", roles: ["RECEIPT"] },
+    ],
+    printSystem: async () => {
+      printed += 1;
+    },
+    localQueue: {
+      claim: () => null,
+      complete: () => undefined,
+      fail: () => undefined,
+      wasPrinted: () => false,
+      wasAmbiguousLocallyOn: (orderId, type, printerName) =>
+        orderId === "server-order-ambiguous" &&
+        type === "RECEIPT" &&
+        printerName === "Windows POS",
+    },
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/printers")) return jsonResponse([]);
+      if (url.endsWith("/print-jobs/claim")) {
+        if (claimed) return jsonResponse(null);
+        claimed = true;
+        return jsonResponse({
+          id: "job-ambiguous-replay",
+          receiptId: "receipt-ambiguous-replay",
+          leaseToken: "lease-ambiguous-replay",
+          receipt: {
+            orderId: "server-order-ambiguous",
+            documentType: "RECEIPT",
+          },
+          payload: {
+            documentType: "RECEIPT",
+            orderNumber: "A-1",
+            items: [{ name: "Lavash", quantity: "1", total: "36000" }],
+          },
+          printer: null,
+        });
+      }
+      if (url.endsWith("/dispatching")) {
+        dispatching += 1;
+        return jsonResponse({});
+      }
+      if (url.endsWith("/complete")) {
+        completed += 1;
+        return jsonResponse({});
+      }
+      if (url.endsWith("/fail")) {
+        failure = JSON.parse(String(init?.body)) as { outcome?: string };
+        return jsonResponse({});
+      }
+      throw new Error("Unexpected URL: " + url);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.equal(printed, 0);
+  assert.equal(dispatching, 1);
+  assert.equal(completed, 0);
+  assert.equal(failure?.outcome, "AMBIGUOUS");
+});
+test("offline replay skips only the server printer target already printed locally", async () => {
+  let completed = 0;
+  let claimed = false;
+  const printedTargets: string[] = [];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "POS Receipt", displayName: "POS Receipt", roles: ["RECEIPT"] },
+      {
+        name: "Kitchen Receipt",
+        displayName: "Kitchen Receipt",
+        roles: ["RECEIPT"],
+      },
+    ],
+    printSystem: async (name) => {
+      printedTargets.push(name);
+    },
+    localQueue: {
+      claim: () => null,
+      complete: () => undefined,
+      fail: () => undefined,
+      wasPrinted: (_orderId, _type, printerName) =>
+        printerName === "POS Receipt",
+    },
+    fetchImpl: async (input) => {
+      const url = String(input);
+      if (url.endsWith("/printers")) return jsonResponse([]);
+      if (url.endsWith("/print-jobs/claim")) {
+        if (claimed) return jsonResponse(null);
+        claimed = true;
+        return jsonResponse({
+          id: "job-multi-printer",
+          receiptId: "receipt-multi-printer",
+          leaseToken: "lease-multi-printer",
+          receipt: { orderId: "server-order-multi-printer" },
+          payload: {
+            documentType: "RECEIPT",
+            orderNumber: "M-2",
+            items: [{ name: "Lavash", quantity: "1", total: "36000" }],
+          },
+          printer: null,
+        });
+      }
+      if (url.endsWith("/dispatching")) return jsonResponse({});
+      if (url.endsWith("/complete")) {
+        completed += 1;
+        return jsonResponse({});
+      }
+      throw new Error("Unexpected URL: " + url);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.deepEqual(printedTargets, ["Kitchen Receipt"]);
   assert.equal(completed, 1);
 });
 
@@ -1814,7 +1939,7 @@ test("hung Windows printer is timed out as ambiguous and the offline queue keeps
       logicalKey: "order-hung:RECEIPT",
       branchId: "branch-1",
       documentType: "RECEIPT",
-      payloadJson: JSON.stringify({ orderId: "order-hung" }),
+      payloadJson: validOfflinePrintPayload("order-hung"),
       attempts: 1,
     },
     {
@@ -1822,7 +1947,7 @@ test("hung Windows printer is timed out as ambiguous and the offline queue keeps
       logicalKey: "order-next:RECEIPT",
       branchId: "branch-1",
       documentType: "RECEIPT",
-      payloadJson: JSON.stringify({ orderId: "order-next" }),
+      payloadJson: validOfflinePrintPayload("order-next"),
       attempts: 1,
     },
   ];
@@ -1945,7 +2070,7 @@ test("fan-out retry skips printers already confirmed successful", async () => {
     logicalKey: "order-fanout:RECEIPT",
     branchId: "branch-1",
     documentType: "RECEIPT",
-    payloadJson: JSON.stringify({ orderId: "order-fanout" }),
+    payloadJson: validOfflinePrintPayload("order-fanout"),
     attempts: 1,
   };
   const printedTargets = new Set<string>();
@@ -2025,4 +2150,119 @@ test("TCP send timeout is reported as an ambiguous printer result", async () => 
       "code" in error &&
       error.code === "PRINT_OUTCOME_UNKNOWN",
   );
+});
+
+test("local shift report prints to every assigned report printer and not other roles", async () => {
+  const printed: string[] = [];
+  let claimed = false;
+  let completed = false;
+  const job = {
+    id: "shift-report-job",
+    logicalKey: "shift-report:shift-1:request-1",
+    branchId: "branch-1",
+    documentType: "SHIFT_REPORT",
+    payloadJson: JSON.stringify({
+      documentType: "SHIFT_REPORT",
+      shift: {
+        id: "shift-1",
+        shiftNumber: 9,
+        branch: { id: "branch-1", name: "Sergeli" },
+      },
+      orders: [
+        {
+          id: "order-1",
+          orderNumber: "M-1",
+          status: "SERVED",
+          total: "17000",
+          items: [{ productName: "Lavash", quantity: "1" }],
+        },
+      ],
+    }),
+    attempts: 1,
+  };
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Kitchen", displayName: "Kitchen", roles: ["KITCHEN"] },
+      { name: "Receipt", displayName: "Receipt", roles: ["RECEIPT"] },
+      { name: "Report A", displayName: "Report A", roles: ["SHIFT_REPORT"] },
+      { name: "Report B", displayName: "Report B", roles: ["SHIFT_REPORT"] },
+    ],
+    printSystem: async (name, receipt) => {
+      assert.equal(receipt.documentType, "SHIFT_REPORT");
+      printed.push(name);
+    },
+    localQueue: {
+      claim: (roles) => {
+        assert.ok(roles.includes("SHIFT_REPORT"));
+        if (claimed) return null;
+        claimed = true;
+        return job;
+      },
+      markPrinting: () => "attempt-1",
+      complete: () => {
+        completed = true;
+      },
+      fail: (_id, error) => assert.fail(error),
+      wasPrinted: () => false,
+    },
+  });
+
+  await worker.tick();
+
+  assert.deepEqual(printed.sort(), ["Report A", "Report B"]);
+  assert.equal(completed, true);
+});
+function validOfflinePrintPayload(orderId: string, documentType = "RECEIPT"): string {
+  return JSON.stringify({
+    documentType,
+    orderId,
+    orderNumber: "OFFLINE-" + orderId,
+    displayOrderNumber: "101",
+    items: [{ name: "Sinov mahsuloti", quantity: "1", total: "100.00" }],
+    total: "100.00",
+  });
+}
+
+test("incomplete local receipts are rejected before printing", async () => {
+  let claimed = false;
+  let printCalls = 0;
+  const failures: string[] = [];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Till A", displayName: "Till A", roles: ["RECEIPT"] },
+    ],
+    printSystem: async () => {
+      printCalls += 1;
+    },
+    localQueue: {
+      claim: () => {
+        if (claimed) return null;
+        claimed = true;
+        return {
+          id: "invalid-local-receipt",
+          logicalKey: "invalid-local-receipt:RECEIPT",
+          branchId: "branch-1",
+          documentType: "RECEIPT",
+          payloadJson: JSON.stringify({ orderId: "invalid-local-receipt" }),
+          attempts: 0,
+        };
+      },
+      complete: () => undefined,
+      fail: (_id, error) => failures.push(error),
+      wasPrinted: () => false,
+    },
+  });
+
+  await worker.tick();
+
+  assert.equal(printCalls, 0);
+  assert.match(failures[0] ?? "", /Chek mazmuni to'liq emas/);
 });

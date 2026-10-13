@@ -1,6 +1,7 @@
 import { BadRequestException } from "@nestjs/common";
 import { OrderType, Prisma } from "@prisma/client";
 import { randomUUID } from "node:crypto";
+import { kitchenRoutedItems } from "../menu/product-printer-routing";
 
 type TransactionClient = Prisma.TransactionClient;
 
@@ -19,6 +20,7 @@ export type ReceiptPrintRoute =
   | "CANCELLATION"
   | "REFUND";
 const RECEIPT_NUMBER_ATTEMPTS = 5;
+const RECEIPT_CONTENT_SCHEMA_VERSION = 1;
 // Explicit opt-in remains supported: MAZETTO_DURABLE_PRINT_JOBS === "true". Only an explicit false disables durable jobs.
 const durablePrintJobsEnabled = () =>
   process.env.MAZETTO_DURABLE_PRINT_JOBS !== "false";
@@ -41,7 +43,7 @@ function jsonObject(
     : {};
 }
 
-export function receiptPrintRoute(
+function receiptPrintRoute(
   content: Prisma.JsonValue | null | undefined,
 ): ReceiptPrintRoute {
   const type = jsonObject(content).documentType;
@@ -88,6 +90,20 @@ function routeMatches(
   );
 }
 
+export async function lockReceiptPrintQueue(
+  tx: TransactionClient,
+  receiptId: string,
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`receipt-print-jobs:${receiptId}`}))`;
+}
+
+export async function lockPrinterPrintQueue(
+  tx: TransactionClient,
+  printerId: string,
+): Promise<void> {
+  await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${`printer-print-jobs:${printerId}`}))`;
+}
+
 /** Creates one durable job per active printer configured for this document route. */
 export async function queuePrintJobsForReceipt(
   tx: TransactionClient,
@@ -95,6 +111,7 @@ export async function queuePrintJobsForReceipt(
   options: { allowLocalReprint?: boolean } = {},
 ): Promise<void> {
   if (!durablePrintJobsEnabled()) return;
+  await lockReceiptPrintQueue(tx, receipt.id);
   const route = receiptPrintRoute(receipt.content);
   const payload = options.allowLocalReprint
     ? {
@@ -103,10 +120,29 @@ export async function queuePrintJobsForReceipt(
       }
     : (receipt.content ?? {});
   const printers = await tx.printer.findMany({
-    where: { branchId: receipt.branchId, isActive: true, status: "ONLINE" },
+    where: { branchId: receipt.branchId, isActive: true },
     select: { id: true, type: true, metadata: true },
   });
-  const targets = printers.filter((printer) => routeMatches(printer, route));
+  const candidateTargets = printers.filter((printer) =>
+    routeMatches(printer, route),
+  );
+  for (const printer of candidateTargets.sort((a, b) =>
+    a.id.localeCompare(b.id),
+  )) {
+    await lockPrinterPrintQueue(tx, printer.id);
+  }
+  const targets = candidateTargets.length
+    ? (
+        await tx.printer.findMany({
+          where: {
+            branchId: receipt.branchId,
+            isActive: true,
+            id: { in: candidateTargets.map((printer) => printer.id) },
+          },
+          select: { id: true, type: true, metadata: true },
+        })
+      ).filter((printer) => routeMatches(printer, route))
+    : [];
   if (targets.length === 0) {
     await tx.printJob.create({
       data: {
@@ -134,9 +170,11 @@ export async function writeReceiptRow(
   options: {
     documentType?: ReceiptPrintRoute;
     cancellationReason?: string | null;
+    items?: OrderForReceipt["items"];
   } = {},
 ): Promise<void> {
   const documentType = options.documentType ?? "RECEIPT";
+  const items = options.items ?? order.items;
   const receiptNumber = await allocateReceiptNumber(tx);
   const receipt = await tx.receipt.create({
     data: {
@@ -146,6 +184,7 @@ export async function writeReceiptRow(
       receiptNumber,
       total: order.total,
       content: {
+        schemaVersion: RECEIPT_CONTENT_SCHEMA_VERSION,
         title: "MAZETTO FOOD",
         documentType,
         statusLabel:
@@ -165,7 +204,7 @@ export async function writeReceiptRow(
         address: order.deliveryAddress,
         orderNotes:
           typeof order.notes === "string" ? order.notes.trim() || null : null,
-        items: order.items.map((item) => ({
+        items: items.map((item) => ({
           name: item.productName,
           variant: item.variantName,
           quantity: formatQuantity(item.quantity),
@@ -245,7 +284,10 @@ export async function ensureKitchenReceipt(
     where: { id: orderId },
     include: {
       branch: true,
-      items: true,
+      items: {
+        where: { status: "ACTIVE" },
+        include: { product: { select: { printerRouting: true } } },
+      },
       payments: { include: { method: true } },
       receipts: true,
     },
@@ -256,7 +298,9 @@ export async function ensureKitchenReceipt(
   ) {
     return;
   }
-  await writeReceiptRow(tx, order, { documentType: "KITCHEN" });
+  const items = kitchenRoutedItems(order.items);
+  if (items.length === 0) return;
+  await writeReceiptRow(tx, order, { documentType: "KITCHEN", items });
 }
 
 export async function ensureRefundReceipt(
@@ -293,6 +337,7 @@ export async function ensureRefundReceipt(
       receiptNumber: await allocateReceiptNumber(tx),
       total: amount.negated(),
       content: {
+        schemaVersion: RECEIPT_CONTENT_SCHEMA_VERSION,
         title: "MAZETTO FOOD",
         documentType: "REFUND",
         statusLabel: "TO'LOV QAYTARILDI",
@@ -320,7 +365,7 @@ function orderTypeLabel(type: OrderType): string {
     case OrderType.TAKEAWAY:
       return "Olib ketish";
     default:
-      return String(type);
+      return "Noma'lum";
   }
 }
 

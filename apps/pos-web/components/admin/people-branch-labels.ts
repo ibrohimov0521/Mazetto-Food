@@ -28,7 +28,7 @@ export function roleCodeLabel(code: string): string {
  * `CANONICAL` tizimdagi asosiy menyu, `CUSTOM` admin qo'shgan ommaviy
  * mahsulot, `LEGACY` eski import qatorlari, `INTERNAL` faqat ichki pozitsiya.
  */
-export const catalogVisibilityLabels: Record<string, string> = {
+const catalogVisibilityLabels: Record<string, string> = {
   CANONICAL: "Ommaviy menyu",
   CUSTOM: "Qo'shilgan ommaviy",
   LEGACY: "Arxiv",
@@ -40,7 +40,7 @@ export function catalogVisibilityLabel(value: string): string {
 }
 
 /** Printer turi (Prisma `PrinterType`). */
-export const printerTypeLabels: Record<string, string> = {
+const printerTypeLabels: Record<string, string> = {
   THERMAL: "Termal (chek)",
   RECEIPT: "Chek printeri",
   KITCHEN: "Oshxona printeri",
@@ -61,7 +61,7 @@ export function printerTypeLabel(value: string): string {
  * deb belgilangan" deydi. Aks holda admin panel bajarmaydigan narsani
  * da'vo qilardi.
  */
-export const printerStatusLabels: Record<string, string> = {
+const printerStatusLabels: Record<string, string> = {
   ONLINE: "Ishlayapti deb belgilangan",
   OFFLINE: "O'chirilgan deb belgilangan",
   ERROR: "Nosoz deb belgilangan",
@@ -87,7 +87,7 @@ export function paymentMethodLabel(value: string): string {
 }
 
 /** Smena turi (Prisma `ShiftType`) — kassa smenasi yoki kuryer smenasi. */
-export const shiftTypeLabels: Record<string, string> = {
+const shiftTypeLabels: Record<string, string> = {
   CASHIER: "Kassa smenasi",
   COURIER: "Kuryer smenasi",
 };
@@ -97,7 +97,7 @@ export function shiftTypeLabel(value: string): string {
 }
 
 /** Xodim yozuvi holati (Prisma `EmployeeStatus`). */
-export const employeeStatusLabels: Record<string, string> = {
+const employeeStatusLabels: Record<string, string> = {
   ACTIVE: "Ishlayapti",
   SUSPENDED: "To'xtatilgan",
   TERMINATED: "Ishdan ketgan",
@@ -113,7 +113,7 @@ export function employeeStatusLabel(value: string): string {
  * `entity` qiymatlari backend'da erkin satr (`AuditLog.entity`), shuning
  * uchun ro'yxat to'liq emas — noma'lum qiymat o'zi ko'rsatiladi.
  */
-export const auditEntityLabels: Record<string, string> = {
+const auditEntityLabels: Record<string, string> = {
   User: "Xodim akkaunti",
   Staff: "Xodim",
   Employee: "Xodim yozuvi",

@@ -1,4 +1,5 @@
 import * as assert from "node:assert/strict";
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import { CustomerOrderAttemptStatus } from "@prisma/client";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { MaintenanceScheduler } from "../src/modules/maintenance/maintenance.scheduler";
@@ -29,16 +30,11 @@ function assertIsolatedDatabase(): void {
     throw new Error("MAZETTO_MAINTENANCE_DB_SMOKE=1 is required");
   }
 
-  const databaseUrl = process.env.DATABASE_URL ?? "";
-
-  if (
-    !/localhost|127\.0\.0\.1/.test(databaseUrl) ||
-    /mazettofood|production|dokploy/i.test(databaseUrl)
-  ) {
-    throw new Error(
-      "Refusing to run maintenance DB smoke outside an isolated localhost database",
-    );
-  }
+  assertDisposableLoopbackDatabase(
+    process.env.DATABASE_URL,
+    /^(?=.*(?:^|_)(?:qa|isolated)(?:_|$))[a-z0-9_]+$/i,
+    ["5432", "5433"],
+  );
 }
 
 async function main(): Promise<void> {

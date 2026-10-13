@@ -3,13 +3,14 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { ConflictException } from "@nestjs/common";
+import { BadRequestException, ConflictException } from "@nestjs/common";
 import { validate } from "class-validator";
-import { OrderState, OrderStatus } from "@prisma/client";
+import { OrderState, OrderStatus, PaymentStatus, Prisma } from "@prisma/client";
 import { PERMISSIONS } from "../src/common/auth/permissions";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { OrderActionService } from "../src/modules/orders/order-action.service";
 import { CancelOrderActionDto } from "../src/modules/orders/dto/order-action.dto";
+import { CancelOrderItemActionDto } from "../src/modules/orders/dto/order-item.dto";
 import {
   ORDER_EVENTS,
   eventForLegacyStatus,
@@ -38,14 +39,29 @@ test("legacy projection keeps kitchen states separate from the order lifecycle",
   assert.equal(eventForLegacyStatus(OrderStatus.READY), ORDER_EVENTS.LEGACY_STATUS_CHANGED);
 });
 
-test("cancel action requires both an explicit reason and reason code", async () => {
+test("cancel action requires its reason code but allows an optional note", async () => {
   const invalid = Object.assign(new CancelOrderActionDto(), { expectedVersion: 2 });
   const errors = await validate(invalid);
-  assert.deepEqual(errors.map(({ property }) => property).sort(), ["reason", "reasonCode"]);
-  const valid = Object.assign(new CancelOrderActionDto(), {
-    expectedVersion: 2, reasonCode: "CUSTOMER_REQUEST", reason: "Mijoz so'radi",
+  assert.deepEqual(errors.map(({ property }) => property).sort(), ["reasonCode"]);
+  const withoutNote = Object.assign(new CancelOrderActionDto(), {
+    expectedVersion: 2,
+    reasonCode: "CUSTOMER_REQUEST",
   });
-  assert.deepEqual(await validate(valid), []);
+  assert.deepEqual(await validate(withoutNote), []);
+  const withNote = Object.assign(new CancelOrderActionDto(), {
+    expectedVersion: 2,
+    reasonCode: "CUSTOMER_REQUEST",
+    reason: "Mijoz so'radi",
+  });
+  assert.deepEqual(await validate(withNote), []);
+});
+
+test("cancel item action also allows an optional note", async () => {
+  const action = Object.assign(new CancelOrderItemActionDto(), {
+    expectedVersion: 2,
+    reasonCode: "CASHIER_ITEM_CANCELLED",
+  });
+  assert.deepEqual(await validate(action), []);
 });
 
 test("order event and publishable outbox entry share identity and correlation", async () => {
@@ -109,6 +125,44 @@ test("allowed actions enforce permission and hide terminal transitions", async (
   assert.deepEqual((await actions.allowedActions("order-1", user)).actions, ["cancel"]);
   state = OrderState.COMPLETED;
   assert.deepEqual((await actions.allowedActions("order-1", user)).actions, []);
+});
+
+test("cancel action stays hidden until a paid order has no remaining balance", async () => {
+  let payments: {
+    amount: Prisma.Decimal;
+    status: PaymentStatus;
+    refunds: { amount: Prisma.Decimal }[];
+  }[] = [
+    {
+      amount: new Prisma.Decimal(50000),
+      status: PaymentStatus.PARTIALLY_REFUNDED,
+      refunds: [{ amount: new Prisma.Decimal(10000) }],
+    },
+  ];
+  const actions = new OrderActionService(
+    {
+      getOrder: async () => ({
+        id: "order-1",
+        orderState: OrderState.ACCEPTED,
+        version: 3,
+        payments,
+      }),
+    } as never,
+    {} as never,
+  );
+
+  assert.deepEqual((await actions.allowedActions("order-1", user)).actions, []);
+  payments = [
+    {
+      amount: new Prisma.Decimal(50000),
+      status: PaymentStatus.REFUNDED,
+      refunds: [{ amount: new Prisma.Decimal(50000) }],
+    },
+  ];
+  assert.deepEqual(
+    (await actions.allowedActions("order-1", user)).actions,
+    ["cancel"],
+  );
 });
 
 test("accept action forwards expected version and idempotency key and completes only on success", async () => {
@@ -202,6 +256,7 @@ test("cancel writes order state, version, history, event and outbox in one trans
     },
     employee: { findFirst: async () => ({ id: "employee-1" }) },
     branch: { findUnique: async () => ({ tenantId: "tenant-a" }) },
+    payment: { findMany: async () => [] },
     kitchenTicket: { updateMany: async () => { writes.push("ticket"); } },
     orderItem: { findMany: async () => [] },
     orderStatusHistory: { create: async () => { writes.push("history"); } },
@@ -232,6 +287,53 @@ test("cancel writes order state, version, history, event and outbox in one trans
   assert.equal(result.version, 2);
   assert.equal(result.orderState, OrderState.CANCELLED);
   assert.deepEqual(writes, ["order", "ticket", "history", "event", "outbox", "notification"]);
+});
+
+test("paid order cannot be cancelled until its remaining payment is refunded", async () => {
+  let orderWrites = 0;
+  const order = {
+    id: "order-paid",
+    branchId: "branch-1",
+    status: OrderStatus.NEW,
+    orderState: OrderState.PLACED,
+    version: 1,
+    tableId: null,
+  };
+  const tx = {
+    $queryRaw: async () => [],
+    order: {
+      findUnique: async () => order,
+      update: async () => {
+        orderWrites += 1;
+        return order;
+      },
+    },
+    employee: { findFirst: async () => ({ id: "employee-1" }) },
+    payment: {
+      findMany: async () => [
+        {
+          amount: new Prisma.Decimal(50000),
+          status: PaymentStatus.PARTIALLY_REFUNDED,
+          refunds: [{ amount: new Prisma.Decimal(10000) }],
+        },
+      ],
+    },
+  };
+  const service = new OrdersService(
+    { $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx) } as never,
+    {} as never,
+    {} as never,
+  );
+
+  await assert.rejects(
+    service.updateStatus("order-paid", { status: "CANCELLED" as never }, user),
+    (error: unknown) => {
+      assert.ok(error instanceof BadRequestException);
+      assert.match(error.message, /qaytarilmagan to'lov bor/i);
+      return true;
+    },
+  );
+  assert.equal(orderWrites, 0);
 });
 
 test("order detail uses action endpoints, timeline and a stable mutation version", () => {

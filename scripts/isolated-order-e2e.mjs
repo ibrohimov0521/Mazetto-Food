@@ -2,16 +2,16 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { assertLocalPostgresAdminUrl } from "./isolated-db-target.mjs";
 
-const require = createRequire(new URL("../apps/backend/package.json", import.meta.url));
-const { Client } = require("pg");
-const adminUrl = new URL(
-  process.env.MAZETTO_E2E_ADMIN_DATABASE_URL ??
-    "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
+const require = createRequire(
+  new URL("../apps/backend/package.json", import.meta.url),
 );
-assert.ok(
-  ["127.0.0.1", "localhost", "::1"].includes(adminUrl.hostname),
-  "Isolated E2E refuses non-local PostgreSQL hosts",
+const { Client } = require("pg");
+const adminUrl = assertLocalPostgresAdminUrl(
+  process.env.MAZETTO_E2E_ADMIN_DATABASE_URL ??
+    process.env.DATABASE_URL ??
+    "postgresql://postgres:postgres@127.0.0.1:5432/postgres",
 );
 const databaseName = `mazetto_step8_release_${process.pid}_${Date.now()}`;
 assert.match(databaseName, /^[a-z0-9_]+$/);
@@ -29,7 +29,9 @@ function run(args) {
     env: {
       ...process.env,
       DATABASE_URL: databaseUrl.toString(),
+      MAZETTO_DURABLE_PRINT_JOBS: "true",
       MAZETTO_E2E_ISOLATED_DB: "1",
+      MAZETTO_POS_DB_SMOKE: "1",
     },
     stdio: "inherit",
   });
@@ -39,12 +41,37 @@ function run(args) {
 }
 
 const admin = new Client({ connectionString: adminUrl.toString() });
-await admin.connect();
+try {
+  await admin.connect();
+} catch (error) {
+  const code = error && typeof error === "object" ? error.code : undefined;
+  if (code === "ECONNREFUSED" || code === "ETIMEDOUT") {
+    throw new Error(
+      `Isolated E2E could not reach local PostgreSQL at ${adminUrl.hostname}:${adminUrl.port || "5432"}. Start the test database or set MAZETTO_E2E_ADMIN_DATABASE_URL to its loopback connection.`,
+      { cause: error },
+    );
+  }
+  throw error;
+}
 try {
   await admin.query(`CREATE DATABASE "${databaseName}"`);
   run(["--filter", "backend", "prisma:generate"]);
   run(["--filter", "backend", "prisma:migrate:deploy"]);
+  run([
+    "--filter",
+    "backend",
+    "exec",
+    "tsx",
+    "scripts/validate-order-display-numbers.ts",
+  ]);
   run(["--filter", "backend", "exec", "prisma", "db", "seed"]);
+  run([
+    "--filter",
+    "backend",
+    "exec",
+    "tsx",
+    "scripts/validate-pos-kassa-db.ts",
+  ]);
   run([
     "--filter",
     "backend",

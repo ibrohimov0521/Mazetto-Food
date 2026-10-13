@@ -165,7 +165,7 @@ export class DevicesService {
         data: { hardwareId: null },
       });
       return tx.device.update({
-        where: { id: device.id },
+        where: { id: device.id, branchId: device.branchId, branch: { tenantId } },
         data: { hardwareId: deviceId },
         select: {
           id: true,
@@ -189,7 +189,7 @@ export class DevicesService {
 
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.device.update({
-        where: { id },
+        where: { id, branchId: previous.branchId, branch: { tenantId: previous.tenantId } },
         data: {
           ...(name !== undefined ? { name } : {}),
           ...(dto.type !== undefined ? { type: dto.type } : {}),
@@ -239,7 +239,10 @@ export class DevicesService {
     const device = await this.assertDevice(id, user);
 
     await this.prisma.$transaction(async (tx) => {
-      await tx.device.delete({ where: { id: device.id } });
+      const deleted = await tx.device.deleteMany({
+        where: { id: device.id, branchId: device.branchId, branch: { tenantId: device.tenantId } },
+      });
+      if (deleted.count !== 1) throw new NotFoundException("Device not found");
       await writeAuditLog(tx, {
         tenantId: device.tenantId,
         userId: user.id,
@@ -265,7 +268,33 @@ export class DevicesService {
     ];
     if (!uniqueIds.length)
       throw new BadRequestException("Kamida bitta qurilma tanlanishi kerak");
-    for (const id of uniqueIds) await this.deleteDevice(id, user);
+    const devices = await Promise.all(
+      uniqueIds.map((id) => this.assertDevice(id, user)),
+    );
+    await this.prisma.$transaction(async (tx) => {
+      for (const device of devices) {
+        const deleted = await tx.device.deleteMany({
+          where: {
+            id: device.id,
+            branchId: device.branchId,
+            branch: { tenantId: device.tenantId },
+          },
+        });
+        if (deleted.count !== 1) throw new NotFoundException("Device not found");
+        await writeAuditLog(tx, {
+          tenantId: device.tenantId,
+          userId: user.id,
+          action: "DEVICE_DELETED",
+          entity: "Device",
+          entityId: device.id,
+          metadata: {
+            branchId: device.branchId,
+            name: device.name,
+            type: device.type,
+          },
+        });
+      }
+    });
     return { deleted: true, count: uniqueIds.length, ids: uniqueIds };
   }
 
@@ -295,7 +324,7 @@ export class DevicesService {
 
     const lastSeenAt = new Date();
     await this.prisma.device.update({
-      where: { id: device.id },
+      where: { id: device.id, branchId: device.branchId, branch: { tenantId: scope.tenantId } },
       data: {
         lastSeenAt,
         ...(user.employeeId ? { lastEmployeeId: user.employeeId } : {}),

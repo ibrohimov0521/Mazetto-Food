@@ -28,8 +28,7 @@ type AuthContextValue = {
   login: (
     identifier: string,
     password: string,
-    rememberDesktopCredentials?: boolean,
-    selectedSavedIdentifier?: string | null,
+    useSavedCredential?: boolean,
   ) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -80,40 +79,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (
       identifier: string,
       password: string,
-      rememberDesktopCredentials = false,
-      selectedSavedIdentifier: string | null = null,
+      useSavedCredential = false,
     ) => {
       const desktopAuth = window.mazettoDesktop?.auth;
       const desktopLogin = desktopAuth?.login;
       if (desktopLogin) {
         let session: AuthSession;
         try {
-          session = await desktopLogin({ identifier, password }) as AuthSession;
+          session = (await desktopLogin({
+            identifier,
+            password,
+            useSavedCredential,
+          })) as AuthSession;
         } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
+          const message =
+            error instanceof Error ? error.message : String(error);
           if (message.toLowerCase().includes("invalid credentials")) {
             throw new Error(
               "Login yoki parol noto'g'ri. Saqlangan hisobni tanlang yoki ma'lumotlarni qayta kiriting.",
             );
           }
           throw new Error(
-            message.replace(/^Error invoking remote method '[^']+': Error:\s*/i, ""),
+            message.replace(
+              /^Error invoking remote method '[^']+': Error:\s*/i,
+              "",
+            ),
           );
         }
 
-        if (desktopAuth.credentials) {
-          try {
-            if (rememberDesktopCredentials) {
-              await desktopAuth.credentials.save({ identifier, password });
-            } else if (selectedSavedIdentifier) {
-              await desktopAuth.credentials.remove(selectedSavedIdentifier);
-            }
-          } catch {
-            console.warn("Desktop login ma'lumotini xavfsiz saqlash imkoni bo'lmadi.");
-          }
-        }
         writeSession(session);
-        router.replace(getPrimaryRedirect(session.user));
+        router.replace(await getLoginRedirect(session));
         return;
       }
 
@@ -172,16 +167,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 async function getLoginRedirect(session: AuthSession): Promise<string> {
   const fallbackRedirect = getPrimaryRedirect(session.user);
 
-  if (typeof window !== "undefined" && window.navigator.userAgent.includes("MAZETTO-Desktop/")) {
+  if (
+    typeof window !== "undefined" &&
+    window.navigator.userAgent.includes("MAZETTO-Desktop/")
+  ) {
     try {
-      const desktopStatus = await fetch("http://127.0.0.1:7359/desktop/status", {
-        cache: "no-store",
-      });
-      const desktopPayload = (await desktopStatus.json()) as {
-        data?: { deviceId?: string };
-      };
-      const deviceId = desktopPayload.data?.deviceId;
-      if (deviceId) {
+      const desktopStatus = await fetch(
+        "http://127.0.0.1:7359/desktop/status",
+        {
+          cache: "no-store",
+        },
+      );
+      const desktopPayload = desktopStatus.ok
+        ? ((await desktopStatus.json()) as {
+            data?: { deviceId?: string; mode?: string };
+          })
+        : null;
+      const deviceId = desktopPayload?.data?.deviceId;
+      if (deviceId && desktopPayload?.data?.mode === "online") {
         const heartbeat = await fetch(`${getApiBaseUrl()}/devices/heartbeat`, {
           method: "POST",
           headers: {
@@ -191,10 +194,10 @@ async function getLoginRedirect(session: AuthSession): Promise<string> {
           },
           body: JSON.stringify({}),
         });
-        if (!heartbeat.ok) return "/device-enrollment";
+        if (heartbeat.status === 404) return "/device-enrollment";
       }
     } catch {
-      return "/device-enrollment";
+      // A gateway or network failure cannot prove that this device is unregistered.
     }
   }
 

@@ -19,7 +19,7 @@ export class OrderItemModifierDto {
   modifierId!: string;
 
   @IsOptional()
-  @IsNumber()
+  @IsInt()
   @IsPositive()
   quantity = 1;
 }
@@ -101,8 +101,8 @@ export class CancelOrderItemActionDto {
   @MaxLength(80)
   reasonCode!: string;
 
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
   @MaxLength(500)
-  reason!: string;
+  reason?: string;
 }

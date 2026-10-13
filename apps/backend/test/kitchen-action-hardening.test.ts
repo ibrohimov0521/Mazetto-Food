@@ -29,18 +29,34 @@ const user: AuthenticatedUser = {
   permissions: ["KITCHEN_VIEW", "KITCHEN_ACCEPT", "KITCHEN_STATUS_UPDATE"],
 };
 
-test("kitchen actions require a ticket version and cancellation reason", async () => {
+test("kitchen actions require a ticket version but keep recipient and cancellation text optional", async () => {
   assert.deepEqual(
     (await validate(new KitchenTicketActionDto())).map(
       ({ property }) => property,
     ),
     ["expectedVersion"],
   );
+  const completeWithoutRecipient = Object.assign(
+    new CompleteKitchenTicketActionDto(),
+    { expectedVersion: 1 },
+  );
+  assert.deepEqual(
+    (await validate(completeWithoutRecipient)).map(({ property }) => property),
+    [],
+  );
   const invalidCancel = Object.assign(new CancelKitchenTicketActionDto(), {
     expectedVersion: 1,
   });
   assert.deepEqual(
     (await validate(invalidCancel)).map(({ property }) => property),
+    [],
+  );
+  const invalidCancelReason = Object.assign(new CancelKitchenTicketActionDto(), {
+    expectedVersion: 1,
+    reason: "a".repeat(501),
+  });
+  assert.deepEqual(
+    (await validate(invalidCancelReason)).map(({ property }) => property),
     ["reason"],
   );
   const invalidRecipient = Object.assign(new CompleteKitchenTicketActionDto(), {

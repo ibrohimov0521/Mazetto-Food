@@ -94,6 +94,7 @@ test("kitchen ticket goes only to printers explicitly assigned the kitchen role"
     { id: "kitchen", type: "THERMAL", metadata: { printRoles: ["KITCHEN"] } },
   ];
   const tx = {
+    $executeRaw: async () => 1,
     printer: { findMany: async () => printers },
     printJob: {
       create: async ({ data }: { data: { printerId: string | null } }) =>
@@ -151,5 +152,61 @@ test("production startup migrates the print queue and restores old unprinted rec
   assert.match(
     receiptService,
     /if \(!existingJob\) await queuePrintJobsForReceipt\(tx, receipt\)/,
+  );
+});
+test("receipt queues retain jobs for active offline printers too", async () => {
+  const jobs: { printerId: string | null }[] = [];
+  const printerFilters: Record<string, unknown>[] = [];
+  const printers = [
+    {
+      id: "front-online",
+      type: "THERMAL",
+      status: "ONLINE",
+      isActive: true,
+      metadata: { printRoles: ["RECEIPT"] },
+    },
+    {
+      id: "front-offline",
+      type: "THERMAL",
+      status: "OFFLINE",
+      isActive: true,
+      metadata: { printRoles: ["RECEIPT"] },
+    },
+  ];
+  const tx = {
+    $executeRaw: async () => 1,
+    printer: {
+      findMany: async (args: { where: Record<string, unknown> }) => {
+        printerFilters.push(args.where);
+        return printers;
+      },
+    },
+    printJob: {
+      create: async ({ data }: { data: { printerId: string | null } }) =>
+        jobs.push(data),
+      createMany: async ({
+        data,
+      }: {
+        data: { printerId: string | null }[];
+      }) => jobs.push(...data),
+    },
+  };
+  await queuePrintJobsForReceipt(tx as never, {
+    id: "multi-printer-receipt",
+    branchId: "branch-1",
+    content: { documentType: "RECEIPT" },
+  });
+
+  assert.deepEqual(printerFilters, [
+    { branchId: "branch-1", isActive: true },
+    {
+      branchId: "branch-1",
+      isActive: true,
+      id: { in: ["front-offline", "front-online"] },
+    },
+  ]);
+  assert.deepEqual(
+    jobs.map((job) => job.printerId).sort(),
+    ["front-offline", "front-online"],
   );
 });

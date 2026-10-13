@@ -121,3 +121,80 @@ test("old kitchen buttons refresh the queue without advancing a newer ticket sta
     else process.env.TELEGRAM_STAFF_BOT_TOKEN = previousToken;
   }
 });
+test("management panel uses only the tenant's Tashkent-day data", async () => {
+  const previousToken = process.env.TELEGRAM_STAFF_BOT_TOKEN;
+  process.env.TELEGRAM_STAFF_BOT_TOKEN = "test-token";
+  const payloads: Array<{ text?: string }> = [];
+  let orderWhere: Record<string, unknown> | undefined;
+  let employeeWhere: Record<string, unknown> | undefined;
+
+  try {
+    const service = new TelegramStaffService(
+      {
+        restaurantTenant: {
+          findFirst: async ({ where }: { where: { id: string } }) => ({
+            id: where.id,
+          }),
+        },
+        order: {
+          count: async ({ where }: { where: Record<string, unknown> }) => {
+            orderWhere = where;
+            return 4;
+          },
+        },
+        employee: {
+          count: async ({ where }: { where: Record<string, unknown> }) => {
+            employeeWhere = where;
+            return 2;
+          },
+        },
+      } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {
+        renderWithToken: async (
+          _token: string,
+          _target: unknown,
+          payload: { text?: string },
+        ) => {
+          payloads.push(payload);
+        },
+      } as never,
+    );
+    await (
+      service as unknown as {
+        sendManagementPanel(chatId: string, staff: unknown): Promise<void>;
+      }
+    ).sendManagementPanel("chat-1", {
+      user: {
+        id: "admin-a",
+        tenantId: "tenant-a",
+        membershipId: "membership-a",
+        isGlobalScope: true,
+        roles: ["ADMIN"],
+      },
+    });
+
+    assert.deepEqual(
+      (orderWhere?.branch as Record<string, unknown>),
+      { tenantId: "tenant-a" },
+    );
+    assert.deepEqual(
+      (employeeWhere?.branch as Record<string, unknown>),
+      { tenantId: "tenant-a" },
+    );
+    const createdAt = orderWhere?.createdAt as { gte: Date; lte: Date };
+    assert.equal(createdAt.gte.getUTCHours(), 19);
+    assert.equal(createdAt.lte.getUTCHours(), 18);
+    assert.equal(
+      createdAt.lte.getTime() - createdAt.gte.getTime(),
+      24 * 60 * 60 * 1000 - 1,
+    );
+    assert.match(payloads[0]?.text ?? "", /Bugungi buyurtmalar: <b>4<\/b>/);
+  } finally {
+    if (previousToken === undefined) delete process.env.TELEGRAM_STAFF_BOT_TOKEN;
+    else process.env.TELEGRAM_STAFF_BOT_TOKEN = previousToken;
+  }
+});

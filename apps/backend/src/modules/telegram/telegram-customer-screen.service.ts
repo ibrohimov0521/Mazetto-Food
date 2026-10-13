@@ -36,7 +36,7 @@ export type TelegramInlineButton = {
   url?: string;
 };
 
-export type TelegramReplyButton =
+type TelegramReplyButton =
   | string
   | { text: string; request_location?: boolean; request_contact?: boolean };
 
@@ -259,7 +259,11 @@ export class TelegramCustomerScreenService implements OnModuleInit {
   }
 
   async telegramRequest(method: string, payload: unknown): Promise<void> {
-    await this.telegramRequestWithToken(process.env.TELEGRAM_BOT_TOKEN, method, payload);
+    await this.telegramRequestWithToken(
+      process.env.TELEGRAM_BOT_TOKEN,
+      method,
+      payload,
+    );
   }
 
   async telegramRequestWithToken(
@@ -267,7 +271,6 @@ export class TelegramCustomerScreenService implements OnModuleInit {
     method: string,
     payload: unknown,
   ): Promise<void> {
-
     // Token yo'q — bot o'chiq. Bu xato emas, ilova ishlayveradi.
     if (!token) {
       return;
@@ -296,13 +299,19 @@ export class TelegramCustomerScreenService implements OnModuleInit {
           `Telegram ${method} failed with ${response.status}: ${body}`,
         );
 
-        if (!this.shouldRetryTelegramRequest(error, response.status) || attempt === telegramRequestMaxAttempts) {
+        if (
+          !this.shouldRetryTelegramRequest(error, response.status) ||
+          attempt === telegramRequestMaxAttempts
+        ) {
           throw error;
         }
 
         lastError = error;
       } catch (error) {
-        if (!this.shouldRetryTelegramRequest(error) || attempt === telegramRequestMaxAttempts) {
+        if (
+          !this.shouldRetryTelegramRequest(error) ||
+          attempt === telegramRequestMaxAttempts
+        ) {
           throw error;
         }
 
@@ -314,7 +323,9 @@ export class TelegramCustomerScreenService implements OnModuleInit {
       );
     }
 
-    throw lastError instanceof Error ? lastError : new Error(`Telegram ${method} failed`);
+    throw lastError instanceof Error
+      ? lastError
+      : new Error(`Telegram ${method} failed`);
   }
 
   private shouldRetryTelegramRequest(error: unknown, status?: number): boolean {

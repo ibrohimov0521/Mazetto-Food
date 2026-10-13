@@ -1,4 +1,5 @@
 import { UnauthorizedException } from "@nestjs/common";
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import { JwtService } from "@nestjs/jwt";
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -44,6 +45,14 @@ const testPhones = [
 if (!databaseUrl) {
   throw new Error("DATABASE_URL is required for DB-backed Telegram auth validation");
 }
+if (process.env.MAZETTO_E2E_ISOLATED_DB !== "1") {
+  throw new Error("MAZETTO_E2E_ISOLATED_DB=1 is required for this DB E2E script");
+}
+assertDisposableLoopbackDatabase(
+  databaseUrl,
+  /^mazetto_step16(?:_staff(?:_[0-9]+)?)?$/,
+  ["5432", "5433", "15432"],
+);
 
 globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
   sentTelegramPayloads.push(JSON.parse(String(init?.body)) as SentTelegramPayload);

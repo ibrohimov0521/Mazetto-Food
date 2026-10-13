@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import { randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { Pool } from "pg";
@@ -17,11 +18,10 @@ assert.equal(
   "1",
   "This validator is only enabled by the isolated QA runner",
 );
-const databaseName = decodeURIComponent(new URL(databaseUrl).pathname.slice(1));
-assert.match(
-  databaseName,
+assertDisposableLoopbackDatabase(
+  databaseUrl,
   /^bestteam_owner_qa_[0-9]+_[0-9a-f]{6}$/,
-  "Refusing to run outside the disposable owner QA database",
+  "5433",
 );
 
 const migrationSql = readFileSync(

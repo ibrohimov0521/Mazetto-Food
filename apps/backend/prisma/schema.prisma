@@ -288,6 +288,7 @@ model RestaurantTenant {
   customers                      Customer[]
   customerVerificationChallenges CustomerVerificationChallenge[]
   settings                       Setting[]
+  orders                         Order[]
 
   @@index([status, createdAt])
   @@map("restaurant_tenants")
@@ -996,7 +997,7 @@ model Product {
   isRecommended   Boolean               @default(false)
   isCombo         Boolean               @default(false)
   sortOrder       Int                   @default(0)
-  printerRouting  ProductPrinterRouting @default(NONE)
+  printerRouting  ProductPrinterRouting @default(KITCHEN)
   createdAt       DateTime              @default(now())
   updatedAt       DateTime              @updatedAt
 
@@ -1190,6 +1191,7 @@ model PriceHistory {
 
 model Order {
   id                     String        @id @default(cuid())
+  tenantId               String
   branchId               String
   shiftId                String?
   tableId                String?
@@ -1235,6 +1237,7 @@ model Order {
 
   acceptedBy              Employee?                @relation("OrderAcceptedBy", fields: [acceptedById], references: [id], onDelete: SetNull)
   branch                  Branch                   @relation(fields: [branchId], references: [id], onDelete: Restrict)
+  tenant                  RestaurantTenant         @relation(fields: [tenantId], references: [id], onDelete: Restrict)
   cancelledBy             Employee?                @relation("OrderCancelledBy", fields: [cancelledById], references: [id], onDelete: SetNull)
   closedBy                Employee?                @relation("OrderClosedBy", fields: [closedById], references: [id], onDelete: SetNull)
   createdBy               Employee?                @relation("OrderCreatedBy", fields: [createdById], references: [id], onDelete: SetNull)
@@ -1256,7 +1259,7 @@ model Order {
   parentOrder             Order?                   @relation("OrderSupplements", fields: [parentOrderId], references: [id], onDelete: SetNull)
   supplements             Order[]                  @relation("OrderSupplements")
 
-  @@unique([source, displayOrderDate, displayOrderSequence])
+  @@unique([tenantId, source, displayOrderDate, displayOrderSequence])
   @@unique([parentOrderId, supplementNumber])
   @@index([branchId, createdAt])
   @@index([branchId, status])
@@ -1264,6 +1267,7 @@ model Order {
   @@index([shiftId])
   @@index([source])
   @@index([displayOrderDate, source])
+  @@index([tenantId, source, displayOrderDate])
   @@index([type])
   @@index([paymentStatus])
   @@index([tableId])

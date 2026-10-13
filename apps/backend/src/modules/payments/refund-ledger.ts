@@ -4,7 +4,9 @@ import {
   PaymentStatus,
   Prisma,
   RevenueRecordSource,
+  ShiftStatus,
 } from "@prisma/client";
+import { calculateCashBalance } from "../cash-register/cash-balance";
 import { writeAuditLog } from "../audit/audit-write";
 import { ensureRefundReceipt } from "../receipts/receipt-writer";
 
@@ -114,6 +116,42 @@ export async function recordCashRefund(
   ) {
     throw new BadRequestException(
       "Qaytariladigan summa to'lov qoldig'idan oshib ketdi.",
+    );
+  }
+
+  const shiftLock = await tx.shift.updateMany({
+    where: {
+      id: input.shiftId,
+      branchId: input.branchId,
+      status: ShiftStatus.OPEN,
+    },
+    data: { updatedAt: new Date() },
+  });
+  if (shiftLock.count !== 1) {
+    throw new BadRequestException("Pul qaytarish uchun ochiq kassa smenasi kerak.");
+  }
+  const shift = await tx.shift.findFirst({
+    where: {
+      id: input.shiftId,
+      branchId: input.branchId,
+      status: ShiftStatus.OPEN,
+    },
+    select: { openingBalance: true },
+  });
+  if (!shift) {
+    throw new BadRequestException("Pul qaytarish uchun ochiq kassa smenasi kerak.");
+  }
+  const cashTransactions = await tx.cashTransaction.findMany({
+    where: { shiftId: input.shiftId, branchId: input.branchId },
+    select: { amount: true, type: true },
+  });
+  const availableCash = calculateCashBalance(
+    shift.openingBalance,
+    cashTransactions,
+  );
+  if (amount.greaterThan(availableCash)) {
+    throw new BadRequestException(
+      `Kassada yetarli naqd pul yo'q. Joriy qoldiq: ${availableCash.toFixed(2)} so'm.`,
     );
   }
 

@@ -56,18 +56,25 @@ test("public enrollment selects tenant only from a verified request host", async
   const dto = { deviceId: "desktop-a", enrollmentCode: "CODE-A" };
 
   assert.deepEqual(
-    await controller.enroll(dto, { headers: { host: "a.restaurant.test" } } as never),
+    await controller.enroll(dto, {
+      headers: { host: "a.restaurant.test" },
+    } as never),
     { tenantId: "tenant-a" },
   );
   assert.deepEqual(
-    await controller.enroll(dto, { headers: { host: "b.restaurant.test" } } as never),
+    await controller.enroll(dto, {
+      headers: { host: "b.restaurant.test" },
+    } as never),
     { tenantId: "tenant-b" },
   );
   await assert.rejects(
     controller.enroll(dto, { headers: { host: "unknown.test" } } as never),
     /verified active restaurant domain/,
   );
-  assert.deepEqual(calls.map((call) => call.tenantId), ["tenant-a", "tenant-b"]);
+  assert.deepEqual(
+    calls.map((call) => call.tenantId),
+    ["tenant-a", "tenant-b"],
+  );
 });
 
 test("device code lookup does not depend on the global active-tenant count", async () => {
@@ -83,19 +90,25 @@ test("device code lookup does not depend on the global active-tenant count", asy
 
   await Promise.all([
     assert.rejects(
-      service.enroll({ deviceId: "desktop-a", enrollmentCode: "A" }, "tenant-a"),
+      service.enroll(
+        { deviceId: "desktop-a", enrollmentCode: "A" },
+        "tenant-a",
+      ),
       /invalid or expired/,
     ),
     assert.rejects(
-      service.enroll({ deviceId: "desktop-b", enrollmentCode: "B" }, "tenant-b"),
+      service.enroll(
+        { deviceId: "desktop-b", enrollmentCode: "B" },
+        "tenant-b",
+      ),
       /invalid or expired/,
     ),
   ]);
 
-  assert.deepEqual(filters.map((where) => where.branch), [
-    { tenantId: "tenant-a" },
-    { tenantId: "tenant-b" },
-  ]);
+  assert.deepEqual(
+    filters.map((where) => where.branch),
+    [{ tenantId: "tenant-a" }, { tenantId: "tenant-b" }],
+  );
   assert.ok(filters.every((where) => where.isActive === true));
 });
 test("device enrollment only rebinds hardware within the selected tenant", async () => {
@@ -132,8 +145,188 @@ test("device enrollment only rebinds hardware within the selected tenant", async
       }),
   } as never);
 
-  await service.enroll({ deviceId: "hardware-a", enrollmentCode: "ABC123" }, "tenant-a");
+  await service.enroll(
+    { deviceId: "hardware-a", enrollmentCode: "ABC123" },
+    "tenant-a",
+  );
   assert.deepEqual(enrollmentFilter?.branch, { tenantId: "tenant-a" });
   assert.deepEqual(claimFilter?.branch, { tenantId: "tenant-a" });
   assert.deepEqual(unbindFilter?.branch, { tenantId: "tenant-a" });
+});
+
+test("printer writes retain tenant scope and protect queued targets", async () => {
+  const filters: Record<string, unknown>[] = [];
+  const updates: Record<string, unknown>[] = [];
+  const latestMetadata = { concurrentSetting: "fresh" };
+  let unresolvedJobs: Array<{ id: string }> = [];
+  const stored = {
+    id: "printer-a",
+    branchId: "branch-a",
+    name: "Kitchen",
+    metadata: {},
+  };
+  const service = new PrintersService({
+    restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+    printer: {
+      findFirst: async () => stored,
+      update: async (args: { where: Record<string, unknown> }) => {
+        filters.push(args.where);
+        return { ...stored, branch: { id: "branch-a" } };
+      },
+    },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        $executeRaw: async () => 1,
+        $queryRaw: async () => [],
+        printJob: { findMany: async () => unresolvedJobs },
+        printer: {
+          findFirst: async () => ({
+            id: "printer-a",
+            metadata: latestMetadata,
+          }),
+          deleteMany: async (args: { where: Record<string, unknown> }) => {
+            filters.push(args.where);
+            return { count: 1 };
+          },
+          update: async (args: {
+            where: Record<string, unknown>;
+            data?: Record<string, unknown>;
+          }) => {
+            filters.push(args.where);
+            if (args.data) updates.push(args.data);
+            return { ...stored, branch: { id: "branch-a" } };
+          },
+        },
+        auditLog: { create: async () => undefined },
+      }),
+  } as never);
+
+  await service.updatePrinter("printer-a", { name: "Kitchen 2" }, owner);
+  unresolvedJobs = [{ id: "pending-job-a" }];
+  await assert.rejects(
+    service.updatePrinter(
+      "printer-a",
+      { metadata: { printRoles: ["KITCHEN"] } },
+      owner,
+    ),
+    /Printer turi yoki yo'naltirish sozlamalarini tugallanmagan chop ishlari bor paytda o'zgartirib bo'lmaydi/,
+  );
+  unresolvedJobs = [];
+  await service.updatePrinter(
+    "printer-a",
+    { metadata: { printRoles: ["KITCHEN"] } },
+    owner,
+  );
+  assert.deepEqual(updates[1]?.metadata, {
+    concurrentSetting: "fresh",
+    printRoles: ["KITCHEN"],
+  });
+  await service.deactivatePrinter("printer-a", owner);
+  await service.deletePrinters(["printer-a"], owner);
+
+  const expectedWhere = {
+    id: "printer-a",
+    branchId: "branch-a",
+    branch: { tenantId: "tenant-a" },
+  };
+  assert.deepEqual(filters, [
+    expectedWhere,
+    expectedWhere,
+    expectedWhere,
+    expectedWhere,
+  ]);
+});
+
+test("printer deletion refuses to detach unfinished print jobs", async () => {
+  let deleteCalled = false;
+  let rowsLocked = false;
+  const service = new PrintersService({
+    restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+    printer: {
+      findFirst: async () => ({
+        id: "printer-a",
+        branchId: "branch-a",
+        name: "Kitchen",
+        metadata: {},
+      }),
+    },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        $executeRaw: async () => 1,
+        $queryRaw: async () => {
+          rowsLocked = true;
+          return [{ id: "print-job-a" }];
+        },
+        printJob: {
+          findMany: async () => [{ printerId: "printer-a" }],
+        },
+        printer: {
+          deleteMany: async () => {
+            deleteCalled = true;
+            return { count: 1 };
+          },
+        },
+        auditLog: { create: async () => undefined },
+      }),
+  } as never);
+
+  await assert.rejects(
+    service.deletePrinters(["printer-a"], owner),
+    /Printerga biriktirilgan tugallanmagan chop ishlari bor/,
+  );
+  assert.equal(rowsLocked, true);
+  assert.equal(deleteCalled, false);
+});
+
+test("device writes retain tenant and branch filters after authorization", async () => {
+  const filters: Record<string, unknown>[] = [];
+  const stored = {
+    id: "device-a",
+    branchId: "branch-a",
+    name: "POS",
+    type: "POS",
+    isActive: true,
+  };
+  const service = new DevicesService({
+    restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+    device: {
+      findFirst: async () => stored,
+      update: async (args: { where: Record<string, unknown> }) => {
+        filters.push(args.where);
+        return stored;
+      },
+    },
+    $transaction: async (callback: (tx: unknown) => Promise<unknown>) =>
+      callback({
+        device: {
+          update: async (args: { where: Record<string, unknown> }) => {
+            filters.push(args.where);
+            return stored;
+          },
+          deleteMany: async (args: { where: Record<string, unknown> }) => {
+            filters.push(args.where);
+            return { count: 1 };
+          },
+        },
+        auditLog: { create: async () => undefined },
+      }),
+  } as never);
+
+  await service.updateDevice("device-a", { name: "POS 2" }, owner);
+  await service.deleteDevice("device-a", owner);
+  await service.heartbeat("hardware-a", undefined, owner);
+  await service.deleteDevices(["device-a", "device-b"], owner);
+
+  const expectedWhere = {
+    id: "device-a",
+    branchId: "branch-a",
+    branch: { tenantId: "tenant-a" },
+  };
+  assert.deepEqual(filters, [
+    expectedWhere,
+    expectedWhere,
+    expectedWhere,
+    expectedWhere,
+    expectedWhere,
+  ]);
 });

@@ -3,16 +3,14 @@ import { OrderStatus, PaymentStatus, Prisma, ShiftStatus } from "@prisma/client"
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { resolveRestaurantScope } from "../../common/auth/tenant-scope";
 import { PrismaService } from "../../prisma/prisma.service";
-import { endOfDay, startOfDay } from "../reports/report-range";
+import { resolveReportRange } from "../reports/report-range";
 
 @Injectable()
 export class DashboardService {
   constructor(private readonly prisma: PrismaService) {}
 
   async getSummary(user: AuthenticatedUser, requestedBranchId?: string) {
-    const now = new Date();
-    const from = startOfDay(now);
-    const to = endOfDay(now);
+    const { from, to } = resolveReportRange({});
     const { tenantId, branchId } = await resolveRestaurantScope(
       this.prisma,
       user,

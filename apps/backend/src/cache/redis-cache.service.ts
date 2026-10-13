@@ -1,4 +1,9 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from "@nestjs/common";
+import {
+  Injectable,
+  Logger,
+  OnModuleDestroy,
+  OnModuleInit,
+} from "@nestjs/common";
 import Redis from "ioredis";
 
 type MemoryEntry = { value: string; expiresAt: number };
@@ -34,7 +39,9 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       redis.disconnect();
       const message = error instanceof Error ? error.message : "unknown error";
-      this.logger.warn(`Redis cache unavailable, using in-memory fallback: ${message}`);
+      this.logger.warn(
+        `Redis cache unavailable, using in-memory fallback: ${message}`,
+      );
     }
   }
 
@@ -59,6 +66,36 @@ export class RedisCacheService implements OnModuleInit, OnModuleDestroy {
 
   async setJson(key: string, value: unknown, ttlMs: number): Promise<void> {
     await this.set(key, JSON.stringify(value), ttlMs);
+  }
+  async setIfAbsent(key: string, ttlMs: number): Promise<boolean | null> {
+    if (this.redis) {
+      try {
+        return (
+          (await this.redis.set(
+            key,
+            "1",
+            "PX",
+            Math.max(1, Math.trunc(ttlMs)),
+            "NX",
+          )) === "OK"
+        );
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : "unknown error";
+        this.logger.warn(
+          `Redis claim unavailable; duplicate protection failed: ${message}`,
+        );
+        return null;
+      }
+    }
+    const current = this.memory.get(key);
+    if (current && current.expiresAt > Date.now()) return false;
+    this.memory.set(key, {
+      value: "1",
+      expiresAt: Date.now() + Math.max(1, ttlMs),
+    });
+    this.sweepExpiredMemoryEntries();
+    return true;
   }
 
   async delete(key: string): Promise<void> {

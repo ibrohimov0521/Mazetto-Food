@@ -1,15 +1,12 @@
-export const staffRoleCodes = [
-  "SUPER_ADMIN",
-  "ADMIN",
-  "BRANCH_MANAGER",
-  "CASHIER",
-  "WAITER",
-  "KITCHEN",
-  "COURIER",
-  "ACCOUNTANT",
-] as const;
-
-export type StaffRoleCode = (typeof staffRoleCodes)[number];
+export type StaffRoleCode =
+  | "SUPER_ADMIN"
+  | "ADMIN"
+  | "BRANCH_MANAGER"
+  | "CASHIER"
+  | "WAITER"
+  | "KITCHEN"
+  | "COURIER"
+  | "ACCOUNTANT";
 
 export const branchScopedStaffRoles = new Set<StaffRoleCode>([
   "ADMIN",

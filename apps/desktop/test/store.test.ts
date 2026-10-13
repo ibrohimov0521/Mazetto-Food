@@ -302,6 +302,7 @@ test("desktop cache scope follows membership and effective permissions", async (
   const otherMembership = authorization({ membershipId: "membership-2" });
   const otherTenant = authorization({ tenantId: "tenant-2" });
   const changedCredentials = authorization({ credentialVersion: 8 });
+  const otherEmployee = authorization({ employeeId: "employee-2" });
   const fullScope = DesktopStore.authScope(fullAccess);
   const reducedScope = DesktopStore.authScope(reducedAccess);
   const fullMutationScope = DesktopStore.mutationScope(fullAccess);
@@ -315,6 +316,7 @@ test("desktop cache scope follows membership and effective permissions", async (
     assert.notEqual(fullScope, DesktopStore.authScope(otherMembership));
     assert.notEqual(fullScope, DesktopStore.authScope(otherTenant));
     assert.notEqual(fullScope, DesktopStore.authScope(changedCredentials));
+    assert.notEqual(fullScope, DesktopStore.authScope(otherEmployee));
     assert.equal(fullMutationScope, DesktopStore.mutationScope(reducedAccess));
     assert.notEqual(
       fullMutationScope,
@@ -493,10 +495,28 @@ test("successful local print attempts are durably audited", async () => {
     assert.ok(job);
     const attemptId = store.markLocalPrintJobPrinting(job.id);
     assert.equal(typeof attemptId, "string");
+    store.recordPrintTarget("local", job.id, "Till A", "printed");
+    store.recordPrintTarget("local", job.id, "Till B", "ambiguous");
     store.completeLocalPrintJob(job.id, attemptId as string);
     assert.equal(
       store.wasLocalDocumentPrinted("printed-audit", "RECEIPT"),
       true,
+    );
+    assert.equal(
+      store.wasLocalDocumentPrinted("printed-audit", "RECEIPT", "Till A"),
+      true,
+    );
+    assert.equal(
+      store.wasLocalDocumentPrinted("printed-audit", "RECEIPT", "Till B"),
+      false,
+    );
+    assert.equal(
+      store.wasLocalDocumentAmbiguous("printed-audit", "RECEIPT", "Till B"),
+      true,
+    );
+    assert.equal(
+      store.wasLocalDocumentAmbiguous("printed-audit", "RECEIPT", "Till A"),
+      false,
     );
   } finally {
     store.close();
@@ -599,6 +619,138 @@ test("offline mutation and local print jobs commit atomically", async () => {
   }
 });
 
+test("idempotent offline replay preserves the first command and its print jobs", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const input = {
+    idempotencyKey: "offline-sale-replay",
+    commandType: "pos.order.create",
+    aggregateType: "orders",
+    actorId: "cashier-1",
+    branchId: "branch-1",
+    authScope: "cashier-scope",
+  };
+  const jobs = (orderId: string): LocalPrintJobInput[] => [
+    {
+      logicalKey: orderId + ":RECEIPT",
+      branchId: "branch-1",
+      documentType: "RECEIPT",
+      payload: { orderId },
+    },
+    {
+      logicalKey: orderId + ":KITCHEN",
+      branchId: "branch-1",
+      documentType: "KITCHEN",
+      payload: { orderId },
+    },
+  ];
+
+  try {
+    const first = store.enqueueMutationWithLocalPrintJobs(
+      {
+        ...input,
+        aggregateId: "local-order-1",
+        payload: { localAggregateId: "local-order-1" },
+      },
+      jobs("local-order-1"),
+    );
+    const replay = store.enqueueMutationWithLocalPrintJobs(
+      {
+        ...input,
+        aggregateId: "local-order-1",
+        payload: { localAggregateId: "local-order-1" },
+      },
+      jobs("local-order-1"),
+    );
+
+    assert.equal(replay.id, first.id);
+    assert.equal(replay.aggregateId, "local-order-1");
+    assert.equal(replay.payloadJson, first.payloadJson);
+    assert.equal(store.listLocalPrintJobs().length, 2);
+    assert.throws(
+      () =>
+        store.enqueueMutationWithLocalPrintJobs(
+          {
+            ...input,
+            aggregateId: "local-order-2",
+            payload: { localAggregateId: "local-order-2" },
+          },
+          jobs("local-order-2"),
+        ),
+      /different command identity/,
+    );
+    assert.throws(
+      () =>
+        store.enqueueMutationWithLocalPrintJobs(
+          {
+            ...input,
+            actorId: "cashier-2",
+            aggregateId: "local-order-3",
+            payload: { localAggregateId: "local-order-3" },
+          },
+          jobs("local-order-3"),
+        ),
+      /different command identity/,
+    );
+    assert.equal(store.listLocalPrintJobs().length, 2);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("offline idempotency binds the original request and employee, not generated local IDs", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  const identity = {
+    idempotencyKey: "stable-offline-request",
+    commandType: "pos.order.create",
+    aggregateType: "orders",
+    actorId: "cashier-1",
+    branchId: "branch-1",
+    authScope: "cashier-scope",
+  };
+
+  try {
+    const first = store.enqueueMutation({
+      ...identity,
+      aggregateId: "local-generated-first",
+      payload: {
+        requestFingerprint: "request-a",
+        queuedEmployeeId: "employee-a",
+        localAggregateId: "local-generated-first",
+      },
+    });
+    const replay = store.resolveIdempotentMutation({
+      ...identity,
+      requestFingerprint: "request-a",
+      queuedEmployeeId: "employee-a",
+    });
+
+    assert.equal(replay?.id, first.id);
+    assert.throws(
+      () =>
+        store.resolveIdempotentMutation({
+          ...identity,
+          requestFingerprint: "request-b",
+          queuedEmployeeId: "employee-a",
+        }),
+      /different command identity/,
+    );
+    assert.throws(
+      () =>
+        store.resolveIdempotentMutation({
+          ...identity,
+          requestFingerprint: "request-a",
+          queuedEmployeeId: "employee-b",
+        }),
+      /different command identity/,
+    );
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 test("offline mutation rolls back when a local print job cannot be serialized", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
@@ -647,6 +799,126 @@ test("offline mutation rolls back when a local print job cannot be serialized", 
   }
 });
 
+test("outbox cancellation blocks financial or already-sent mutations", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-outbox-cancel-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  try {
+    const payment = store.enqueueMutation({
+      idempotencyKey: "cancel-payment-key",
+      commandType: "payment.process",
+      aggregateType: "payments",
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "cashier-scope",
+      payload: {
+        method: "POST",
+        body: JSON.stringify({ orderId: "order-12345678" }),
+      },
+    });
+    assert.equal(store.listOutbox()[0]?.canCancel, false);
+    assert.equal(store.cancelMutation(payment.id), false);
+
+    const sent = store.enqueueMutation({
+      idempotencyKey: "cancel-sent-key",
+      commandType: "order.status.update",
+      aggregateType: "orders",
+      aggregateId: "order-12345678",
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "cashier-scope",
+      payload: {
+        method: "PATCH",
+        targetUrl: "https://api.test/orders/order-12345678/status",
+      },
+    });
+    assert.equal(store.markMutationSending(sent.id), true);
+    store.markMutationPending(sent.id, "connection reset");
+    assert.equal(store.cancelMutation(sent.id), false);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("outbox cancellation atomically stops its unprinted cancellation document", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "mazetto-outbox-print-cancel-"),
+  );
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  try {
+    const orderId = "order-cancel-12345678";
+    const command = store.enqueueMutation({
+      idempotencyKey: "cancel-unsent-status-key",
+      commandType: "order.status.update",
+      aggregateType: "orders",
+      aggregateId: orderId,
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "cashier-scope",
+      payload: {
+        method: "PATCH",
+        body: JSON.stringify({ status: "CANCELLED" }),
+      },
+    });
+    store.enqueueLocalPrintJob({
+      logicalKey: orderId + ":CANCELLATION",
+      branchId: "branch-1",
+      documentType: "CANCELLATION",
+      payload: { orderId },
+    });
+
+    assert.equal(store.listOutbox()[0]?.canCancel, true);
+    assert.equal(store.cancelMutation(command.id), true);
+    assert.equal(store.summary().pendingCommands, 0);
+    assert.equal(store.claimLocalPrintJob(["CANCELLATION"]), null);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("outbox cancellation refuses an order mutation with a dependent command", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-outbox-dependent-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+  try {
+    const orderId = "order-dependent-12345678";
+    const parent = store.enqueueMutation({
+      idempotencyKey: "cancel-parent-key",
+      commandType: "order.status.update",
+      aggregateType: "orders",
+      aggregateId: orderId,
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "cashier-scope",
+      payload: {
+        method: "PATCH",
+        targetUrl: "https://api.test/orders/" + orderId + "/status",
+      },
+    });
+    store.enqueueMutation({
+      idempotencyKey: "cancel-child-key",
+      commandType: "kitchen.action",
+      aggregateType: "kitchen",
+      aggregateId: orderId,
+      actorId: "cashier-1",
+      branchId: "branch-1",
+      authScope: "other-cashier-scope",
+      payload: {
+        method: "PATCH",
+        targetUrl: "https://api.test/kitchen/orders/" + orderId + "/ready",
+      },
+    });
+
+    assert.equal(
+      store.listOutbox().find((item) => item.id === parent.id)?.canCancel,
+      false,
+    );
+    assert.equal(store.cancelMutation(parent.id), false);
+  } finally {
+    store.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
 test("local print retries back off and stop at the dead-letter limit", async () => {
   const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
   const store = new DesktopStore(join(directory, "test.sqlite"));
@@ -799,8 +1071,9 @@ test("desktop store lists, retries and cancels queued mutations", async () => {
     assert.equal(store.retryMutation(command.id), true);
     assert.equal(store.summary().pendingCommands, 1);
 
-    assert.equal(store.cancelMutation(command.id), true);
-    assert.equal(store.listOutbox().length, 0);
+    assert.equal(store.listOutbox()[0]?.canCancel, false);
+    assert.equal(store.cancelMutation(command.id), false);
+    assert.equal(store.listOutbox().length, 1);
   } finally {
     store.close();
     await rm(directory, { recursive: true, force: true });
@@ -979,6 +1252,44 @@ test("printer target receipts persist and ambiguous jobs stop automatic retries"
       reopened.close();
     }
   } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test("a successful printer target stays recorded when another target fails", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "mazetto-desktop-"));
+  const store = new DesktopStore(join(directory, "test.sqlite"));
+
+  try {
+    store.enqueueLocalPrintJob({
+      logicalKey: "partial-audit:RECEIPT",
+      branchId: "branch-1",
+      documentType: "RECEIPT",
+      payload: { orderId: "partial-audit" },
+    });
+    const job = store.claimLocalPrintJob(["RECEIPT"]);
+    assert.ok(job);
+    const attemptId = store.markLocalPrintJobPrinting(job.id);
+    assert.equal(typeof attemptId, "string");
+    store.recordPrintTarget("local", job.id, "Till A", "printed");
+    store.failLocalPrintJob(
+      job.id,
+      "Till B is offline",
+      new Date(),
+      false,
+      attemptId as string,
+    );
+
+    assert.equal(
+      store.wasLocalDocumentPrinted("partial-audit", "RECEIPT", "Till A"),
+      true,
+    );
+    assert.equal(
+      store.wasLocalDocumentPrinted("partial-audit", "RECEIPT", "Till B"),
+      false,
+    );
+  } finally {
+    store.close();
     await rm(directory, { recursive: true, force: true });
   }
 });

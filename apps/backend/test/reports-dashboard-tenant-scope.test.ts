@@ -135,7 +135,13 @@ test("dashboard summary aggregates only the resolved tenant", async () => {
     },
   } as never);
 
-  await service.getSummary(owner);
+  const summary = await service.getSummary(owner);
+  assert.equal(summary.period.from.getUTCHours(), 19);
+  assert.equal(summary.period.to.getUTCHours(), 18);
+  assert.equal(
+    summary.period.to.getTime() - summary.period.from.getTime(),
+    24 * 60 * 60 * 1000 - 1,
+  );
   assert.deepEqual(filters.get("payments")?.status, {
     in: ["PAID", "SUCCESS", "PARTIALLY_REFUNDED"],
   });

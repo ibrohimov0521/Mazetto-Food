@@ -1,3 +1,5 @@
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
+import { resolveRestaurantTenantId } from "../src/common/auth/tenant-scope";
 import {
   EmployeeStatus,
   KitchenTicketStatus,
@@ -17,6 +19,7 @@ import { OrdersService } from "../src/modules/orders/orders.service";
 import type { CreatePosCheckoutDto } from "../src/modules/orders/dto/pos-checkout.dto";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { PrismaService } from "../src/prisma/prisma.service";
+import { SettingsService } from "../src/modules/settings/settings.service";
 import { loadEnvironmentFile } from "../src/config/env";
 
 // Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
@@ -35,6 +38,7 @@ type Fixture = {
   products: {
     simpleId: string;
     variantId: string;
+    variantProductId: string;
     wrongVariantProductId: string;
     modifierProductId: string;
     modifierId: string;
@@ -51,12 +55,13 @@ async function main(): Promise<void> {
   await prisma.$connect();
 
   try {
+    const settingsService = new SettingsService(prisma, {} as never);
     const kitchenService = new KitchenService(prisma, {
       emitOrderCreated: () => undefined,
       emitOrderConfirmed: () => undefined,
       emitOrderSentToKitchen: () => undefined,
       emitOrderStatusChanged: () => undefined,
-    } as never);
+    } as never, settingsService);
     const ordersService = new OrdersService(prisma, new InventoryService(prisma), kitchenService);
     const fixture = await createFixture(prisma);
 
@@ -88,15 +93,19 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
   const setCategory = await prisma.category.create({
     data: { code: `POS_SET_${runId}`, name: "POS Sets", sortOrder: 2, isActive: true },
   });
-  const cashMethod = await prisma.paymentMethod.create({
-    data: { code: `CASH`, name: "Naqd", isActive: true },
-  });
+  const cashMethod =
+    (await prisma.paymentMethod.findFirst({
+      where: { code: "CASH", branchId: null },
+    })) ??
+    (await prisma.paymentMethod.create({
+      data: { code: "CASH", name: "Naqd", isActive: true },
+    }));
   assert.equal(cashMethod.code, "CASH");
 
   const simple = await prisma.product.create({
     data: {
       categoryId: category.id,
-      code: "CLASSIC_LAVASH",
+      code: `CLASSIC_LAVASH_${runId}`,
       name: `POS Simple ${runId}`,
       sellingPrice: new Prisma.Decimal(12000),
       isAvailable: true,
@@ -106,7 +115,7 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
   const variantProduct = await prisma.product.create({
     data: {
       categoryId: category.id,
-      code: "BIG_LAVASH",
+      code: `BIG_LAVASH_${runId}`,
       name: `POS Variant ${runId}`,
       sellingPrice: new Prisma.Decimal(20000),
       isAvailable: true,
@@ -122,7 +131,7 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
   const wrongVariantProduct = await prisma.product.create({
     data: {
       categoryId: category.id,
-      code: "LAVASH_CHEESE",
+      code: `LAVASH_CHEESE_${runId}`,
       name: `POS Wrong Variant ${runId}`,
       sellingPrice: new Prisma.Decimal(13000),
       variants: {
@@ -140,7 +149,7 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
   const set = await prisma.product.create({
     data: {
       categoryId: setCategory.id,
-      code: "SET_LAVASH_TRIO",
+      code: `SET_LAVASH_TRIO_${runId}`,
       name: `POS Set ${runId}`,
       sellingPrice: new Prisma.Decimal(50000),
       isCombo: true,
@@ -152,7 +161,7 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
   await prisma.product.create({
     data: {
       categoryId: category.id,
-      code: "MINI_LAVASH",
+      code: `MINI_LAVASH_${runId}`,
       name: `POS Legacy ${runId}`,
       sellingPrice: new Prisma.Decimal(9000),
       isAvailable: true,
@@ -161,7 +170,7 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
   const unavailable = await prisma.product.create({
     data: {
       categoryId: category.id,
-      code: "CHICKEN_LAVASH",
+      code: `CHICKEN_LAVASH_${runId}`,
       name: `POS Unavailable ${runId}`,
       sellingPrice: new Prisma.Decimal(11000),
       isAvailable: true,
@@ -244,6 +253,7 @@ async function createFixture(prisma: PrismaService): Promise<Fixture> {
     products: {
       simpleId: simple.id,
       variantId: variantProduct.variants.find((variant) => variant.name === "Katta")!.id,
+      variantProductId: variantProduct.id,
       wrongVariantProductId: wrongVariantProduct.id,
       modifierProductId: simple.id,
       modifierId: modifier.id,
@@ -274,32 +284,36 @@ async function proveSimpleSale(prisma: PrismaService, ordersService: OrdersServi
 }
 
 async function proveMultiVariantModifierAndSetSale(prisma: PrismaService, ordersService: OrdersService, fixture: Fixture): Promise<void> {
+  await assert.rejects(
+    () => ordersService.createPosCheckout(
+      simpleDto(
+        fixture,
+        "multi-invalid-variant",
+        [
+          { productId: fixture.products.wrongVariantProductId, variantId: fixture.products.variantId, quantity: 1 },
+        ],
+        50000,
+      ),
+      fixture.cashier,
+    ),
+    /variant/i,
+  );
+
   const result = await ordersService.createPosCheckout(
     simpleDto(
       fixture,
-      "multi",
+      "multi-valid",
       [
         { productId: fixture.products.simpleId, quantity: 1, modifiers: [{ modifierId: fixture.products.modifierId, quantity: 1 }] },
-        { productId: fixture.products.wrongVariantProductId, variantId: fixture.products.variantId, quantity: 1 },
+        { productId: fixture.products.variantProductId, variantId: fixture.products.variantId, quantity: 1 },
         { productId: fixture.products.setId, quantity: 1 },
       ],
       100000,
     ),
     fixture.cashier,
-  ).catch(async () => ordersService.createPosCheckout(
-    simpleDto(
-      fixture,
-      "multi-fixed",
-      [
-        { productId: fixture.products.simpleId, quantity: 1, modifiers: [{ modifierId: fixture.products.modifierId, quantity: 1 }] },
-        { productId: fixture.products.setId, quantity: 1 },
-      ],
-      100000,
-    ),
-    fixture.cashier,
-  ));
+  );
 
-  await assertPosOrderGraph(prisma, result.order.id, fixture, { total: "65000", itemCount: 2 });
+  await assertPosOrderGraph(prisma, result.order.id, fixture, { total: "93000", itemCount: 3 });
   assert.equal(await prisma.productBundleItem.count({ where: { bundleProductId: fixture.products.setId } }), 1);
 }
 
@@ -319,7 +333,7 @@ async function proveIdempotency(prisma: PrismaService, ordersService: OrdersServ
 }
 
 async function proveValidationFailures(ordersService: OrdersService, fixture: Fixture): Promise<void> {
-  await assert.rejects(() => ordersService.createPosCheckout(simpleDto(fixture, "cash-low", [{ productId: fixture.products.simpleId, quantity: 1 }], 1), fixture.cashier), /Received cash/);
+  await assert.rejects(() => ordersService.createPosCheckout(simpleDto(fixture, "cash-low", [{ productId: fixture.products.simpleId, quantity: 1 }], 1), fixture.cashier), /Qabul qilingan naqd pul/);
   await assert.rejects(() => ordersService.createPosCheckout(simpleDto(fixture, "bad-variant", [{ productId: fixture.products.simpleId, variantId: fixture.products.variantId, quantity: 1 }], 50000), fixture.cashier), /variant/);
   await assert.rejects(() => ordersService.createPosCheckout(simpleDto(fixture, "bad-mod", [{ productId: fixture.products.simpleId, quantity: 1, modifiers: [{ modifierId: fixture.products.invalidModifierId, quantity: 1 }] }], 50000), fixture.cashier), /modifier/i);
 }
@@ -362,12 +376,43 @@ async function proveKitchenLifecycle(
 ): Promise<void> {
   const result = await ordersService.createPosCheckout(simpleDto(fixture, "kitchen-flow", [{ productId: fixture.products.simpleId, quantity: 1 }], 50000), fixture.cashier);
   const ticket = await prisma.kitchenTicket.findFirstOrThrow({ where: { orderId: result.order.id } });
-  await kitchenService.acceptTicket(ticket.id, fixture.kitchen);
-  await kitchenService.startTicket(ticket.id, fixture.kitchen);
-  await kitchenService.readyTicket(ticket.id, fixture.kitchen);
-  await kitchenService.completeTicket(ticket.id, fixture.kitchen);
-  const completed = await prisma.kitchenTicket.findUniqueOrThrow({ where: { id: ticket.id } });
-  assert.equal(completed.status, KitchenTicketStatus.COMPLETED);
+
+  const hiddenQueue = await kitchenService.listOrders(fixture.kitchen);
+  assert.ok(!hiddenQueue.some((item) => item.id === ticket.id));
+  await assert.rejects(
+    () => kitchenService.acceptTicket(ticket.id, fixture.kitchen),
+    /Oshxona chiptasi topilmadi/,
+  );
+
+  const tenantId = await resolveRestaurantTenantId(prisma, fixture.kitchen);
+  const settingKey = "kitchen_pos_orders_enabled";
+  const settingWhere = { tenantId_key: { tenantId, key: settingKey } };
+  const previousSetting = await prisma.setting.findUnique({ where: settingWhere });
+  try {
+    await prisma.setting.upsert({
+      where: settingWhere,
+      create: { tenantId, key: settingKey, value: "true" },
+      update: { value: "true" },
+    });
+    const visibleQueue = await kitchenService.listOrders(fixture.kitchen);
+    assert.ok(visibleQueue.some((item) => item.id === ticket.id));
+
+    await kitchenService.acceptTicket(ticket.id, fixture.kitchen);
+    await kitchenService.startTicket(ticket.id, fixture.kitchen);
+    await kitchenService.readyTicket(ticket.id, fixture.kitchen);
+    await kitchenService.completeTicket(ticket.id, fixture.kitchen);
+    const completed = await prisma.kitchenTicket.findUniqueOrThrow({ where: { id: ticket.id } });
+    assert.equal(completed.status, KitchenTicketStatus.COMPLETED);
+  } finally {
+    if (previousSetting) {
+      await prisma.setting.update({
+        where: settingWhere,
+        data: { value: previousSetting.value },
+      });
+    } else {
+      await prisma.setting.deleteMany({ where: { tenantId, key: settingKey } });
+    }
+  }
 }
 
 async function assertPosOrderGraph(
@@ -406,6 +451,24 @@ async function assertPosOrderGraph(
     }),
     1,
   );
+  await assertReceiptPrintIntent(prisma, orderId, "RECEIPT");
+  await assertReceiptPrintIntent(prisma, orderId, "KITCHEN");
+}
+
+async function assertReceiptPrintIntent(
+  prisma: PrismaService,
+  orderId: string,
+  documentType: "RECEIPT" | "KITCHEN",
+): Promise<void> {
+  const receipt = await prisma.receipt.findFirst({
+    where: { orderId, documentType },
+    select: { id: true },
+  });
+  assert.ok(receipt, `${documentType} receipt should be persisted`);
+  assert.ok(
+    (await prisma.printJob.count({ where: { receiptId: receipt.id } })) > 0,
+    `${documentType} receipt should create at least one durable print job`,
+  );
 }
 
 function simpleDto(
@@ -426,11 +489,20 @@ function assertIsolatedDatabase(): void {
     throw new Error("MAZETTO_POS_DB_SMOKE=1 is required");
   }
 
-  const databaseUrl = process.env.DATABASE_URL ?? "";
-
-  if (!/localhost|127\.0\.0\.1/.test(databaseUrl) || /mazettofood|production|dokploy/i.test(databaseUrl)) {
-    throw new Error("Refusing to run POS DB smoke outside an isolated localhost database");
+  const isOrderE2e = process.env.MAZETTO_E2E_ISOLATED_DB === "1";
+  const expectedPort = isOrderE2e
+    ? new URL(process.env.MAZETTO_E2E_ADMIN_DATABASE_URL ?? "").port
+    : undefined;
+  if (isOrderE2e && !expectedPort) {
+    throw new Error("A loopback E2E admin database URL is required");
   }
+  assertDisposableLoopbackDatabase(
+    process.env.DATABASE_URL,
+    isOrderE2e
+      ? /^mazetto_step8_release_[a-z0-9_]+$/i
+      : /^(?:pos_qa|mazetto_reports_isolated_[a-z0-9_]+)$/i,
+    isOrderE2e ? expectedPort! : ["5432", "5433"],
+  );
 }
 
 void main();

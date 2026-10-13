@@ -194,8 +194,8 @@ assert.match(authCache, /const TTL_SECONDS = 30/);
 // Xodim profilini o'zgartiradigan yoki o'chiradigan har bir yo'l keshni tozalashi kerak.
 assert.equal(
   (staffService.match(/this\.invalidateUserAccess\(/g) ?? []).length,
-  9,
-  "to'qqiz mutatsiya yo'li ham foydalanuvchi access keshini tozalashi kerak",
+  10,
+  "individual va ommaviy mutatsiya yo'llari access keshini tozalashi kerak",
 );
 assert.match(staffService, /private async invalidateUserAccess\([\s\S]*this\.userAuthCache\.invalidate\(userId\)/);
 

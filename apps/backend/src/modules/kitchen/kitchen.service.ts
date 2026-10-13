@@ -4,23 +4,27 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from "@nestjs/common";
 import {
   KitchenTicketStatus,
   OrderItemStatus,
   OrderState,
+  OrderSource,
   OrderStatus,
   OrderType,
   PaymentStatus,
   Prisma,
 } from "@prisma/client";
-import { randomUUID } from "node:crypto";
+import { allocateKitchenTicketNumber } from "./kitchen-ticket-number";
 import {
   resolveRestaurantScope,
   resolveSoleActiveTenantId,
 } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
+import { kitchenRoutedItems } from "../menu/product-printer-routing";
+import { SettingsService } from "../settings/settings.service";
 import {
   MAX_ACTIVE_KITCHEN_TICKETS,
   trimKitchenQueue,
@@ -38,6 +42,10 @@ import {
   kitchenHistoryModifiers,
   kitchenHistoryRange,
 } from "./kitchen-history-range";
+import {
+  kitchenPosOrderVisibilityWhere,
+  isKitchenPosOrder,
+} from "./kitchen-order-visibility";
 
 type TransactionClient = Prisma.TransactionClient;
 export type KitchenStaffAction =
@@ -49,6 +57,7 @@ export type KitchenStaffAction =
 type KitchenTransitionActor = {
   user?: AuthenticatedUser;
   reasonPrefix: string;
+  enforceKitchenPosVisibility?: boolean;
   cancellationReason?: string;
   expectedVersion?: number;
   correlationId?: string;
@@ -72,6 +81,7 @@ type KitchenTransitionOrder = {
   id: string;
   branchId: string;
   type: OrderType;
+  source: OrderSource;
   status: OrderStatus;
   orderState: OrderState;
   version: number;
@@ -105,6 +115,7 @@ export class KitchenService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly gateway: KitchenGateway,
+    @Optional() private readonly settings?: SettingsService,
   ) {}
 
   async listOrders(user: AuthenticatedUser) {
@@ -114,12 +125,18 @@ export class KitchenService {
   async listOrdersWithOverflow(user: AuthenticatedUser) {
     this.requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
+    const showCashierPosOrders =
+      (await this.settings?.getBool(
+        "kitchen_pos_orders_enabled",
+        scope.tenantId,
+      )) ?? false;
 
     const where = {
       order: {
         ...(scope.branchId
           ? { branchId: scope.branchId }
           : { branch: { tenantId: scope.tenantId } }),
+        ...kitchenPosOrderVisibilityWhere(showCashierPosOrders),
         status: {
           notIn: [
             OrderStatus.SERVED,
@@ -143,7 +160,10 @@ export class KitchenService {
       orderBy: [{ priority: "desc" }, { createdAt: "asc" }],
       take: MAX_ACTIVE_KITCHEN_TICKETS + 1,
     });
-    return trimKitchenQueue(tickets);
+    return {
+      ...trimKitchenQueue(tickets),
+      kitchenPosOrdersEnabled: showCashierPosOrders,
+    };
   }
 
   async listHistory(
@@ -159,6 +179,11 @@ export class KitchenService {
     user: AuthenticatedUser,
   ) {
     const scope = await resolveRestaurantScope(this.prisma, user);
+    const showCashierPosOrders =
+      (await this.settings?.getBool(
+        "kitchen_pos_orders_enabled",
+        scope.tenantId,
+      )) ?? false;
     const range = kitchenHistoryRange(query.from, query.to);
     const status = this.toKitchenTicketStatus(query.status);
     const search = query.search?.trim();
@@ -170,6 +195,7 @@ export class KitchenService {
           ...(scope.branchId
             ? { branchId: scope.branchId }
             : { branch: { tenantId: scope.tenantId } }),
+          ...kitchenPosOrderVisibilityWhere(showCashierPosOrders),
           createdAt: { gte: range.start, lt: range.end },
           ...(search
             ? {
@@ -265,54 +291,46 @@ export class KitchenService {
         "Oshxona chiptasi uchun kamida bitta faol mahsulot kerak",
       );
     }
+    const kitchenItems = kitchenRoutedItems(order.items);
+    if (kitchenItems.length === 0) return null;
 
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      try {
-        return await tx.kitchenTicket.create({
-          data: {
-            orderId,
-            ticketNumber: this.createTicketNumber(),
-            revisionNumber: order.supplementNumber ?? 1,
-            isSupplement: order.isSupplemental,
-            sourceOrderVersion: order.version,
-            items: {
-              create: order.items.map((item) => ({
-                orderItemId: item.id,
-                productName: item.productName,
-                variantName: item.variantName,
-                quantity: item.quantity,
-                notes: item.notes,
-                modifierSnapshot: item.modifierSnapshot ?? Prisma.JsonNull,
-                stationRouting: item.product?.printerRouting ?? "NONE",
-                printerIdSnapshot: item.product?.printer?.id ?? null,
-                printerNameSnapshot: item.product?.printer?.name ?? null,
-                printerTypeSnapshot: item.product?.printer?.type ?? null,
-                status: item.status,
-              })),
-            },
-            events: {
-              create: {
-                eventType: order.isSupplemental
-                  ? "KitchenSupplementCreated"
-                  : "KitchenTicketCreated",
-                newStatus: KitchenTicketStatus.NEW,
-                reason: order.isSupplemental
-                  ? `Qo'shimcha #${order.supplementNumber ?? 1}`
-                  : "Asosiy buyurtma oshxonaga yuborildi",
-                version: 1,
-              },
-            },
+    return tx.kitchenTicket.create({
+      data: {
+        orderId,
+        ticketNumber: await this.createTicketNumber(tx),
+        revisionNumber: order.supplementNumber ?? 1,
+        isSupplement: order.isSupplemental,
+        sourceOrderVersion: order.version,
+        items: {
+          create: kitchenItems.map((item) => ({
+            orderItemId: item.id,
+            productName: item.productName,
+            variantName: item.variantName,
+            quantity: item.quantity,
+            notes: item.notes,
+            modifierSnapshot: item.modifierSnapshot ?? Prisma.JsonNull,
+            stationRouting: item.product?.printerRouting ?? "KITCHEN",
+            printerIdSnapshot: item.product?.printer?.id ?? null,
+            printerNameSnapshot: item.product?.printer?.name ?? null,
+            printerTypeSnapshot: item.product?.printer?.type ?? null,
+            status: item.status,
+          })),
+        },
+        events: {
+          create: {
+            eventType: order.isSupplemental
+              ? "KitchenSupplementCreated"
+              : "KitchenTicketCreated",
+            newStatus: KitchenTicketStatus.NEW,
+            reason: order.isSupplemental
+              ? `Qo'shimcha #${order.supplementNumber ?? 1}`
+              : "Asosiy buyurtma oshxonaga yuborildi",
+            version: 1,
           },
-          include: this.ticketInclude(),
-        });
-      } catch (error) {
-        if (!this.isUniqueTicketError(error) || attempt === 4) {
-          throw error;
-        }
-      }
-    }
-
-    throw new BadRequestException("Unable to create kitchen ticket");
+        },
+      },
+      include: this.ticketInclude(),
+    });
   }
 
   async acceptTicket(id: string, user: AuthenticatedUser) {
@@ -343,12 +361,20 @@ export class KitchenService {
   async getTicket(id: string, user: AuthenticatedUser) {
     this.requireEmployee(user);
     const scope = await resolveRestaurantScope(this.prisma, user);
+    const showCashierPosOrders =
+      (await this.settings?.getBool(
+        "kitchen_pos_orders_enabled",
+        scope.tenantId,
+      )) ?? false;
     const ticket = await this.prisma.kitchenTicket.findFirst({
       where: {
         id,
-        order: scope.branchId
-          ? { branchId: scope.branchId }
-          : { branch: { tenantId: scope.tenantId } },
+        order: {
+          ...(scope.branchId
+            ? { branchId: scope.branchId }
+            : { branch: { tenantId: scope.tenantId } }),
+          ...kitchenPosOrderVisibilityWhere(showCashierPosOrders),
+        },
       },
       include: this.ticketInclude(),
     });
@@ -421,12 +447,20 @@ export class KitchenService {
     context?: KitchenTicketActionContext,
   ) {
     const scope = await resolveRestaurantScope(this.prisma, user);
+    const showCashierPosOrders =
+      (await this.settings?.getBool(
+        "kitchen_pos_orders_enabled",
+        scope.tenantId,
+      )) ?? false;
     const existingTicket = await this.prisma.kitchenTicket.findFirst({
       where: {
         id,
-        order: scope.branchId
-          ? { branchId: scope.branchId }
-          : { branch: { tenantId: scope.tenantId } },
+        order: {
+          ...(scope.branchId
+            ? { branchId: scope.branchId }
+            : { branch: { tenantId: scope.tenantId } }),
+          ...kitchenPosOrderVisibilityWhere(showCashierPosOrders),
+        },
       },
       select: { orderId: true },
     });
@@ -444,6 +478,7 @@ export class KitchenService {
 
     return this.applyOrderAction(existingTicket.orderId, action, {
       user,
+      enforceKitchenPosVisibility: true,
       reasonPrefix: "Kitchen UI",
       cancellationReason: trimmed
         ? `Oshxona bekor qildi: ${trimmed}`
@@ -488,6 +523,16 @@ export class KitchenService {
       const order = await this.findOrderForTransition(tx, orderId, scope);
       if (!order) {
         throw new NotFoundException("Order not found");
+      }
+
+      if (actor.enforceKitchenPosVisibility && isKitchenPosOrder(order)) {
+        const enabled =
+          (await this.settings?.getBool(
+            "kitchen_pos_orders_enabled",
+            scope.tenantId,
+            tx,
+          )) ?? false;
+        if (!enabled) throw new NotFoundException("Oshxona chiptasi topilmadi");
       }
 
       const storedTicket = order.kitchenTickets[0] ?? null;
@@ -920,6 +965,7 @@ export class KitchenService {
       select: {
         id: true,
         branchId: true,
+        source: true,
         type: true,
         status: true,
         orderState: true,
@@ -1148,17 +1194,7 @@ export class KitchenService {
     return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
   }
 
-  private createTicketNumber(): string {
-    const now = new Date();
-    const date = now.toISOString().slice(0, 10).replaceAll("-", "");
-    const suffix = randomUUID().replaceAll("-", "").slice(0, 12).toUpperCase();
-    return `KDS-${date}-${suffix}`;
-  }
-
-  private isUniqueTicketError(error: unknown): boolean {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    );
+  private createTicketNumber(tx: TransactionClient): Promise<string> {
+    return allocateKitchenTicketNumber(tx);
   }
 }

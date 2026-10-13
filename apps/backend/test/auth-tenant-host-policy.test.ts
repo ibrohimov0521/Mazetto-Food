@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import assert from "node:assert/strict";
 import test from "node:test";
-import { ForbiddenException } from "@nestjs/common";
+import { ForbiddenException, UnauthorizedException } from "@nestjs/common";
 import { hash } from "bcryptjs";
 import { AuthService } from "../src/modules/auth/auth.service";
 
@@ -72,6 +72,18 @@ function createService(
   );
 }
 
+test("malformed stored password hashes fail as invalid credentials", async () => {
+  const service = createService(userRecord("KITCHEN", "not-a-bcrypt-hash"));
+
+  await assert.rejects(
+    service.login(
+      { identifier: "user@example.test", password: "Correct-horse-1!" },
+      "127.0.0.1",
+      "unknown.test",
+    ),
+    UnauthorizedException,
+  );
+});
 test("unknown hosts cannot create legacy restaurant staff sessions", async () => {
   const password = "Correct-horse-1!";
   const service = createService(userRecord("KITCHEN", await hash(password, 4)));

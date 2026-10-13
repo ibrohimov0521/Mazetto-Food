@@ -1,4 +1,5 @@
 import { JwtService } from "@nestjs/jwt";
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import {
   CustomerOrderType,
   KitchenTicketStatus,
@@ -23,6 +24,8 @@ import { OrdersService } from "../src/modules/orders/orders.service";
 import { PosOrderStatus } from "../src/modules/orders/dto/order-status.dto";
 import { ORDER_EVENTS } from "../src/modules/orders/order-events";
 import { PaymentsService } from "../src/modules/payments/payments.service";
+import { ReceiptsService } from "../src/modules/receipts/receipts.service";
+import { PrintersService } from "../src/modules/printers/printers.service";
 import { TelegramCustomerAuthService } from "../src/modules/telegram/telegram-customer-auth.service";
 import { TelegramCustomerOrderingService } from "../src/modules/telegram/telegram-customer-ordering.service";
 import { PrismaService } from "../src/prisma/prisma.service";
@@ -48,10 +51,33 @@ type SentTelegramPayload = {
   };
 };
 
+function tashkentDateKey(value: Date): string {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Tashkent",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(value);
+  const part = (type: string) =>
+    parts.find((entry) => entry.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
+
+function shiftTashkentDateKey(dateKey: string, days: number): string {
+  const date = new Date(`${dateKey}T12:00:00.000Z`);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
 const sentTelegramPayloads: SentTelegramPayload[] = [];
 
-globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
-  sentTelegramPayloads.push(JSON.parse(String(init?.body)) as SentTelegramPayload);
+globalThis.fetch = (async (
+  _url: string | URL | Request,
+  init?: RequestInit,
+) => {
+  sentTelegramPayloads.push(
+    JSON.parse(String(init?.body)) as SentTelegramPayload,
+  );
   return new Response(JSON.stringify({ ok: true }), { status: 200 });
 }) as typeof fetch;
 
@@ -67,7 +93,12 @@ async function main(): Promise<void> {
     const services = createServices(prisma);
     const fixture = await createFixture(prisma);
     const initialCounts = await orderGraphCounts(prisma);
-    await proveCancellationStockBehavior(prisma, services.ordersService, services.orderEngine, fixture);
+    await proveCancellationStockBehavior(
+      prisma,
+      services.ordersService,
+      services.orderEngine,
+      fixture,
+    );
 
     const webOrder = await createWebOrder(services.orderEngine, fixture);
     await proveOrderGraph(prisma, webOrder.customerOrder.id, {
@@ -79,24 +110,23 @@ async function main(): Promise<void> {
       expectedTotal: fixture.expectedConfigurableTotal,
       expectedModifierName: fixture.modifier.name,
     });
-    const queuedNotification = await prisma.notificationOutbox.findFirstOrThrow({
-      where: {
-        tenantId: fixture.branch.tenantId,
-        orderId: webOrder.customerOrder.orderId,
-      },
-    });
-    const mockDeliveries: Array<{ orderId: string; tenantId: string }> = [];
-    const notificationWorker = new NotificationOutboxWorker(
-      prisma,
+    const queuedNotification = await prisma.notificationOutbox.findFirstOrThrow(
       {
-        deliverOutboxNewOrder: async (orderId: string, tenantId: string) => {
-          mockDeliveries.push({ orderId, tenantId });
-          return "sent";
+        where: {
+          tenantId: fixture.branch.tenantId,
+          orderId: webOrder.customerOrder.orderId,
         },
-        deliverOutboxCustomerStatus: async () => "sent",
-        deliverOutboxStaffStatusRefresh: async () => "sent",
-      } as never,
+      },
     );
+    const mockDeliveries: Array<{ orderId: string; tenantId: string }> = [];
+    const notificationWorker = new NotificationOutboxWorker(prisma, {
+      deliverOutboxNewOrder: async (orderId: string, tenantId: string) => {
+        mockDeliveries.push({ orderId, tenantId });
+        return "sent";
+      },
+      deliverOutboxCustomerStatus: async () => "sent",
+      deliverOutboxStaffStatusRefresh: async () => "sent",
+    } as never);
     const dueNotificationCount = await prisma.notificationOutbox.count({
       where: { status: "PENDING", scheduledAt: { lte: new Date() } },
     });
@@ -116,7 +146,9 @@ async function main(): Promise<void> {
       "worker must deliver the target order once even when earlier queue items exist",
     );
     assert.ok(
-      mockDeliveries.every(({ tenantId }) => tenantId === fixture.branch.tenantId),
+      mockDeliveries.every(
+        ({ tenantId }) => tenantId === fixture.branch.tenantId,
+      ),
       "worker deliveries must remain tenant-scoped",
     );
     const deliveredNotification =
@@ -133,8 +165,18 @@ async function main(): Promise<void> {
       fixture,
       webOrder.customerOrder.id,
     );
+    await provePosDineInPayLaterSettlement(
+      prisma,
+      services.ordersService,
+      services.paymentsService,
+      services.kitchenService,
+      fixture,
+    );
 
-    const deliveryOrder = await createDeliveryWebOrder(services.orderEngine, fixture);
+    const deliveryOrder = await createDeliveryWebOrder(
+      services.orderEngine,
+      fixture,
+    );
     await proveOrderGraph(prisma, deliveryOrder.customerOrder.id, {
       customerId: fixture.webCustomer.id,
       branchId: fixture.branch.id,
@@ -144,7 +186,11 @@ async function main(): Promise<void> {
       expectedTotal: deliveryOrder.serverTotal,
       expectedModifierName: fixture.modifier.name,
     });
-    await proveUnsupportedCustomerPayments(services.orderEngine, prisma, fixture);
+    await proveUnsupportedCustomerPayments(
+      services.orderEngine,
+      prisma,
+      fixture,
+    );
 
     const afterWebCounts = await orderGraphCounts(prisma);
     await services.orderEngine.createOnlineOrder(
@@ -165,11 +211,23 @@ async function main(): Promise<void> {
       afterWebCounts,
     );
     await proveStalePendingAttemptRetry(services.orderEngine, prisma, fixture);
-    await proveActivePendingAttemptSafety(services.orderEngine, prisma, fixture);
+    await proveActivePendingAttemptSafety(
+      services.orderEngine,
+      prisma,
+      fixture,
+    );
 
-    await proveTelegramFlattenedCatalogFlow(prisma, services.telegramOrdering, fixture);
+    await proveTelegramFlattenedCatalogFlow(
+      prisma,
+      services.telegramOrdering,
+      fixture,
+    );
     await proveTelegramCart(prisma, services.telegramOrdering, fixture);
-    await proveTelegramCheckoutSession(prisma, services.telegramOrdering, fixture);
+    await proveTelegramCheckoutSession(
+      prisma,
+      services.telegramOrdering,
+      fixture,
+    );
 
     const beforeTelegramConfirm = await orderGraphCounts(prisma);
     await services.telegramOrdering.handleCustomerCallback({
@@ -178,7 +236,10 @@ async function main(): Promise<void> {
       from: { id: fixture.telegramUserId },
       data: `cust:confirm:${fixture.telegramCartId}`,
     });
-    const telegramOrder = await latestCustomerOrder(prisma, fixture.telegramCustomer.id);
+    const telegramOrder = await latestCustomerOrder(
+      prisma,
+      fixture.telegramCustomer.id,
+    );
     await proveOrderGraph(prisma, telegramOrder.id, {
       customerId: fixture.telegramCustomer.id,
       branchId: fixture.branch.id,
@@ -196,13 +257,18 @@ async function main(): Promise<void> {
       "Telegram confirm must create exactly one order",
     );
     assert.equal(
-      await prisma.cartItem.count({ where: { cartId: fixture.telegramCartId } }),
+      await prisma.cartItem.count({
+        where: { cartId: fixture.telegramCartId },
+      }),
       0,
       "Telegram cart items must be cleared after successful confirm",
     );
     assert.equal(
       await prisma.telegramCheckoutSession.count({
-        where: { customerId: fixture.telegramCustomer.id, chatId: fixture.telegramChatId },
+        where: {
+          customerId: fixture.telegramCustomer.id,
+          chatId: fixture.telegramChatId,
+        },
       }),
       0,
       "Telegram checkout session must be cleared after successful confirm",
@@ -280,7 +346,21 @@ function createServices(prisma: PrismaService) {
   };
   const branchesService = new BranchesService(prisma);
   const inventoryService = new InventoryService(prisma);
-  const kitchenService = new KitchenService(prisma, gateway as never);
+  const kitchenSettings = {
+    getBool: async (key: string, tenantId: string, client = prisma) => {
+      if (key !== "kitchen_pos_orders_enabled") return false;
+      const setting = await client.setting.findUnique({
+        where: { tenantId_key: { tenantId, key } },
+        select: { value: true },
+      });
+      return setting?.value === "true";
+    },
+  };
+  const kitchenService = new KitchenService(
+    prisma,
+    gateway as never,
+    kitchenSettings as never,
+  );
   const ordersService = new OrdersService(
     prisma,
     inventoryService,
@@ -299,18 +379,27 @@ function createServices(prisma: PrismaService) {
     prisma,
     new TelegramCustomerScreenService(),
     new TelegramCheckoutSessionService(prisma as never),
-    new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
+    new TelegramCartService(
+      prisma as never,
+      new TelegramCustomerScreenService(),
+    ),
     new TelegramCheckoutService(
       prisma as never,
       orderEngine as never,
       new TelegramCustomerScreenService(),
       new TelegramCheckoutSessionService(prisma as never),
-      new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
+      new TelegramCartService(
+        prisma as never,
+        new TelegramCustomerScreenService(),
+      ),
       { reverse: async () => ({ label: "Toshkent", inCity: true }) } as never,
     ),
     new TelegramCustomerOrderHistoryService(
       prisma as never,
-      new TelegramCartService(prisma as never, new TelegramCustomerScreenService()),
+      new TelegramCartService(
+        prisma as never,
+        new TelegramCustomerScreenService(),
+      ),
       new TelegramCustomerScreenService(),
     ),
   );
@@ -331,7 +420,14 @@ function createServices(prisma: PrismaService) {
 
   const paymentsService = new PaymentsService(prisma);
 
-  return { customersService, orderEngine, ordersService, paymentsService, telegramOrdering };
+  return {
+    customersService,
+    kitchenService,
+    orderEngine,
+    ordersService,
+    paymentsService,
+    telegramOrdering,
+  };
 }
 
 async function createFixture(prisma: PrismaService) {
@@ -350,6 +446,20 @@ async function createFixture(prisma: PrismaService) {
       sortOrder: -Number(runId.slice(-8)),
     },
   });
+  const offlineDevices = await Promise.all(
+    [1, 2].map((index) =>
+      prisma.device.create({
+        data: {
+          branchId: branch.id,
+          name: `STEP 8 POS terminal ${index}`,
+          type: "POS_TERMINAL",
+          hardwareId: `STEP8-${runId}-${index}`,
+          enrolledAt: new Date(),
+          isActive: true,
+        },
+      }),
+    ),
+  );
   const warehouse = await prisma.warehouse.create({
     data: {
       branchId: branch.id,
@@ -472,6 +582,15 @@ async function createFixture(prisma: PrismaService) {
       metadata: { printRoles: ["RECEIPT", "CANCELLATION", "REFUND"] },
     },
   });
+  const kitchenPrinter = await prisma.printer.create({
+    data: {
+      branchId: branch.id,
+      name: "STEP 8 virtual kitchen printer",
+      type: "KITCHEN",
+      status: "ONLINE",
+      metadata: { printRoles: ["KITCHEN"] },
+    },
+  });
   await prisma.paymentMethod.create({
     data: {
       branchId: branch.id,
@@ -516,7 +635,11 @@ async function createFixture(prisma: PrismaService) {
   const lavash = await findCatalogProduct(prisma, "CLASSIC_LAVASH", branch.id);
   const burger = await findCatalogProduct(prisma, "CLASSIC_BURGER", branch.id);
   const simple = await findCatalogProduct(prisma, "KETCHUP", branch.id);
-  const setBase = await findCatalogProduct(prisma, "SET_CHEESEBURGER", branch.id);
+  const setBase = await findCatalogProduct(
+    prisma,
+    "SET_CHEESEBURGER",
+    branch.id,
+  );
   await prisma.productBundleItem.create({
     data: {
       bundleProductId: setBase.id,
@@ -567,6 +690,7 @@ async function createFixture(prisma: PrismaService) {
 
   return {
     branch,
+    offlineDevices,
     warehouse,
     burger,
     configurable,
@@ -575,6 +699,7 @@ async function createFixture(prisma: PrismaService) {
     modifier,
     employee,
     printer,
+    kitchenPrinter,
     otherCustomer,
     runId,
     set,
@@ -657,6 +782,302 @@ async function findCatalogProduct(
   });
 }
 
+async function provePosDineInPayLaterSettlement(
+  prisma: PrismaService,
+  ordersService: OrdersService,
+  paymentsService: PaymentsService,
+  kitchenService: KitchenService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+): Promise<void> {
+  const actor = {
+    id: fixture.staffUser.id,
+    employeeId: fixture.employee.id,
+    branchId: fixture.branch.id,
+    roles: ["CASHIER", "KITCHEN"],
+    permissions: [
+      "PAYMENT_CREATE",
+      "RECEIPT_PRINT",
+      "KITCHEN_VIEW",
+      "KITCHEN_ACCEPT",
+      "KITCHEN_STATUS_UPDATE",
+    ],
+  };
+  // The terminal cached start=1 before the server setting moved to its default 101.
+  const offlineSequence = 1;
+  const firstOfflineDevice = fixture.offlineDevices[0]!;
+  const secondOfflineDevice = fixture.offlineDevices[1]!;
+  const offlineDate = tashkentDateKey(new Date());
+  const previousOfflineDate = shiftTashkentDateKey(offlineDate, -1);
+  const firstOfflineLabel = `${offlineSequence}-D${firstOfflineDevice.id.toUpperCase()}`;
+  const secondOfflineLabel = `${offlineSequence}-D${secondOfflineDevice.id.toUpperCase()}`;
+  const checkout = await ordersService.createPosCheckout(
+    {
+      idempotencyKey: `step8-pos-dine-in-pay-later-${fixture.runId}`,
+      type: "DINE_IN",
+      payLater: true,
+      offlineDisplayOrderSequence: offlineSequence,
+      offlineDisplayOrderDate: offlineDate,
+      offlineDisplayOrderNumber: firstOfflineLabel,
+      items: [
+        {
+          productId: fixture.lavash.id,
+          variantId: fixture.lavash.variants[0]!.id,
+          quantity: 1,
+        },
+      ],
+    },
+    actor,
+    undefined,
+    firstOfflineDevice.hardwareId!,
+  );
+  const firstDisplaySequence = checkout.order.displayOrderSequence;
+  if (firstDisplaySequence === null) {
+    throw new Error("POS order did not receive a display sequence");
+  }
+  assert.equal(checkout.order.displayOrderNumber, firstOfflineLabel);
+  await assert.rejects(
+    () =>
+      ordersService.createPosCheckout(
+        {
+          idempotencyKey: `step8-pos-same-terminal-duplicate-${fixture.runId}`,
+          type: "DINE_IN",
+          payLater: true,
+          offlineDisplayOrderSequence: offlineSequence,
+          offlineDisplayOrderDate: offlineDate,
+          offlineDisplayOrderNumber: firstOfflineLabel,
+          items: [
+            {
+              productId: fixture.lavash.id,
+              variantId: fixture.lavash.variants[0]!.id,
+              quantity: 1,
+            },
+          ],
+        },
+        actor,
+        undefined,
+        firstOfflineDevice.hardwareId!,
+      ),
+    /Oflayn chek raqami ushbu sana uchun oldin ishlatilgan/,
+  );
+  const otherTerminalOrder = await ordersService.createPosCheckout(
+    {
+      idempotencyKey: `step8-pos-duplicate-offline-number-${fixture.runId}`,
+      type: "DINE_IN",
+      payLater: true,
+      offlineDisplayOrderSequence: offlineSequence,
+      offlineDisplayOrderNumber: secondOfflineLabel,
+      offlineDisplayOrderDate: offlineDate,
+      items: [
+        {
+          productId: fixture.lavash.id,
+          variantId: fixture.lavash.variants[0]!.id,
+          quantity: 1,
+        },
+      ],
+    },
+    actor,
+    undefined,
+    secondOfflineDevice.hardwareId!,
+  );
+  assert.ok(
+    otherTerminalOrder.order.displayOrderSequence! > firstDisplaySequence,
+    "two enrolled terminals with the same local sequence must receive distinct server sequences",
+  );
+  assert.notEqual(
+    otherTerminalOrder.order.displayOrderSequence,
+    firstDisplaySequence,
+  );
+  assert.equal(otherTerminalOrder.order.displayOrderNumber, secondOfflineLabel);
+  assert.notEqual(
+    checkout.order.displayOrderNumber,
+    otherTerminalOrder.order.displayOrderNumber,
+  );
+  const nextDayOfflineOrder = await ordersService.createPosCheckout(
+    {
+      idempotencyKey: `step8-pos-next-day-terminal-${fixture.runId}`,
+      type: "DINE_IN",
+      payLater: true,
+      offlineDisplayOrderSequence: offlineSequence,
+      offlineDisplayOrderDate: previousOfflineDate,
+      offlineDisplayOrderNumber: firstOfflineLabel,
+      items: [
+        {
+          productId: fixture.lavash.id,
+          variantId: fixture.lavash.variants[0]!.id,
+          quantity: 1,
+        },
+      ],
+    },
+    actor,
+    undefined,
+    firstOfflineDevice.hardwareId!,
+  );
+  assert.equal(nextDayOfflineOrder.order.displayOrderNumber, firstOfflineLabel);
+  assert.equal(
+    nextDayOfflineOrder.order.displayOrderDate?.toISOString().slice(0, 10),
+    previousOfflineDate,
+  );
+  const orderId = checkout.order.id;
+  assert.equal(checkout.payment.method, "PENDING");
+  assert.equal(checkout.order.paymentStatus, "PENDING");
+  assert.equal(await prisma.payment.count({ where: { orderId } }), 0);
+  assert.equal(await prisma.revenueRecord.count({ where: { orderId } }), 0);
+  assert.equal(await prisma.cashTransaction.count({ where: { orderId } }), 0);
+  assert.equal(
+    await prisma.receipt.count({ where: { orderId, documentType: "RECEIPT" } }),
+    0,
+    "unpaid dine-in must not create a customer receipt",
+  );
+  const kitchenReceipt = await prisma.receipt.findFirstOrThrow({
+    where: { orderId, documentType: "KITCHEN" },
+  });
+  assert.equal(
+    await prisma.kitchenTicket.count({ where: { orderId } }),
+    1,
+    "unpaid dine-in must go to the kitchen",
+  );
+  assert.equal(
+    await prisma.printJob.count({
+      where: {
+        receiptId: kitchenReceipt.id,
+        printerId: fixture.kitchenPrinter.id,
+      },
+    }),
+    1,
+    "kitchen ticket must print only to the kitchen printer",
+  );
+  assert.equal(
+    await prisma.printJob.count({
+      where: { receiptId: kitchenReceipt.id, printerId: fixture.printer.id },
+    }),
+    0,
+  );
+
+  const ticket = await prisma.kitchenTicket.findFirstOrThrow({
+    where: { orderId },
+    select: { id: true },
+  });
+  await assert.rejects(
+    () => kitchenService.acceptTicket(ticket.id, actor),
+    /Oshxona chiptasi topilmadi/,
+    "POS ticket must stay hidden from kitchen management by default",
+  );
+  assert.equal(
+    (await prisma.kitchenTicket.findUniqueOrThrow({ where: { id: ticket.id } }))
+      .status,
+    KitchenTicketStatus.NEW,
+  );
+  await prisma.setting.create({
+    data: {
+      tenantId: fixture.branch.tenantId,
+      key: "kitchen_pos_orders_enabled",
+      value: "true",
+    },
+  });
+  await kitchenService.acceptTicket(ticket.id, actor);
+  await kitchenService.startTicket(ticket.id, actor);
+  await kitchenService.readyTicket(ticket.id, actor);
+  await kitchenService.completeTicket(ticket.id, actor);
+
+  const handedOffOrder = await prisma.order.findUniqueOrThrow({
+    where: { id: orderId },
+  });
+  assert.equal(handedOffOrder.status, "COMPLETED");
+  assert.equal(handedOffOrder.paymentStatus, "PENDING");
+  assert.equal(await prisma.payment.count({ where: { orderId } }), 0);
+  assert.equal(await prisma.revenueRecord.count({ where: { orderId } }), 0);
+  assert.equal(await prisma.cashTransaction.count({ where: { orderId } }), 0);
+  assert.equal(
+    await prisma.receipt.count({ where: { orderId, documentType: "RECEIPT" } }),
+    0,
+    "kitchen handoff must not create a customer payment receipt",
+  );
+
+  const cashierQueue = await ordersService.listOrders(
+    {
+      paymentStatus: "PENDING",
+      excludeStatus: "CANCELLED",
+      excludeType: "DELIVERY",
+      limit: 200,
+      offset: 0,
+    } as never,
+    actor,
+  );
+  assert.ok(
+    cashierQueue.some((order) => order.id === orderId),
+    "completed unpaid dine-in must remain in the cashier payment queue",
+  );
+
+  const settled = await paymentsService.processOrderPayment(
+    {
+      orderId,
+      shiftId: fixture.shift.id,
+      idempotencyKey: `step8-pos-dine-in-payment-${fixture.runId}`,
+      payments: [
+        {
+          paymentMethodCode: "CASH",
+          amount: checkout.order.total.toNumber(),
+        },
+      ],
+    },
+    actor,
+  );
+  assert.equal(settled.operation?.status, "COMPLETED");
+  assert.equal(settled.order?.paymentStatus, "PAID");
+  assert.equal(
+    (
+      await ordersService.listOrders(
+        {
+          paymentStatus: "PENDING",
+          excludeStatus: "CANCELLED",
+          excludeType: "DELIVERY",
+          limit: 200,
+          offset: 0,
+        } as never,
+        actor,
+      )
+    ).some((order) => order.id === orderId),
+    false,
+    "cashier queue must remove the order after payment",
+  );
+  assert.equal(
+    await prisma.payment.count({ where: { orderId, status: "SUCCESS" } }),
+    1,
+  );
+  assert.equal(
+    await prisma.revenueRecord.count({
+      where: { orderId, shiftId: fixture.shift.id },
+    }),
+    1,
+    "payment must enter shift revenue after acceptance",
+  );
+  assert.equal(
+    await prisma.cashTransaction.count({
+      where: { orderId, shiftId: fixture.shift.id, type: "SALE" },
+    }),
+    1,
+    "cash must enter the drawer after acceptance",
+  );
+  const customerReceipt = await prisma.receipt.findFirstOrThrow({
+    where: { orderId, documentType: "RECEIPT" },
+  });
+  assert.equal(
+    await prisma.printJob.count({
+      where: { receiptId: customerReceipt.id, printerId: fixture.printer.id },
+    }),
+    1,
+  );
+  assert.equal(
+    await prisma.printJob.count({
+      where: {
+        receiptId: customerReceipt.id,
+        printerId: fixture.kitchenPrinter.id,
+      },
+    }),
+    0,
+  );
+}
+
 async function proveOrderCashStockPrint(
   prisma: PrismaService,
   paymentsService: PaymentsService,
@@ -720,6 +1141,84 @@ async function proveOrderCashStockPrint(
     1,
     "paid order must queue one job for the configured receipt printer",
   );
+  await assert.rejects(
+    new ReceiptsService(prisma).deleteReceipts([receipt.id], actor),
+    /Chop navbatida yoki tekshiruvda turgan chekni o'chirib bo'lmaydi/,
+    "an unresolved printer job must prevent receipt deletion",
+  );
+  assert.equal(
+    await prisma.receipt.count({ where: { id: receipt.id } }),
+    1,
+    "receipt and its pending print job must remain recoverable",
+  );
+  await assert.rejects(
+    new PrintersService(prisma).deletePrinters([fixture.printer.id], actor),
+    /Printerga biriktirilgan tugallanmagan chop ishlari bor/,
+    "printer deletion must preserve a pending job's target",
+  );
+  assert.equal(
+    await prisma.printer.count({ where: { id: fixture.printer.id } }),
+    1,
+    "printer with pending jobs must remain configured",
+  );
+  const pendingPrintJob = await prisma.printJob.findFirstOrThrow({
+    where: { receiptId: receipt.id },
+  });
+  assert.equal(
+    pendingPrintJob.printerId,
+    fixture.printer.id,
+    "pending job must retain its physical printer target",
+  );
+  const printerConfig = await prisma.printer.findUniqueOrThrow({
+    where: { id: fixture.printer.id },
+    select: { type: true, metadata: true },
+  });
+  await assert.rejects(
+    new PrintersService(prisma).updatePrinter(
+      fixture.printer.id,
+      { metadata: { auditTarget: "changed" } },
+      actor,
+    ),
+    /Printer turi yoki yo'naltirish sozlamalarini tugallanmagan chop ishlari bor paytda o'zgartirib bo'lmaydi/,
+  );
+  assert.deepEqual(
+    await prisma.printer.findUniqueOrThrow({
+      where: { id: fixture.printer.id },
+      select: { type: true, metadata: true },
+    }),
+    printerConfig,
+    "printer configuration must remain stable for pending jobs",
+  );
+  const [claim, deletion] = await Promise.allSettled([
+    new ReceiptsService(prisma).claimPrintJob(
+      fixture.branch.id,
+      `audit-agent-${fixture.runId}`,
+      actor,
+      [fixture.printer.id],
+    ),
+    new PrintersService(prisma).deletePrinters([fixture.printer.id], actor),
+  ]);
+  if (claim.status !== "fulfilled") throw claim.reason;
+  if (deletion.status !== "rejected") {
+    throw new Error(
+      "printer deletion unexpectedly passed during a print claim",
+    );
+  }
+  assert.equal(claim.value?.printerId, fixture.printer.id);
+  const claimedJobId = claim.value?.id;
+  assert.ok(claimedJobId);
+  assert.match(
+    String(deletion.reason?.message ?? deletion.reason),
+    /Printerga biriktirilgan tugallanmagan chop ishlari bor/,
+  );
+  const claimedJob = await prisma.printJob.findUniqueOrThrow({
+    where: { id: claimedJobId },
+  });
+  assert.equal(claimedJob.status, "PROCESSING");
+  assert.equal(
+    await prisma.printer.count({ where: { id: fixture.printer.id } }),
+    1,
+  );
   assert.equal(
     await prisma.auditLog.count({
       where: {
@@ -732,7 +1231,10 @@ async function proveOrderCashStockPrint(
   );
   assert.ok(
     (await prisma.stockMovement.count({
-      where: { sourceType: "ORDER_ITEM_RECIPE", sourceId: customerOrder.orderId },
+      where: {
+        sourceType: "ORDER_ITEM_RECIPE",
+        sourceId: customerOrder.orderId,
+      },
     })) > 0,
     "confirmed customer order must deduct recipe stock",
   );
@@ -838,6 +1340,52 @@ async function proveOrderCashStockPrint(
     0,
     "rejected shifts must not create refunds",
   );
+
+  await prisma.cashTransaction.create({
+    data: {
+      branchId: fixture.branch.id,
+      shiftId: fixture.shift.id,
+      employeeId: fixture.employee.id,
+      orderId: paidOrder.id,
+      createdById: refundActor.id,
+      type: "CASH_OUT",
+      amount: paidOrder.total,
+      reason: "Step 8 exhaust drawer before refund test",
+    },
+  });
+  await assert.rejects(
+    ordersService.updateItem(
+      paidOrder.id,
+      item.id,
+      cancellationDto,
+      refundActor,
+      cancellationContext(fixture.shift.id, "insufficient-cash"),
+    ),
+    /Kassada yetarli naqd pul yo'q/,
+    "cash refund must be rejected when the open shift drawer is empty",
+  );
+  assert.equal(
+    (await prisma.orderItem.findUniqueOrThrow({ where: { id: item.id } }))
+      .status,
+    OrderItemStatus.ACTIVE,
+    "insufficient drawer cash must not cancel the item",
+  );
+  assert.equal(
+    await prisma.paymentRefund.count({ where: { orderItemId: item.id } }),
+    0,
+    "insufficient drawer cash must not create a refund",
+  );
+  await prisma.cashTransaction.create({
+    data: {
+      branchId: fixture.branch.id,
+      shiftId: fixture.shift.id,
+      employeeId: fixture.employee.id,
+      createdById: refundActor.id,
+      type: "CASH_IN",
+      amount: paidOrder.total,
+      reason: "Step 8 restore drawer after refund test",
+    },
+  });
 
   await ordersService.updateItem(
     paidOrder.id,
@@ -964,7 +1512,10 @@ async function proveCancellationStockBehavior(
 
   await ordersService.updateStatus(
     started.id,
-    { status: PosOrderStatus.CANCELLED, reason: "Isolated started-order proof" },
+    {
+      status: PosOrderStatus.CANCELLED,
+      reason: "Isolated started-order proof",
+    },
     actor,
   );
   assert.deepEqual(await readStock(), stockAfterStartedDeduction);
@@ -1000,7 +1551,10 @@ async function createWebOrder(
     ],
   };
 
-  const result = await orderEngine.createOnlineOrder(fixture.webCustomer.id, dto);
+  const result = await orderEngine.createOnlineOrder(
+    fixture.webCustomer.id,
+    dto,
+  );
   return { ...result, dto };
 }
 
@@ -1034,9 +1588,15 @@ async function createDeliveryWebOrder(
   const serverTotal = fixture.expectedConfigurableTotal.add(serverDeliveryFee);
   assert.notEqual(quote.deliveryFee, String(dto.deliveryFee));
   assert.equal(quote.total, serverTotal.toFixed(2));
-  assert.deepEqual(quote.paymentMethods.map((method) => method.code), ["CASH"]);
+  assert.deepEqual(
+    quote.paymentMethods.map((method) => method.code),
+    ["CASH"],
+  );
 
-  const result = await orderEngine.createOnlineOrder(fixture.webCustomer.id, dto);
+  const result = await orderEngine.createOnlineOrder(
+    fixture.webCustomer.id,
+    dto,
+  );
   return { ...result, dto, serverDeliveryFee, serverTotal };
 }
 
@@ -1056,7 +1616,10 @@ async function provePendingAttemptWithExistingOrderRecovery(
     data: { completedAt: null, status: "PENDING" },
   });
 
-  const recovered = await orderEngine.createOnlineOrder(fixture.webCustomer.id, dto);
+  const recovered = await orderEngine.createOnlineOrder(
+    fixture.webCustomer.id,
+    dto,
+  );
   assert.equal(recovered.customerOrder.id, customerOrderId);
   assert.deepEqual(
     await orderGraphCounts(prisma),
@@ -1100,11 +1663,14 @@ async function proveStalePendingAttemptRetry(
       idempotencyKey: dto.idempotencyKey,
       requestHash: checkoutRequestHash(orderEngine, dto),
       createdAt: new Date(Date.now() - 3 * 60 * 1000),
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+      expiresAt: new Date(Date.now() - 60 * 1000),
     },
   });
 
-  const recovered = await orderEngine.createOnlineOrder(fixture.webCustomer.id, dto);
+  const recovered = await orderEngine.createOnlineOrder(
+    fixture.webCustomer.id,
+    dto,
+  );
   assert.ok(recovered.customerOrder.id);
   const after = await orderGraphCounts(prisma);
   assert.equal(after.orders, before.orders + 1);
@@ -1142,7 +1708,9 @@ async function proveActivePendingAttemptSafety(
     },
   });
 
-  await assert.rejects(() => orderEngine.createOnlineOrder(fixture.webCustomer.id, dto));
+  await assert.rejects(() =>
+    orderEngine.createOnlineOrder(fixture.webCustomer.id, dto),
+  );
   const after = await orderGraphCounts(prisma);
   assert.equal(after.orders, before.orders);
   assert.equal(after.customerOrders, before.customerOrders);
@@ -1156,7 +1724,9 @@ function checkoutRequestHash(
 ): string {
   return (
     orderEngine as unknown as {
-      hashCheckoutRequest(dto: Parameters<CustomerOrderEngineService["createOnlineOrder"]>[1]): string;
+      hashCheckoutRequest(
+        dto: Parameters<CustomerOrderEngineService["createOnlineOrder"]>[1],
+      ): string;
     }
   ).hashCheckoutRequest(dto);
 }
@@ -1185,7 +1755,9 @@ async function proveTelegramCart(
 
   await prisma.cartItem.update({
     where: { id: cart.items[0]!.id },
-    data: { modifierSnapshot: [{ modifierId: fixture.modifier.id, quantity: 1 }] },
+    data: {
+      modifierSnapshot: [{ modifierId: fixture.modifier.id, quantity: 1 }],
+    },
   });
   const withModifier = await prisma.cartItem.findUniqueOrThrow({
     where: { id: cart.items[0]!.id },
@@ -1202,7 +1774,9 @@ async function proveTelegramCart(
   });
   assert.equal(
     (
-      await prisma.cartItem.findUniqueOrThrow({ where: { id: cart.items[0]!.id } })
+      await prisma.cartItem.findUniqueOrThrow({
+        where: { id: cart.items[0]!.id },
+      })
     ).quantity.toNumber(),
     2,
   );
@@ -1215,7 +1789,9 @@ async function proveTelegramCart(
   });
   assert.equal(
     (
-      await prisma.cartItem.findUniqueOrThrow({ where: { id: cart.items[0]!.id } })
+      await prisma.cartItem.findUniqueOrThrow({
+        where: { id: cart.items[0]!.id },
+      })
     ).quantity.toNumber(),
     1,
   );
@@ -1226,7 +1802,9 @@ async function proveTelegramFlattenedCatalogFlow(
   telegramOrdering: TelegramCustomerOrderingService,
   fixture: Awaited<ReturnType<typeof createFixture>>,
 ): Promise<void> {
-  await prisma.cart.deleteMany({ where: { customerId: fixture.telegramCustomer.id } });
+  await prisma.cart.deleteMany({
+    where: { customerId: fixture.telegramCustomer.id },
+  });
   sentTelegramPayloads.length = 0;
 
   await telegramOrdering.handleCustomerCallback({
@@ -1299,14 +1877,20 @@ async function proveTelegramFlattenedCatalogFlow(
     include: { items: true },
     orderBy: { updatedAt: "desc" },
   });
-  assert.equal(mergedCart.items.length, 1, "equivalent concurrent quick-adds must merge");
+  assert.equal(
+    mergedCart.items.length,
+    1,
+    "equivalent concurrent quick-adds must merge",
+  );
   assert.equal(mergedCart.items[0]?.productId, fixture.simple.id);
   assert.equal(mergedCart.items[0]?.variantId, fixture.simple.variants[0]?.id);
   assert.equal(mergedCart.items[0]?.quantity.toNumber(), 2);
 
   await prisma.cartItem.update({
     where: { id: mergedCart.items[0]!.id },
-    data: { modifierSnapshot: [{ modifierId: fixture.modifier.id, quantity: 1 }] },
+    data: {
+      modifierSnapshot: [{ modifierId: fixture.modifier.id, quantity: 1 }],
+    },
   });
   await telegramOrdering.handleCustomerCallback({
     id: "step-current-simple-plain-after-modified",
@@ -1359,16 +1943,21 @@ async function proveTelegramFlattenedCatalogFlow(
     orderBy: { updatedAt: "desc" },
   });
   assert.equal(
-    cartWithSet.items.filter((item) => item.productId === fixture.set.id).length,
+    cartWithSet.items.filter((item) => item.productId === fixture.set.id)
+      .length,
     1,
   );
   assert.equal(
-    cartWithSet.items.filter((item) => bundleComponentIds.includes(item.productId)).length,
+    cartWithSet.items.filter((item) =>
+      bundleComponentIds.includes(item.productId),
+    ).length,
     bundleComponentCountBeforeSet,
     "set quick add must not add bundle components as separately charged cart lines",
   );
 
-  await prisma.cart.deleteMany({ where: { customerId: fixture.telegramCustomer.id } });
+  await prisma.cart.deleteMany({
+    where: { customerId: fixture.telegramCustomer.id },
+  });
 }
 
 async function proveTelegramCheckoutSession(
@@ -1452,7 +2041,10 @@ async function proveTelegramNewOrderAfterSuccess(
 ): Promise<void> {
   assert.equal(
     await prisma.telegramCheckoutSession.count({
-      where: { customerId: fixture.telegramCustomer.id, chatId: fixture.telegramChatId },
+      where: {
+        customerId: fixture.telegramCustomer.id,
+        chatId: fixture.telegramChatId,
+      },
     }),
     0,
     "new Telegram order must start after the previous checkout session was cleared",
@@ -1469,7 +2061,11 @@ async function proveTelegramNewOrderAfterSuccess(
     orderBy: { updatedAt: "desc" },
     include: { items: true },
   });
-  assert.equal(cart.items.length, 1, "post-success quick-add should create a new cart line");
+  assert.equal(
+    cart.items.length,
+    1,
+    "post-success quick-add should create a new cart line",
+  );
 
   await telegramOrdering.handleCustomerCallback({
     id: "step15-post-success-checkout",
@@ -1494,7 +2090,11 @@ async function proveTelegramNewOrderAfterSuccess(
   assert.equal(session.branchId, fixture.branch.id);
   assert.equal(session.orderType, CustomerOrderType.PICKUP);
   assert.equal(session.step, "SUMMARY");
-  assert.equal(session.address, null, "new pickup checkout must not inherit old address");
+  assert.equal(
+    session.address,
+    null,
+    "new pickup checkout must not inherit old address",
+  );
   assert.equal(session.note, null, "new checkout must not inherit old note");
 
   const beforeConfirm = await orderGraphCounts(prisma);
@@ -1514,7 +2114,10 @@ async function proveTelegramNewOrderAfterSuccess(
   );
   assert.equal(
     await prisma.telegramCheckoutSession.count({
-      where: { customerId: fixture.telegramCustomer.id, chatId: fixture.telegramChatId },
+      where: {
+        customerId: fixture.telegramCustomer.id,
+        chatId: fixture.telegramChatId,
+      },
     }),
     0,
     "second Telegram order session must be cleared after success",
@@ -1572,13 +2175,22 @@ async function proveOrderGraph(
     customerOrder.order.deliveryFeeTotal.toFixed(2),
     expected.expectedDeliveryFee.toFixed(2),
   );
-  assert.equal(customerOrder.order.total.toFixed(2), expected.expectedTotal.toFixed(2));
+  assert.equal(
+    customerOrder.order.total.toFixed(2),
+    expected.expectedTotal.toFixed(2),
+  );
 
   const item = customerOrder.order.items[0]!;
-  assert.equal(item.totalPrice.toFixed(2), expected.expectedSubtotal.toFixed(2));
+  assert.equal(
+    item.totalPrice.toFixed(2),
+    expected.expectedSubtotal.toFixed(2),
+  );
   const modifiers = item.modifierSnapshot;
   assert.ok(Array.isArray(modifiers));
-  assert.equal((modifiers[0] as { name?: string }).name, expected.expectedModifierName);
+  assert.equal(
+    (modifiers[0] as { name?: string }).name,
+    expected.expectedModifierName,
+  );
 }
 
 async function proveRollbackSafety(
@@ -1653,10 +2265,13 @@ async function proveHistoryAndOwnership(
   fixture: Awaited<ReturnType<typeof createFixture>>,
   orders: { webCustomerOrderId: string; telegramCustomerOrderId: string },
 ): Promise<void> {
-  const webHistory = await customersService.listCustomerOrders(fixture.webCustomer.id, {
-    limit: 50,
-    offset: 0,
-  });
+  const webHistory = await customersService.listCustomerOrders(
+    fixture.webCustomer.id,
+    {
+      limit: 50,
+      offset: 0,
+    },
+  );
   assert.ok(webHistory.some((order) => order.id === orders.webCustomerOrderId));
 
   const telegramHistory = await customersService.listCustomerOrders(
@@ -1664,7 +2279,9 @@ async function proveHistoryAndOwnership(
     { limit: 50, offset: 0 },
   );
   assert.ok(
-    telegramHistory.some((order) => order.id === orders.telegramCustomerOrderId),
+    telegramHistory.some(
+      (order) => order.id === orders.telegramCustomerOrderId,
+    ),
   );
 
   await assert.rejects(() =>
@@ -1714,25 +2331,16 @@ async function orderGraphCounts(prisma: PrismaService) {
 
 function assertIsolatedDatabase(): void {
   if (process.env.MAZETTO_E2E_ISOLATED_DB !== "1") {
-    throw new Error("MAZETTO_E2E_ISOLATED_DB=1 is required for this DB E2E script");
+    throw new Error(
+      "MAZETTO_E2E_ISOLATED_DB=1 is required for this DB E2E script",
+    );
   }
 
-  const url = process.env.DATABASE_URL;
-
-  if (!url) {
-    throw new Error("DATABASE_URL is required");
-  }
-
-  const parsed = new URL(url);
-  const safeHosts = new Set(["127.0.0.1", "localhost"]);
-
-  if (!safeHosts.has(parsed.hostname)) {
-    throw new Error("Refusing to run DB E2E against a non-localhost database");
-  }
-
-  if (!parsed.pathname.includes("step8")) {
-    throw new Error("Refusing to run DB E2E without a step8 database name");
-  }
+  assertDisposableLoopbackDatabase(
+    process.env.DATABASE_URL,
+    /^(?:step8_qa|mazetto_step8_release_[0-9]+_[0-9]+)$/,
+    ["5432", "5433", "15432"],
+  );
 }
 
 void main().catch((error) => {

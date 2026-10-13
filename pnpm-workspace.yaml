@@ -30,6 +30,7 @@ overrides:
   effect: 3.20.0
   mysql2: 3.23.1
   valibot: 1.4.2
+  "@angular-devkit/core@19.2.19": 19.2.24
 
 allowBuilds:
   # `@nestjs/swagger` bilan kelgan telemetriya paketi. Uning post-install

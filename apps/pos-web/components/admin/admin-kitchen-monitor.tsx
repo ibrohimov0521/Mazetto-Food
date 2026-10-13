@@ -165,7 +165,6 @@ export function AdminKitchenMonitor() {
   const [busyTicketId, setBusyTicketId] = useState<string | null>(null);
   const [cancelTarget, setCancelTarget] = useState<KitchenTicket | null>(null);
   const [cancelReason, setCancelReason] = useState("");
-  const [cancelReasonError, setCancelReasonError] = useState("");
   const [isCancelling, setIsCancelling] = useState(false);
   /*
    * So'rov navbati: poll va qo'lda yangilash bir vaqtda ketishi mumkin,
@@ -314,11 +313,6 @@ export function AdminKitchenMonitor() {
       return;
     }
 
-    if (!reason) {
-      setCancelReasonError("Bekor qilish sababini yozing.");
-      return;
-    }
-
     setIsCancelling(true);
     const fingerprint = `${orderId}:${orderVersion}:cancel`;
     const idempotencyKey =
@@ -332,7 +326,7 @@ export function AdminKitchenMonitor() {
         body: JSON.stringify({
           expectedVersion: orderVersion,
           reasonCode: "MANAGER_KITCHEN_CANCELLED",
-          reason,
+          ...(reason ? { reason } : {}),
         }),
       });
       actionKeys.current.delete(fingerprint);
@@ -477,7 +471,6 @@ export function AdminKitchenMonitor() {
             disabled={busyTicketId === ticket.id}
             onClick={() => {
               setCancelReason("");
-              setCancelReasonError("");
               setCancelTarget(ticket);
             }}
             size="sm"
@@ -600,17 +593,14 @@ export function AdminKitchenMonitor() {
         title={`${cancelTarget?.ticketNumber ?? "Chipta"} · bekor qilish`}
       >
         <FormField
-          error={cancelReasonError}
-          hint="Sabab buyurtma tarixiga yoziladi."
+          hint="Ixtiyoriy. Kiritilsa buyurtma tarixida saqlanadi."
           label="Sabab"
-          required
         >
           {(props) => (
             <Textarea
               {...props}
               onChange={(event) => {
                 setCancelReason(event.target.value);
-                setCancelReasonError("");
               }}
               placeholder="Masalan: mahsulot tugadi"
               value={cancelReason}

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Post } from "@nestjs/common";
+import { Body, Controller, Get, Headers, Post } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { CorrelationId } from "../../common/decorators/correlation-id.decorator";
@@ -13,8 +13,11 @@ export class PosController {
 
   @Get("catalog")
   @Permissions(PERMISSIONS.POS_USE)
-  listCatalog(@CurrentUser() user: AuthenticatedUser) {
-    return this.ordersService.listPosCatalog(user);
+  listCatalog(
+    @CurrentUser() user: AuthenticatedUser,
+    @Headers("x-mazetto-device-id") deviceHardwareId?: string,
+  ) {
+    return this.ordersService.listPosCatalog(user, deviceHardwareId);
   }
 
   @Post("orders")
@@ -23,7 +26,13 @@ export class PosController {
     @Body() dto: CreatePosCheckoutDto,
     @CurrentUser() user: AuthenticatedUser,
     @CorrelationId() correlationId: string,
+    @Headers("x-mazetto-device-id") deviceHardwareId?: string,
   ) {
-    return this.ordersService.createPosCheckout(dto, user, correlationId);
+    return this.ordersService.createPosCheckout(
+      dto,
+      user,
+      correlationId,
+      deviceHardwareId,
+    );
   }
 }

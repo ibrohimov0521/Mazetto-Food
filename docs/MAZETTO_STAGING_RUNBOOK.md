@@ -174,3 +174,19 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - The new task is running the expected image. `/api/v1/health` returned HTTP 200 with PostgreSQL `ok` and Redis `connected`; `notification_dead_letters` contains 0 rows.
 - The post-rollout staging A/B harness passed: tenant membership/cache isolation, order event delivery/reconnect, customer logout revocation, verified/unknown host handling, report/audit scope, OTP sessions, and media isolation. Synthetic `.invalid` host fixtures were cleaned up; no real Telegram/SMS delivery occurred. After cleanup, health remained 200 and migrations remained 57/57.
 - The rollback image remains available locally. This rollout validates startup, schema compatibility, and health; it does not prove live Telegram delivery or all restaurant workflows. Production migration/deploy, public staging access, and second-tenant activation remain closed.
+
+## Staging A/B recheck (2026-10-13)
+
+- The staging API container was running image `mazetto-staging-api-crmkze:f6531fc` (revision `f6531fc35c9122e908f30175a563deb871e05fde`, built 2026-10-04). Its internal health endpoint returned HTTP 200; PostgreSQL was `ok` and Redis was connected.
+- The guarded `qa-tenant-ab-staging.mjs` harness passed on that deployed staging image: tenant membership/cache separation, live order delivery and reconnect, customer logout revocation, host/domain checks, reports/audit, OTP sessions and tenant media isolation.
+- The harness completed its synthetic fixture and media cleanup and verified the original staging baseline. No production service, database, DNS, real Telegram, SMS or customer data was used.
+- The baseline proof above was against old image `f6531fc`; candidate rollout and proof are recorded below. Production remains at 59/61 and unchanged.
+
+## Audit candidate staging rollout (2026-10-13)
+
+- Built from exact PR #296 commit `8b42159818718d8339dcfd0e6c48ade1b89ec58e` as image `mazetto-staging-api-crmkze:8b42159`. Previous image `f6531fc` remains available as rollback tag `rollback-8b42159`.
+- Before migration, staged a backup of database `mazetto_staging`: `/home/javohir/backups/mazetto-staging/mazetto-staging-before-audit-8b42159-20261013.dump`; SHA-256 `9ecb4ea5386007e7286954a1fa9c57f60810609fc84c597d34a264670af9d92d`. `pg_restore --list` returned 716 entries.
+- Staging was at 58 migrations; candidate `prisma migrate deploy` successfully applied `20261009190000_partial_cash_item_refunds`, `20261013120000_product_kitchen_printer_routing`, and `20261013140000_tenant_scoped_order_numbers`. Final status: 61/61; no failed or unfinished migration.
+- Staging Swarm service converged on the candidate image with stop-first update and rollback-on-failure. Internal `/api/v1/health` returned HTTP 200, database `ok`, Redis `connected`.
+- The guarded `qa-tenant-ab-staging.mjs` harness passed on the candidate, including tenant membership/cache separation, live order delivery/reconnect, logout revocation, host/domain, reports/audit, OTP and tenant media isolation. Synthetic fixtures were cleaned up; post-cleanup health remained 200 and migrations 61/61.
+- This does not prove full cashier-to-kitchen-to-cash/receipt UI acceptance, physical printer paper output, real Telegram/SMS or NBU settlement. Those remain open. Production DB/service and second-tenant activation were not changed.

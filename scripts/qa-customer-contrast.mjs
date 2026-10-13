@@ -26,10 +26,9 @@ import { fileURLToPath, URL } from "node:url";
 const require = createRequire(import.meta.url);
 const { chromium } = require("playwright");
 
-const base = (globalThis.process.env.QA_BASE || "http://127.0.0.1:3107").replace(
-  /\/$/,
-  "",
-);
+const base = (
+  globalThis.process.env.QA_BASE || "http://127.0.0.1:3107"
+).replace(/\/$/, "");
 const host = new URL(base).hostname;
 if (!["localhost", "127.0.0.1", "[::1]"].includes(host)) {
   throw new Error("Faqat mahalliy preview: QA_BASE localhost bo'lishi kerak");
@@ -151,7 +150,15 @@ const overflowProbe = () => ({
     })),
 });
 
-const report = { overflow: [], contrast: [], tiny: [], pageErrors: [] };
+const report = {
+  httpErrors: [],
+  assetErrors: [],
+  navigationErrors: [],
+  overflow: [],
+  contrast: [],
+  tiny: [],
+  pageErrors: [],
+};
 /*
  * `PLAYWRIGHT_CHROMIUM_PATH` — o'rnatilgan brauzer buildi Playwright
  * kutganidan farq qilganda ishlatiladi (`npx playwright install`
@@ -177,15 +184,50 @@ try {
     page.on("pageerror", (error) =>
       report.pageErrors.push({ width, message: error.message }),
     );
+    page.on("response", (response) => {
+      if (
+        response.request().resourceType() === "stylesheet" &&
+        response.status() >= 400
+      ) {
+        report.assetErrors.push({
+          width,
+          url: response.url(),
+          status: response.status(),
+        });
+      }
+    });
+    page.on("requestfailed", (request) => {
+      if (request.resourceType() === "stylesheet") {
+        report.assetErrors.push({
+          width,
+          url: request.url(),
+          message: request.failure()?.errorText ?? "network error",
+        });
+      }
+    });
     for (const route of routes) {
-      await page.goto(`${base}${route}`, { waitUntil: "load" });
+      let response;
+      try {
+        response = await page.goto(`${base}${route}`, { waitUntil: "load" });
+      } catch (error) {
+        report.navigationErrors.push({ width, route, message: error.message });
+        continue;
+      }
+      if (!response || !response.ok()) {
+        report.httpErrors.push({
+          width,
+          route,
+          status: response?.status() ?? null,
+          url: page.url(),
+        });
+        continue;
+      }
       await page.waitForTimeout(600);
 
       const overflow = await page.evaluate(overflowProbe);
       if (
         overflow.doc > overflow.client + 1 ||
-        overflow.body > overflow.client + 1 ||
-        overflow.wide.length
+        overflow.body > overflow.client + 1
       ) {
         report.overflow.push({ width, route, ...overflow });
       }
@@ -235,13 +277,14 @@ for (const entry of report.tiny)
     console.log(` TINY ${entry.route} @${entry.width}: ${t.px}px "${t.text}"`);
 for (const e of report.pageErrors)
   console.log(` PAGEERROR @${e.width}: ${e.message}`);
+for (const e of report.httpErrors)
+  console.log(` HTTP ${e.route} @${e.width}: ${e.status} (${e.url})`);
+for (const e of report.navigationErrors)
+  console.log(` NAVIGATION ${e.route} @${e.width}: ${e.message}`);
 
-/*
- * CHIQISH KODI faqat SHUBHASIZ muammolarda nolga teng bo'lmaydi:
- * haqiqiy gorizontal aylantirish, mayda matn va sahifa xatosi.
- * Kontrast ro'yxati qo'lda ko'rib chiqiladi, chunki yuqoridagi
- * cheklov tufayli unda yolg'on signal bo'lishi mumkin.
- */
+console.log("stylesheet failures:", report.assetErrors.length);
+for (const e of report.assetErrors)
+  console.log(` STYLESHEET @${e.width}: ${e.status ?? e.message} ${e.url}`);
 /*
  * CHIQISH KODI faqat SHUBHASIZ muammolarda nolga teng bo'lmaydi:
  * haqiqiy gorizontal aylantirish, mayda matn va sahifa xatosi.
@@ -252,13 +295,20 @@ const realOverflow = report.overflow.filter(
   (entry) => entry.doc > entry.client + 1 || entry.body > entry.client + 1,
 );
 const failed =
-  realOverflow.length + report.tiny.length + report.pageErrors.length;
+  realOverflow.length +
+  report.tiny.length +
+  report.pageErrors.length +
+  report.httpErrors.length +
+  report.navigationErrors.length +
+  report.assetErrors.length;
 console.log("");
 if (failed) {
   console.error(
-    `TEKSHIRUV O'TMADI: ${realOverflow.length} oqish, ${report.tiny.length} mayda matn, ${report.pageErrors.length} sahifa xatosi`,
+    `TEKSHIRUV O'TMADI: ${realOverflow.length} oqish, ${report.tiny.length} mayda matn, ${report.pageErrors.length} sahifa xatosi, ${report.httpErrors.length} HTTP xatosi, ${report.navigationErrors.length} navigatsiya xatosi, ${report.assetErrors.length} stil fayli xatosi`,
   );
   globalThis.process.exitCode = 1;
 } else {
-  console.log("O'TDI: gorizontal oqish, mayda matn va sahifa xatosi topilmadi.");
+  console.log(
+    "O'TDI: gorizontal oqish, mayda matn va sahifa xatosi topilmadi.",
+  );
 }

@@ -165,7 +165,7 @@ export class ExpensesService {
       throw new BadRequestException("Expense category already exists");
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.expenseCategory.update({
-        where: { id },
+        where: { id, branchId: category.branchId, branch: { tenantId: category.tenantId } },
         data: { name, normalizedName },
       });
       await writeAuditLog(tx, {
@@ -188,7 +188,7 @@ export class ExpensesService {
     const category = await this.requireActiveCategory(id, user);
     return this.prisma.$transaction(async (tx) => {
       const archived = await tx.expenseCategory.update({
-        where: { id },
+        where: { id, branchId: category.branchId, branch: { tenantId: category.tenantId } },
         data: { isActive: false },
       });
       await writeAuditLog(tx, {

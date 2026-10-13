@@ -52,7 +52,7 @@ export type BranchForCheckout = {
  */
 export const customerCallbackPrefix = "cust";
 /** Manzil shundan qisqa bo'lsa, kuryer uni topa olmaydi. */
-export const minimumAddressLength = 5;
+const minimumAddressLength = 5;
 
 /*
  * Menyu qatorlari — bu MAHSULOT KODLARI, matn emas.
@@ -163,7 +163,11 @@ function productFeatureIcon(code: string, label: string): string | null {
     return "♨️";
   }
 
-  if (haystack.includes("DOUBLE") || haystack.includes("BIG") || /KATTA|BIG|DOUBLE/i.test(label)) {
+  if (
+    haystack.includes("DOUBLE") ||
+    haystack.includes("BIG") ||
+    /KATTA|BIG|DOUBLE/i.test(label)
+  ) {
     return "➕";
   }
 
@@ -189,7 +193,7 @@ export function telegramProductButtonLabel(
       ? "🌯"
       : categoryCode === "BURGER"
         ? "🍔"
-        : productIcons[categoryCode ?? ""] ?? "");
+        : (productIcons[categoryCode ?? ""] ?? ""));
 
   // The category heading already provides this word on narrow two-column rows.
   if (categoryCode === "LAVASH") {
@@ -323,13 +327,65 @@ export function branchSupportsType(
     : branch.pickupEnabled;
 }
 
-/** Varianti bitta yoki umuman yo'q mahsulot — konfigurator ko'rsatilmaydi. */
+/** Required add-ons need the configurator so their price is visible before adding. */
 export function isSimpleQuickAddProduct(product: {
   category?: { code?: string | null; name?: string | null } | null;
   variants?: Array<{ id: string; isDefault?: boolean | null }>;
-  modifiers?: unknown[];
+  modifiers?: Array<{
+    isRequired?: boolean | null;
+    minSelect?: number | null;
+  }>;
 }): boolean {
-  return (product.variants?.length ?? 0) <= 1;
+  const hasAddOnChoices = (product.modifiers?.length ?? 0) > 0;
+  return (product.variants?.length ?? 0) <= 1 && !hasAddOnChoices;
+}
+
+export function requiredCartModifiers(
+  modifiers: Array<{
+    modifierId: string;
+    isRequired?: boolean | null;
+    minSelect?: number | null;
+  }>,
+): CartModifier[] {
+  return modifiers.flatMap((modifier) => {
+    const quantity = Math.max(
+      modifier.minSelect ?? 0,
+      modifier.isRequired ? 1 : 0,
+    );
+    return quantity > 0 ? [{ modifierId: modifier.modifierId, quantity }] : [];
+  });
+}
+
+export function cartModifierSignature(modifiers: CartModifier[]): string {
+  return modifiers
+    .slice()
+    .sort((left, right) => left.modifierId.localeCompare(right.modifierId))
+    .map((item) => `${item.modifierId}:${item.quantity}`)
+    .join("|");
+}
+
+export function summarizeRequiredCartModifiers(
+  modifiers: Array<{
+    modifierId: string;
+    isRequired?: boolean | null;
+    minSelect?: number | null;
+    modifier: { name: string; price: Prisma.Decimal };
+  }>,
+): { selections: CartModifier[]; total: Prisma.Decimal; labels: string[] } {
+  const selections = requiredCartModifiers(modifiers);
+  const modifierById = new Map(
+    modifiers.map((modifier) => [modifier.modifierId, modifier] as const),
+  );
+  const total = selections.reduce((sum, selection) => {
+    const link = modifierById.get(selection.modifierId);
+    return link ? sum.add(link.modifier.price.mul(selection.quantity)) : sum;
+  }, new Prisma.Decimal(0));
+  const labels = selections.flatMap((selection) => {
+    const link = modifierById.get(selection.modifierId);
+    return link ? [`${link.modifier.name} ×${selection.quantity}`] : [];
+  });
+
+  return { selections, total, labels };
 }
 
 /*

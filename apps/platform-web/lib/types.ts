@@ -25,10 +25,16 @@ export type Kitchen = {
   onlineDevices: number;
   offlineDevices: number;
   lastActivityAt: string | null;
-  deviceVersions?: Array<{ deviceType: string; version: string; total: number; online: number; offline: number }>;
+  deviceVersions?: Array<{
+    deviceType: string;
+    version: string;
+    total: number;
+    online: number;
+    offline: number;
+  }>;
 };
 
-export type Heartbeat = {
+type Heartbeat = {
   version: string;
   buildId?: string;
   status: "healthy" | "degraded";
@@ -78,17 +84,26 @@ export type SiteEvent = {
   receivedAt: string;
   acknowledgedAt?: string | null;
   acknowledgedById?: string | null;
-  acknowledgedBy?: { displayName: string | null; email: string | null; phone: string | null } | null;
+  acknowledgedBy?: {
+    displayName: string | null;
+    email: string | null;
+    phone: string | null;
+  } | null;
 };
 
-export type GlobalSiteEvent = SiteEvent & { site: { name: string; productCode: string } };
+export type GlobalSiteEvent = SiteEvent & {
+  site: { name: string; productCode: string };
+};
 
 export type PlatformDiagnostic = {
   id: string;
   siteId: string;
   externalId: string;
   service: "backend" | "database" | "redis" | "control_plane";
-  code: "LOCAL_HEARTBEAT_BUILD_FAILED" | "CONTROL_PLANE_REJECTED_HEARTBEAT" | "CONTROL_PLANE_UNREACHABLE";
+  code:
+    | "LOCAL_HEARTBEAT_BUILD_FAILED"
+    | "CONTROL_PLANE_REJECTED_HEARTBEAT"
+    | "CONTROL_PLANE_UNREACHABLE";
   severity: "warning" | "error";
   occurredAt: string;
   receivedAt: string;
@@ -102,19 +117,27 @@ export type PlatformAuditEntry = {
   entityId: string | null;
   metadata: Record<string, unknown> | null;
   createdAt: string;
-  user: { id: string; displayName: string | null; email: string | null; phone: string | null } | null;
+  user: {
+    id: string;
+    displayName: string | null;
+    email: string | null;
+    phone: string | null;
+  } | null;
 };
 
-export type PlatformAuditPage = { entries: PlatformAuditEntry[]; hasNext: boolean };
+export type PlatformAuditPage = {
+  entries: PlatformAuditEntry[];
+  hasNext: boolean;
+};
 
-export type PlatformReportDay = {
+type PlatformReportDay = {
   day: string;
   completedOrders: number;
   cancelledOrders: number;
   completedOrderTotal: number;
 };
 
-export type PlatformReportSite = {
+type PlatformReportSite = {
   siteId: string;
   name: string;
   productCode: string;
@@ -131,10 +154,14 @@ export type PlatformReports = {
   generatedAt: string;
 };
 
-export type PlatformHealth = { service: string; status: string; database: { status: string }; redis: "connected" | "fallback" };
+export type PlatformHealth = {
+  service: string;
+  status: string;
+  database: { status: string };
+  redis: "connected" | "fallback";
+};
 
 export type ProvisionedAgent = { site: Site; agentToken: string };
-
 
 export type TenantRegistryEntry = {
   id: string;
@@ -176,8 +203,7 @@ export type TenantRegistryEntry = {
   }>;
 };
 
-
-export type TenantMembershipRole = {
+type TenantMembershipRole = {
   role: { id: string; code: string; name: string; isBranchScoped: boolean };
 };
 
@@ -189,7 +215,13 @@ export type TenantMembership = {
   status: "ACTIVE" | "SUSPENDED";
   createdAt: string;
   updatedAt: string;
-  user: { id: string; displayName: string | null; email: string | null; phone: string | null; isActive: boolean };
+  user: {
+    id: string;
+    displayName: string | null;
+    email: string | null;
+    phone: string | null;
+    isActive: boolean;
+  };
   branch: { id: string; code: string; name: string } | null;
   roles: TenantMembershipRole[];
 };
