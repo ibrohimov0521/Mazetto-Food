@@ -711,3 +711,14 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Targeted kitchen/order/printer tests passed 62/62. Full backend suite passed 740/740; shared HTTP retry tests passed 3/3. Backend application and script typechecks, plus targeted ESLint, passed.
 - The disposable release E2E applied all 62 migrations, then passed order-number validation, POS/Kassa validation, and customer WEB/TELEGRAM order E2E. Its cleanup path dropped the disposable DB. The pg 8.23 / Prisma query-queue deprecation warning remains non-failing.
 - This proves the current worktree against a disposable DB, not a staging A/B or production run. Production write, migration, and deployment remain unperformed pending release gates.
+
+## Current 62-migration staging acceptance (2026-10-13)
+
+- Exact PR head `fc12251ad00c4fef1def1bc3d41606e3d1a620f3` passed GitHub Actions CI run #851: `verify` and `windows-desktop-package`.
+- Built staging image `mazetto-staging-api-crmkze:fc12251`. Before migration, confirmed the API's DB target was `mazetto_staging` on the staging-only Docker network and the prior schema was 61/61.
+- Created and verified a staging-only pre-migration backup at `/home/javohir/backups/mazetto-staging/mazetto-staging-before-audit-fc12251-20261013.dump` (297,650 bytes; SHA-256 `a40a43fa6bcb655318e47b497f771dc6a19e2fb4f8f442aabbf2b0c256ca7056`; `pg_restore --list` passed).
+- Applied only `20261013130000_order_tenant_legacy_writer_guard` to staging. The candidate service converged on image `fc12251` with automatic rollback enabled; rollback tag `mazetto-staging-api-crmkze:rollback-fc12251` preserves the previous staging image.
+- Post-deploy health returned 200 with PostgreSQL `ok` and Redis connected; candidate Prisma status is 62/62.
+- The guarded staging A/B harness passed tenant membership/cache isolation, host/domain policy, realtime order delivery/reconnect, logout revocation, reports/audit, OTP sessions, and tenant media isolation. Its cleanup assertions restored one baseline tenant and zero fixture branches, users, memberships, domains, customers, settings, orders, roles, permissions, outbox rows, or media objects.
+- PR #296 description was updated with this exact-head CI and staging evidence. Production remains at the verified 59-migration baseline; no production migration, service deploy, or second-restaurant activation occurred.
+- Remaining live acceptance: real Windows/offline workstation flows, authenticated POS/Kitchen/cashier acceptance, physical customer receipt printers and transports, real Telegram group delivery/buttons, current object-store restore plus application rollback exercise, and NBU QR reconciliation integration.
