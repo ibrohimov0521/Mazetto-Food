@@ -163,26 +163,25 @@ The original implementation-first sequence below has been superseded by the
 completed audit work and the release gates recorded here. Do not restart those
 completed batches or treat automated acceptance as production approval.
 
-1. The current candidate is PR #296, head `b064d8e034b851b6d58f9b1b3a9d43a7d0a51773`.
-   Required GitHub checks `verify` and `windows-desktop-package` passed.
-2. The deployed staging API is still `f6531fc` from 2026-10-04. The live
-   staging A/B proof passed on that older image, not on this candidate.
-3. Before production, take and verify a fresh staging-only backup, deploy this
-   exact candidate to staging, apply its two pending migrations
-   (`20261013120000_product_kitchen_printer_routing` and
-   `20261013140000_tenant_scoped_order_numbers`) with `prisma migrate deploy`,
-   then verify migration status, API/PostgreSQL/Redis health, staging A/B, and
-   Mazetto Food order-to-kitchen/cash/receipt regression. Keep all fixtures
-   synthetic; do not send real Telegram/SMS or payment side effects.
-4. Only after candidate-specific staging and rollback/restore gates pass may the
-   approved production release procedure be considered. Production currently
-   remains at 59 migrations; the candidate has 61. Keep second-restaurant
-   activation disabled.
-5. Record the six restaurant workflow items AUD-164 through AUD-169 separately.
-   Their automated checks pass, but live workstation/settings refresh and
-   physical mixed-printer checks remain acceptance gates.
-6. The PR description still contains stale migration and test-count claims; fix
-   those before review/merge so the release record matches the candidate.
+1. PR #296 head is `8b42159818718d8339dcfd0e6c48ade1b89ec58e`; required
+   `verify` and `windows-desktop-package` checks passed. The code candidate
+   was fully release-accepted at `b064d8e`; `8b42159` only updates docs.
+2. Candidate image `mazetto-staging-api-crmkze:8b42159` is running in staging.
+   Health returned 200 with DB/Redis healthy; migrations are 61/61; the guarded
+   staging A/B proof passed and cleaned its synthetic fixtures.
+3. Staging backup, exact checksum, 716-entry restore-list validation, and all
+   three staging migrations are recorded in the staging runbook. The old image
+   remains available as `rollback-8b42159`.
+4. Still open before production: a candidate-specific full Mazetto Food
+   cashier-to-kitchen-to-cash/receipt regression, restore/rollback rehearsal,
+   and human workstation/physical-printer acceptance. No real external payment,
+   Telegram, or SMS side effect was sent.
+5. Production is unchanged at 59/61; candidate has 61 migrations. After all
+   gates pass, production needs only the two 2026-10-13 migrations under the
+   verified-backup release procedure. Keep second-restaurant activation off.
+6. Report AUD-164 through AUD-169 individually. Automated checks pass; each
+   item's remaining live acceptance is listed in the status section below.
+   PR description now reflects the migration and staging evidence.
 
 ### Historical implementation-first sequence
 
