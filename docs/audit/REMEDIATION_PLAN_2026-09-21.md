@@ -13,6 +13,7 @@ is important completeness/security, and `P3` is improvement or cleanup.
 | AUD-101 | P0 | Production DB migration history is not reconciled with the restored schema; generic migration caused an outage | Create verified backup; restore into isolated DB; baseline `_prisma_migrations`; run all migrations twice; deploy and rollback rehearsal; document checksums |
 | AUD-102 | P1 | No single release acceptance suite covers customer, staff, Desktop, Telegram and printing | Add read-only smoke plus disposable isolated write E2E; production human checklist records actor/time/result without fake live orders |
 | AUD-103 | P2 | Historical status document mixes deployed, local-only and obsolete claims | Keep this audit directory current and archive/supersede stale status sections |
+| AUD-104 | P2 | Shift/Kassa DB smoke only searched for localhost text and left synthetic rows behind | Require exact loopback PostgreSQL port 5433/database shift_qa; reject all other targets and run only against a disposable DB. Resolved on the audit branch and validated after 61 migrations |
 
 ### Gate B - receipts and printing
 
@@ -163,9 +164,10 @@ The original implementation-first sequence below has been superseded by the
 completed audit work and the release gates recorded here. Do not restart those
 completed batches or treat automated acceptance as production approval.
 
-1. PR #296 head is `8b42159818718d8339dcfd0e6c48ade1b89ec58e`; required
-   `verify` and `windows-desktop-package` checks passed. The code candidate
-   was fully release-accepted at `b064d8e`; `8b42159` only updates docs.
+1. PR #296 contains the release-accepted candidate code at `b064d8e`, staging
+   validation recorded on `8b42159`, and subsequent audit evidence. Always check
+   required CI against the exact latest PR head before merge; do not rely on an
+   earlier commit's green checks.
 2. Candidate image `mazetto-staging-api-crmkze:8b42159` is running in staging.
    Health returned 200 with DB/Redis healthy; migrations are 61/61; the guarded
    staging A/B proof passed and cleaned its synthetic fixtures.

@@ -18,6 +18,7 @@ import { ShiftsService } from "../src/modules/shifts/shifts.service";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { loadEnvironmentFile } from "../src/config/env";
+import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 
 // Skriptlar `tsx` ostida ishlaydi va `.env` ni o'zi yuklamaydi — Nest
 // bootstrap'i bu yerda ishtirok etmaydi (7-bosqich Q3.1).
@@ -423,10 +424,7 @@ function assertIsolatedDatabase(): void {
   }
 
   const databaseUrl = process.env.DATABASE_URL ?? "";
-
-  if (!/localhost|127\.0\.0\.1/.test(databaseUrl) || /mazettofood|production|dokploy/i.test(databaseUrl)) {
-    throw new Error("Refusing to run Shift/Kassa DB smoke outside an isolated localhost database");
-  }
+  assertDisposableLoopbackDatabase(databaseUrl, "shift_qa");
 }
 
 void main();
