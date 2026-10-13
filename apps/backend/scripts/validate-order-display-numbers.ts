@@ -46,6 +46,26 @@ async function main() {
           name: "Display Number Other Test",
         },
       });
+      const [legacyOrder] = await tx.$queryRaw<Array<{ tenantId: string }>>`
+        INSERT INTO "orders" (
+          "id",
+          "branchId",
+          "orderNumber",
+          "source",
+          "type",
+          "updatedAt"
+        )
+        VALUES (
+          ${`LEGACY-ID-${runId}`},
+          ${branch.id},
+          ${`LEGACY-NUMBER-${runId}`},
+          ${OrderSource.POS}::"OrderSource",
+          ${OrderType.TAKEAWAY}::"OrderType",
+          NOW()
+        )
+        RETURNING "tenantId"
+      `;
+      assert.equal(legacyOrder?.tenantId, tenantA.id);
       const testDate = new Date("2099-01-15T09:00:00.000Z");
 
       const web101 = await allocateDisplayOrderNumber(
