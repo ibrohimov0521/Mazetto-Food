@@ -19,6 +19,7 @@ const EXPECTED_MEDIA_HOST = "mazetto-staging-minio";
 const EXPECTED_MEDIA_BUCKET = "mazetto-staging";
 const API_BASE = "http://127.0.0.1:4000/api/v1";
 const DELIVERY_SETTING = "customer_delivery_fee";
+const KITCHEN_POS_SETTING = "kitchen_pos_orders_enabled";
 const SHARED_PHONE = "+998901234567";
 const CODE_A = "135791";
 const CODE_B = "246802";
@@ -303,6 +304,7 @@ async function main() {
     realtimePermissionId: null,
     orderCreatePermissionId: null,
     orderMutationPermissionIds: [],
+    kitchenViewPermissionId: null,
     tenantAOnlyRoleId: null,
     tenantAOnlyPermissionId: null,
     socketClients: [],
@@ -588,6 +590,11 @@ async function main() {
       });
       fixture.orderMutationPermissionIds.push(permission.id);
     }
+    const kitchenViewPermission = await prisma.permission.create({
+      data: { code: "KITCHEN_VIEW", name: "Disposable staging kitchen view" },
+    });
+    fixture.kitchenViewPermissionId = kitchenViewPermission.id;
+
     const tenantAOnlyPermission = await prisma.permission.create({
       data: {
         code: `QA_TENANT_A_ONLY_${suffix}`,
@@ -649,6 +656,9 @@ async function main() {
     });
     await prisma.rolePermission.create({
       data: { roleId: socketRole.id, permissionId: orderCreatePermission.id },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: socketRole.id, permissionId: kitchenViewPermission.id },
     });
     for (const permissionId of fixture.orderMutationPermissionIds) {
       await prisma.rolePermission.create({
@@ -1309,13 +1319,14 @@ async function main() {
     });
     const createdOrderA = await prisma.order.findFirst({
       where: { branchId: branchA.id, customerName: orderAName },
-      select: { id: true, version: true },
+      select: { id: true, version: true, source: true },
     });
     const orderAId =
       createdOrderA?.id ?? orderA.body.data?.id ?? orderA.body.data?.order?.id;
     if (typeof orderAId === "string") fixture.orderIds.push(orderAId);
     assert.equal(orderA.status, 201);
     assert.equal(typeof orderAId, "string");
+    assert.equal(createdOrderA?.source, "POS");
 
     const staffHeaders = {
       Authorization: "Bearer " + socketLoginA.body.data.tokens.accessToken,
@@ -1394,6 +1405,109 @@ async function main() {
     );
 
     const orderBName = "Realtime QA B " + suffix;
+    const readKitchenSetting = async (host, accessToken) => {
+      const response = await request("/settings", {
+        host,
+        headers: { Authorization: "Bearer " + accessToken },
+      });
+      assert.equal(response.status, 200);
+      const entry = response.body.data.find(
+        (setting) => setting.key === KITCHEN_POS_SETTING,
+      );
+      assert.ok(entry, "Kitchen POS visibility setting must be listed.");
+      return String(entry.value).toLowerCase() === "true";
+    };
+    const writeKitchenSetting = (host, accessToken, enabled) =>
+      request("/settings/" + KITCHEN_POS_SETTING, {
+        host,
+        method: "PATCH",
+        headers: { Authorization: "Bearer " + accessToken },
+        body: { value: String(enabled) },
+      });
+    const readKitchenOrderIds = async (host, accessToken) => {
+      const response = await request("/kitchen/orders", {
+        host,
+        headers: { Authorization: "Bearer " + accessToken },
+      });
+      assert.equal(response.status, 200);
+      assert.ok(Array.isArray(response.body.data.items));
+      return response.body.data.items.map((ticket) => ticket.orderId);
+    };
+
+    assert.equal(
+      await readKitchenSetting(tenantAHost, loginA.body.data.tokens.accessToken),
+      false,
+      "Tenant A kitchen POS visibility must default to disabled.",
+    );
+    assert.equal(
+      await readKitchenSetting(tenantBHost, loginB.body.data.tokens.accessToken),
+      false,
+      "Tenant B kitchen POS visibility must default to disabled.",
+    );
+    assert.equal(
+      (
+        await readKitchenOrderIds(
+          tenantAHost,
+          socketLoginA.body.data.tokens.accessToken,
+        )
+      ).includes(orderAId),
+      false,
+      "A POS ticket must be hidden from the kitchen by default.",
+    );
+
+    const enableKitchenPos = await writeKitchenSetting(
+      tenantAHost,
+      loginA.body.data.tokens.accessToken,
+      true,
+    );
+    assert.equal(enableKitchenPos.status, 200);
+    assert.equal(
+      await readKitchenSetting(tenantAHost, loginA.body.data.tokens.accessToken),
+      true,
+      "Tenant A must read back its enabled kitchen setting immediately.",
+    );
+    assert.equal(
+      await readKitchenSetting(tenantBHost, loginB.body.data.tokens.accessToken),
+      false,
+      "Changing tenant A must not enable POS tickets for tenant B.",
+    );
+    assert.ok(
+      (
+        await readKitchenOrderIds(
+          tenantAHost,
+          socketLoginA.body.data.tokens.accessToken,
+        )
+      ).includes(orderAId),
+      "The POS ticket must become visible after enabling the setting.",
+    );
+    assert.equal(
+      (
+        await readKitchenOrderIds(
+          tenantBHost,
+          socketLoginB.body.data.tokens.accessToken,
+        )
+      ).includes(orderAId),
+      false,
+      "Tenant B kitchen must never see tenant A's POS ticket.",
+    );
+
+    const disableKitchenPos = await writeKitchenSetting(
+      tenantAHost,
+      loginA.body.data.tokens.accessToken,
+      false,
+    );
+    assert.equal(disableKitchenPos.status, 200);
+    assert.equal(
+      (
+        await readKitchenOrderIds(
+          tenantAHost,
+          socketLoginA.body.data.tokens.accessToken,
+        )
+      ).includes(orderAId),
+      false,
+      "The POS ticket must be hidden again after disabling the setting.",
+    );
+
     const orderB = await request("/orders", {
       host: tenantBHost,
       method: "POST",
@@ -1656,7 +1770,7 @@ async function main() {
     assert.equal(revokedCustomerReconnect.connected, false);
 
     console.log(
-      "Staging A/B proof passed: tenant membership/cache separation, order mutation guard, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
+      "Staging A/B proof passed: tenant membership/cache separation, order mutation and kitchen POS visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
     );
   } catch (error) {
     failure = error;
@@ -1737,6 +1851,9 @@ async function main() {
         }
         await prisma.setting.deleteMany({
           where: { tenantId: { in: tenantIds }, key: DELIVERY_SETTING },
+        });
+        await prisma.setting.deleteMany({
+          where: { tenantId: { in: tenantIds }, key: KITCHEN_POS_SETTING },
         });
         if (fixture.userIds.length) {
           await prisma.tenantMembership.deleteMany({
@@ -1840,6 +1957,10 @@ async function main() {
         if (fixture.orderMutationPermissionIds.length)
           await prisma.permission.deleteMany({
             where: { id: { in: fixture.orderMutationPermissionIds } },
+          });
+        if (fixture.kitchenViewPermissionId)
+          await prisma.permission.deleteMany({
+            where: { id: fixture.kitchenViewPermissionId },
           });
         if (fixture.tenantAOnlyPermissionId)
           await prisma.permission.deleteMany({

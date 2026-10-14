@@ -805,3 +805,11 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Tenant A/B staff realtime delivery and reconnect/replay checks passed. The harness compares unique aggregate/order IDs so multiple valid lifecycle events for one order do not appear as cross-tenant leakage.
 - Fixture cleanup passed. A read-only post-run query showed the single pre-existing tenant and zero fixture branches, users, employees, memberships, domains, customers, orders, order events, outbox events, kitchen tickets, permissions or roles.
 - Staging runtime remains `e5b201d`, with no schema change; production service/database were not contacted for writes, no production deployment occurred, and the second restaurant remains inactive. Physical/employee acceptance and the production release gate remain distinct.
+
+## Tenant-scoped kitchen POS visibility staging acceptance (2026-10-14)
+
+- Extended the guarded A/B harness with an authenticated kitchen view role and real settings/kitchen HTTP requests. The test creates a POS order and kitchen ticket, verifies the setting defaults off, and checks the ticket is hidden.
+- Enabling kitchen_pos_orders_enabled for tenant A made its ticket visible immediately. Tenant B's setting remained off and its kitchen endpoint could not see tenant A's ticket. Disabling the setting hid the ticket again.
+- The exact running staging image was mazetto-staging-api-crmkze:e5b201d; only the disposable harness file was copied into the container. No app image, schema, production service or production data was changed.
+- Harness completion and cleanup assertions passed: synthetic settings, roles, permissions, orders, tickets and other fixtures returned to the one-tenant, zero-fixture baseline. The temporary test script was removed from the container.
+- CI #889 (38576928751) passed on the prior PR head ade6ccb; it predates this harness change. This test-only update still needs CI before its evidence is recorded as release-ready. No staging redeploy or production deploy is required for a QA harness/documentation-only change.
