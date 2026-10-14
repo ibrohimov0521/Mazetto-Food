@@ -276,6 +276,7 @@ async function main() {
     roleId: null,
     socketRoleId: null,
     permissionId: null,
+    catalogPermissionIds: [],
     auditPermissionId: null,
     reportPermissionId: null,
     membershipIds: [],
@@ -438,6 +439,18 @@ async function main() {
     await prisma.rolePermission.create({
       data: { roleId: role.id, permissionId: permission.id },
     });
+    for (const [code, name] of [
+      ["HOMEPAGE_MANAGE", "Disposable staging homepage access"],
+      ["INVENTORY_VIEW", "Disposable staging inventory access"],
+    ]) {
+      const catalogPermission = await prisma.permission.create({
+        data: { code, name },
+      });
+      fixture.catalogPermissionIds.push(catalogPermission.id);
+      await prisma.rolePermission.create({
+        data: { roleId: role.id, permissionId: catalogPermission.id },
+      });
+    }
     const auditPermission = await prisma.permission.create({
       data: { code: "AUDIT_VIEW", name: "Disposable staging audit access" },
     });
@@ -771,6 +784,33 @@ async function main() {
     assert.equal(loginA.body.data.user.id, loginB.body.data.user.id);
     assert.ok(loginA.body.data.user.roles.includes(tenantAOnlyRole.code));
     assert.ok(!loginB.body.data.user.roles.includes(tenantAOnlyRole.code));
+    const catalogTenantGuardMessage =
+      "Tenant context is required; exactly one active restaurant must be available";
+    const catalogGuardChecks = await Promise.all([
+      request("/customer/home", { host: tenantAHost }),
+      request("/recipes", {
+        host: tenantAHost,
+        headers: {
+          Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+        },
+      }),
+      request("/homepage/hero-slides", {
+        host: tenantAHost,
+        headers: {
+          Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+        },
+      }),
+      request("/homepage/promotions", {
+        host: tenantAHost,
+        headers: {
+          Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+        },
+      }),
+    ]);
+    for (const response of catalogGuardChecks) {
+      assert.equal(response.status, 403);
+      assert.equal(response.body.message, catalogTenantGuardMessage);
+    }
     const authMeA = await request("/auth/me", {
       host: tenantAHost,
       headers: { Authorization: "Bearer " + loginA.body.data.tokens.accessToken },
@@ -1348,6 +1388,11 @@ async function main() {
           await prisma.permission.deleteMany({
             where: { id: fixture.permissionId },
           });
+        if (fixture.catalogPermissionIds.length) {
+          await prisma.permission.deleteMany({
+            where: { id: { in: fixture.catalogPermissionIds } },
+          });
+        }
         if (fixture.uploadPermissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.uploadPermissionId },
