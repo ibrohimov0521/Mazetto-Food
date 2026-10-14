@@ -42,7 +42,8 @@ function makeWarehouseService(options: {
     warehouse: {
       findFirst: async () => ({ id: "warehouse-a", branchId: "branch-a" }),
     },
-    $transaction: async (callback: (client: typeof tx) => unknown) => callback(tx),
+    $transaction: async (callback: (client: typeof tx) => unknown) =>
+      callback(tx),
   } as never);
   return { service, audits, updates };
 }
@@ -103,26 +104,74 @@ test("ingredient change audit entries use the resolved tenant for a global owner
       },
     },
     ingredient: {
-      update: async ({ where }: { where: { id: string } }) => ({ id: where.id }),
+      update: async ({ where }: { where: { id: string } }) => ({
+        id: where.id,
+      }),
+      create: async () => ({ id: "ingredient-create" }),
       deleteMany: async () => ({ count: 1 }),
+    },
+    warehouse: {
+      create: async () => ({ id: "warehouse-create" }),
     },
   };
   const service = new InventoryService({
     restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+    branch: { findFirst: async () => ({ id: "branch-a" }) },
     ingredient: {
       findUnique: async ({ where }: { where: { id: string } }) =>
         ingredients.get(where.id) ?? null,
       findMany: async () => [
-        { id: "ingredient-delete", name: "Salt", _count: { recipeItems: 0, stock: 0, stockMovements: 0 } },
+        {
+          id: "ingredient-delete",
+          name: "Salt",
+          _count: { recipeItems: 0, stock: 0, stockMovements: 0 },
+        },
       ],
     },
-    $transaction: async (callback: (client: typeof tx) => unknown) => callback(tx),
+    $transaction: async (callback: (client: typeof tx) => unknown) =>
+      callback(tx),
   } as never);
 
-  await service.updateIngredient("ingredient-update", { name: "Updated" }, owner);
+  await service.updateIngredient(
+    "ingredient-update",
+    { name: "Updated" },
+    owner,
+  );
   await service.archiveIngredient("ingredient-archive", owner);
   await service.permanentlyDeleteIngredients(["ingredient-delete"], owner);
+  await service.createIngredient(
+    {
+      name: "New ingredient",
+      unit: "KG",
+      minimumStock: 0,
+      costPerUnit: 2,
+    } as never,
+    owner,
+  );
+  await service.createWarehouse({ branchId: "branch-a", name: "Main" }, owner);
 
-  assert.equal(audits.length, 3);
+  assert.equal(audits.length, 5);
   assert.ok(audits.every((entry) => entry.tenantId === "tenant-a"));
+  assert.deepEqual(
+    audits.slice(3).map(({ action, userId, entityId, metadata }) => ({
+      action,
+      userId,
+      entityId,
+      metadata,
+    })),
+    [
+      {
+        action: "INGREDIENT_CREATED",
+        userId: "owner-a",
+        entityId: "ingredient-create",
+        metadata: undefined,
+      },
+      {
+        action: "WAREHOUSE_CREATED",
+        userId: "owner-a",
+        entityId: "warehouse-create",
+        metadata: { branchId: "branch-a" },
+      },
+    ],
+  );
 });

@@ -75,27 +75,49 @@ export class InventoryService {
     });
   }
 
-  async createIngredient(dto: CreateIngredientDto) {
-    await this.assertSingleTenantCatalog();
-    return this.prisma.ingredient.create({
-      data: {
-        name: dto.name,
-        unit: dto.unit,
-        minimumStock: new Prisma.Decimal(dto.minimumStock),
-        costPerUnit: new Prisma.Decimal(dto.costPerUnit),
-      },
+  async createIngredient(dto: CreateIngredientDto, user: AuthenticatedUser) {
+    const tenantId = await this.assertSingleTenantCatalog();
+    return this.prisma.$transaction(async (tx) => {
+      const ingredient = await tx.ingredient.create({
+        data: {
+          name: dto.name,
+          unit: dto.unit,
+          minimumStock: new Prisma.Decimal(dto.minimumStock),
+          costPerUnit: new Prisma.Decimal(dto.costPerUnit),
+        },
+      });
+      await writeAuditLog(tx, {
+        tenantId,
+        userId: user.id,
+        action: "INGREDIENT_CREATED",
+        entity: "Ingredient",
+        entityId: ingredient.id,
+      });
+      return ingredient;
     });
   }
 
   async createWarehouse(dto: CreateWarehouseDto, user: AuthenticatedUser) {
     const branchId = resolveRequiredBranchScope(user, dto.branchId);
-    await assertBranchBelongsToActor(this.prisma, user, branchId);
+    const tenantId = await assertBranchBelongsToActor(
+      this.prisma,
+      user,
+      branchId,
+    );
 
-    return this.prisma.warehouse.create({
-      data: {
-        branchId,
-        name: dto.name,
-      },
+    return this.prisma.$transaction(async (tx) => {
+      const warehouse = await tx.warehouse.create({
+        data: { branchId, name: dto.name },
+      });
+      await writeAuditLog(tx, {
+        tenantId,
+        userId: user.id,
+        action: "WAREHOUSE_CREATED",
+        entity: "Warehouse",
+        entityId: warehouse.id,
+        metadata: { branchId },
+      });
+      return warehouse;
     });
   }
 
@@ -105,8 +127,11 @@ export class InventoryService {
     user: AuthenticatedUser,
   ) {
     const tenantId = await this.assertSingleTenantCatalog();
-    const ingredient = await this.prisma.ingredient.findUnique({ where: { id } });
-    if (!ingredient?.isActive) throw new NotFoundException("Active ingredient not found");
+    const ingredient = await this.prisma.ingredient.findUnique({
+      where: { id },
+    });
+    if (!ingredient?.isActive)
+      throw new NotFoundException("Active ingredient not found");
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.ingredient.update({
         where: { id },
@@ -137,9 +162,12 @@ export class InventoryService {
       where: { id },
       include: { _count: { select: { recipeItems: true } } },
     });
-    if (!ingredient?.isActive) throw new NotFoundException("Active ingredient not found");
+    if (!ingredient?.isActive)
+      throw new NotFoundException("Active ingredient not found");
     if (ingredient._count.recipeItems > 0) {
-      throw new BadRequestException("Ingredient is used by recipes; remove it from recipes first");
+      throw new BadRequestException(
+        "Ingredient is used by recipes; remove it from recipes first",
+      );
     }
     return this.prisma.$transaction(async (tx) => {
       const archived = await tx.ingredient.update({
@@ -160,20 +188,36 @@ export class InventoryService {
   async permanentlyDeleteIngredients(ids: string[], user: AuthenticatedUser) {
     const tenantId = await this.assertSingleTenantCatalog();
     const uniqueIds = [...new Set(ids.filter(Boolean))];
-    if (!uniqueIds.length) throw new BadRequestException("Ingredient IDs are required");
+    if (!uniqueIds.length)
+      throw new BadRequestException("Ingredient IDs are required");
     const rows = await this.prisma.ingredient.findMany({
       where: { id: { in: uniqueIds } },
-      include: { _count: { select: { recipeItems: true, stock: true, stockMovements: true } } },
+      include: {
+        _count: {
+          select: { recipeItems: true, stock: true, stockMovements: true },
+        },
+      },
     });
-    if (rows.length !== uniqueIds.length) throw new NotFoundException("Ingredient not found");
-    const blocked = rows.find((row) => row._count.recipeItems || row._count.stock || row._count.stockMovements);
-    if (blocked) throw new BadRequestException(`Ingredient ${blocked.name} has inventory or recipe history and cannot be deleted`);
+    if (rows.length !== uniqueIds.length)
+      throw new NotFoundException("Ingredient not found");
+    const blocked = rows.find(
+      (row) =>
+        row._count.recipeItems || row._count.stock || row._count.stockMovements,
+    );
+    if (blocked)
+      throw new BadRequestException(
+        `Ingredient ${blocked.name} has inventory or recipe history and cannot be deleted`,
+      );
     await this.prisma.$transaction(async (tx) => {
       await tx.ingredient.deleteMany({ where: { id: { in: uniqueIds } } });
       for (const id of uniqueIds) {
         await writeAuditLog(tx, {
           tenantId,
-          userId: user.id, action: "INGREDIENT_DELETED", entity: "Ingredient", entityId: id });
+          userId: user.id,
+          action: "INGREDIENT_DELETED",
+          entity: "Ingredient",
+          entityId: id,
+        });
       }
     });
     return { deletedCount: uniqueIds.length };
@@ -219,21 +263,18 @@ export class InventoryService {
         where: { warehouseId: id, quantity: { not: 0 } },
       });
       const activeWarehouseCount = await tx.warehouse.count({
-            where: { branchId: warehouse.branchId, isActive: true },
-          });
+        where: { branchId: warehouse.branchId, isActive: true },
+      });
       const recipeVariantCount = await tx.recipe.count({
-            where: {
-              items: { some: {} },
-              variant: {
-                product: {
-                  OR: [
-                    { branchId: warehouse.branchId },
-                    { branchId: null },
-                  ],
-                },
-              },
+        where: {
+          items: { some: {} },
+          variant: {
+            product: {
+              OR: [{ branchId: warehouse.branchId }, { branchId: null }],
             },
-          });
+          },
+        },
+      });
 
       if (nonZeroStock > 0) {
         throw new BadRequestException(
@@ -266,18 +307,31 @@ export class InventoryService {
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
     const branchId = resolveBranchScope(user);
     const uniqueIds = [...new Set(ids.filter(Boolean))];
-    if (!uniqueIds.length) throw new BadRequestException("Warehouse IDs are required");
+    if (!uniqueIds.length)
+      throw new BadRequestException("Warehouse IDs are required");
     const scope = {
       branch: { tenantId, ...(branchId ? { id: branchId } : {}) },
     };
     const rows = await this.prisma.warehouse.findMany({
       where: { id: { in: uniqueIds }, ...scope },
-      select: { id: true, branchId: true, name: true, stock: { select: { id: true } }, stockMovements: { select: { id: true } } },
+      select: {
+        id: true,
+        branchId: true,
+        name: true,
+        stock: { select: { id: true } },
+        stockMovements: { select: { id: true } },
+      },
     });
-    if (rows.length !== uniqueIds.length) throw new NotFoundException("Warehouse not found");
+    if (rows.length !== uniqueIds.length)
+      throw new NotFoundException("Warehouse not found");
     for (const row of rows) resolveBranchScope(user, row.branchId);
-    const blocked = rows.find((row) => row.stock.length || row.stockMovements.length);
-    if (blocked) throw new BadRequestException(`Warehouse ${blocked.name} has inventory history and cannot be deleted`);
+    const blocked = rows.find(
+      (row) => row.stock.length || row.stockMovements.length,
+    );
+    if (blocked)
+      throw new BadRequestException(
+        `Warehouse ${blocked.name} has inventory history and cannot be deleted`,
+      );
     await this.prisma.$transaction(async (tx) => {
       await tx.warehouse.deleteMany({
         where: { id: { in: uniqueIds }, ...scope },
@@ -285,7 +339,11 @@ export class InventoryService {
       for (const id of uniqueIds) {
         await writeAuditLog(tx, {
           tenantId,
-          userId: user.id, action: "WAREHOUSE_DELETED", entity: "Warehouse", entityId: id });
+          userId: user.id,
+          action: "WAREHOUSE_DELETED",
+          entity: "Warehouse",
+          entityId: id,
+        });
       }
     });
     return { deletedCount: uniqueIds.length };

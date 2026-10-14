@@ -42,14 +42,17 @@ test("warehouse and stock queries are filtered to the resolved restaurant tenant
   await service.getCost({} as never, owner);
 
   assert.deepEqual(
-    (filters.get("warehouses")?.branch as Record<string, unknown>),
+    filters.get("warehouses")?.branch as Record<string, unknown>,
     { tenantId: "tenant-a" },
   );
   for (const key of ["stock", "movements"]) {
     const warehouse = filters.get(key)?.warehouse as Record<string, unknown>;
     assert.deepEqual(warehouse.branch, { tenantId: "tenant-a" });
   }
-  const costWarehouse = filters.get("stock")?.warehouse as Record<string, unknown>;
+  const costWarehouse = filters.get("stock")?.warehouse as Record<
+    string,
+    unknown
+  >;
   assert.deepEqual(costWarehouse.branch, { tenantId: "tenant-a" });
 });
 
@@ -74,7 +77,10 @@ test("global ingredient catalog fails closed once multiple restaurants are activ
 
   await assert.rejects(service.listIngredients(), /Tenant context is required/);
   await assert.rejects(
-    service.createIngredient({ name: "Unassigned", unit: "KG" } as never),
+    service.createIngredient(
+      { name: "Unassigned", unit: "KG" } as never,
+      owner,
+    ),
     /Tenant context is required/,
   );
   assert.equal(ingredientReads, 0);
@@ -103,7 +109,10 @@ test("warehouse creation cannot attach data to a foreign restaurant branch", asy
   } as never);
 
   await assert.rejects(
-    service.createWarehouse({ branchId: "branch-b", name: "Warehouse" } as never, owner),
+    service.createWarehouse(
+      { branchId: "branch-b", name: "Warehouse" } as never,
+      owner,
+    ),
     /Branch not found/,
   );
   assert.deepEqual(lookup, { id: "branch-b", tenantId: "tenant-a" });
