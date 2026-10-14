@@ -304,6 +304,7 @@ async function main() {
     orderIds: [],
     shiftIds: [],
     paymentMethodIds: [],
+    receiptPermissionIds: [],
     realtimePermissionId: null,
     orderCreatePermissionId: null,
     orderMutationPermissionIds: [],
@@ -664,6 +665,21 @@ async function main() {
     });
     fixture.shiftClosePermissionId = shiftClosePermission.id;
     fixture.shiftViewPermissionId = shiftViewPermission.id;
+    await prisma.rolePermission.create({
+      data: { roleId: role.id, permissionId: shiftViewPermission.id },
+    });
+    for (const [code, name] of [
+      ["RECEIPT_VIEW", "Disposable staging receipt view"],
+      ["RECEIPT_PRINT", "Disposable staging receipt reprint"],
+    ]) {
+      const permission = await prisma.permission.create({
+        data: { code, name },
+      });
+      fixture.receiptPermissionIds.push(permission.id);
+      await prisma.rolePermission.create({
+        data: { roleId: role.id, permissionId: permission.id },
+      });
+    }
     const paymentCreatePermission = await prisma.permission.create({
       data: {
         code: "PAYMENT_CREATE",
@@ -761,6 +777,11 @@ async function main() {
     await prisma.rolePermission.create({
       data: { roleId: socketRole.id, permissionId: paymentRefundPermission.id },
     });
+    for (const permissionId of fixture.receiptPermissionIds) {
+      await prisma.rolePermission.create({
+        data: { roleId: socketRole.id, permissionId },
+      });
+    }
     for (const permissionId of fixture.orderMutationPermissionIds) {
       await prisma.rolePermission.create({
         data: { roleId: socketRole.id, permissionId },
@@ -1966,6 +1987,51 @@ async function main() {
     assert.equal(cashSaleOrder.shiftId, cashierShift.id);
     assert.equal(cashSaleResponse.body.data.order.id, cashSaleOrder.id);
     assert.equal(cashSaleResponse.body.data.payment.method, "CASH");
+    const receiptDetailsResponse = await request(
+      "/receipts/order/" + encodeURIComponent(cashSaleOrder.id),
+      { host: tenantAHost, headers: cashierHeaders },
+    );
+    assert.equal(receiptDetailsResponse.status, 200);
+    const cashReceipt = receiptDetailsResponse.body.data;
+    assert.equal(cashReceipt.orderId, cashSaleOrder.id);
+    const reprintJobCountBefore = await prisma.printJob.count({
+      where: { receiptId: cashReceipt.id },
+    });
+    const cashierReprintResponse = await request(
+      "/receipts/" + encodeURIComponent(cashReceipt.id) + "/reprint",
+      { host: tenantAHost, method: "POST", headers: cashierHeaders },
+    );
+    assert.equal(cashierReprintResponse.status, 201);
+    const cashierReprintJobCount = await prisma.printJob.count({
+      where: { receiptId: cashReceipt.id },
+    });
+    assert.equal(cashierReprintJobCount, reprintJobCountBefore + 1);
+    const adminReprintResponse = await request(
+      "/receipts/" + encodeURIComponent(cashReceipt.id) + "/reprint",
+      {
+        host: tenantAHost,
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+        },
+      },
+    );
+    assert.equal(adminReprintResponse.status, 201);
+    assert.equal(
+      await prisma.printJob.count({ where: { receiptId: cashReceipt.id } }),
+      reprintJobCountBefore + 2,
+    );
+    const crossTenantReprint = await request(
+      "/receipts/" + encodeURIComponent(cashReceipt.id) + "/reprint",
+      {
+        host: tenantBHost,
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + loginB.body.data.tokens.accessToken,
+        },
+      },
+    );
+    assert.equal(crossTenantReprint.status, 404);
 
     const cashSaleReplay = await request("/pos/orders", {
       host: tenantAHost,
@@ -1975,6 +2041,170 @@ async function main() {
     });
     assert.equal(cashSaleReplay.status, 201);
     assert.equal(cashSaleReplay.body.data.order.id, cashSaleOrder.id);
+    const historySaleKey = "qa-pos-history-cancel-" + suffix;
+    const historySaleBody = {
+      idempotencyKey: historySaleKey,
+      type: "TAKEAWAY",
+      payments: [{ paymentMethodCode: "CASH", amount: 2000 }],
+      items: [{ productId: productA.id, variantId: variantA.id, quantity: 2 }],
+    };
+    const historySaleResponse = await request("/pos/orders", {
+      host: tenantAHost,
+      method: "POST",
+      headers: cashierHeaders,
+      body: historySaleBody,
+    });
+    const historySaleOperation = await prisma.paymentOperation.findUnique({
+      where: { idempotencyKey: "POS_CHECKOUT:" + historySaleKey },
+      select: { orderId: true },
+    });
+    if (historySaleOperation)
+      fixture.orderIds.push(historySaleOperation.orderId);
+    assert.equal(historySaleResponse.status, 201);
+    assert.ok(historySaleOperation);
+    const historyCashOrder = await prisma.order.findUnique({
+      where: { id: historySaleOperation.orderId },
+      select: {
+        id: true,
+        version: true,
+        total: true,
+        items: { select: { id: true, quantity: true, productName: true } },
+      },
+    });
+    assert.ok(historyCashOrder);
+    assert.equal(historyCashOrder.total.toString(), "2000");
+    assert.equal(historyCashOrder.items.length, 1);
+    assert.equal(historyCashOrder.items[0].quantity.toString(), "2");
+    const cashierOrderDetail = await request(
+      "/orders/" + encodeURIComponent(historyCashOrder.id),
+      { host: tenantAHost, headers: cashierHeaders },
+    );
+    assert.equal(cashierOrderDetail.status, 200);
+    assert.equal(cashierOrderDetail.body.data.items.length, 1);
+    const historyItemId = cashierOrderDetail.body.data.items[0].id;
+    const historyListPath =
+      "/cash-register/shift/" +
+      encodeURIComponent(cashierShift.id) +
+      "/orders?search=" +
+      encodeURIComponent(productA.name) +
+      "&sort=amount-high&limit=100&offset=0";
+    const cashierHistorySearch = await request(historyListPath, {
+      host: tenantAHost,
+      headers: cashierHeaders,
+    });
+    assert.equal(cashierHistorySearch.status, 200);
+    assert.equal(cashierHistorySearch.body.data[0].id, historyCashOrder.id);
+    assert.ok(
+      cashierHistorySearch.body.data.some(
+        (order) => order.id === cashSaleOrder.id,
+      ),
+    );
+    const adminShiftDetail = await request(
+      "/cash-register/shifts/" + encodeURIComponent(cashierShift.id),
+      {
+        host: tenantAHost,
+        headers: {
+          Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+        },
+      },
+    );
+    assert.equal(adminShiftDetail.status, 200);
+    assert.equal(adminShiftDetail.body.data.id, cashierShift.id);
+    const adminHistorySearch = await request(historyListPath, {
+      host: tenantAHost,
+      headers: {
+        Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+      },
+    });
+    assert.equal(adminHistorySearch.status, 200);
+    assert.ok(
+      adminHistorySearch.body.data.some(
+        (order) => order.id === historyCashOrder.id,
+      ),
+    );
+    const foreignShiftDetail = await request(
+      "/cash-register/shifts/" + encodeURIComponent(cashierShift.id),
+      {
+        host: tenantBHost,
+        headers: {
+          Authorization: "Bearer " + loginB.body.data.tokens.accessToken,
+        },
+      },
+    );
+    assert.equal(foreignShiftDetail.status, 404);
+    const cancelHistoryItemKey = "qa-cancel-history-item-" + suffix;
+    const cancelHistoryItemBody = {
+      expectedVersion: historyCashOrder.version,
+      shiftId: cashierShift.id,
+      reasonCode: "CASHIER_ITEM_CANCELLED",
+    };
+    const cancelHistoryItemPath =
+      "/orders/" +
+      encodeURIComponent(historyCashOrder.id) +
+      "/items/" +
+      encodeURIComponent(historyItemId) +
+      "/actions/cancel";
+    const cancelHistoryItemHeaders = {
+      ...cashierHeaders,
+      "Idempotency-Key": cancelHistoryItemKey,
+    };
+    const cancelHistoryItemResponse = await request(cancelHistoryItemPath, {
+      host: tenantAHost,
+      method: "POST",
+      headers: cancelHistoryItemHeaders,
+      body: cancelHistoryItemBody,
+    });
+    assert.equal(cancelHistoryItemResponse.status, 201);
+    const cancelHistoryItemReplay = await request(cancelHistoryItemPath, {
+      host: tenantAHost,
+      method: "POST",
+      headers: cancelHistoryItemHeaders,
+      body: cancelHistoryItemBody,
+    });
+    assert.equal(cancelHistoryItemReplay.status, 201);
+    assert.equal(cancelHistoryItemReplay.body.data.id, historyCashOrder.id);
+    const itemRefunds = await prisma.paymentRefund.findMany({
+      where: { orderItemId: historyItemId },
+      select: { amount: true, shiftId: true },
+    });
+    assert.equal(itemRefunds.length, 1);
+    assert.equal(itemRefunds[0].amount.toString(), "2000");
+    assert.equal(itemRefunds[0].shiftId, cashierShift.id);
+    const itemRefundCashRows = await prisma.cashTransaction.findMany({
+      where: { orderId: historyCashOrder.id, type: "REFUND" },
+      select: { amount: true },
+    });
+    assert.equal(itemRefundCashRows.length, 1);
+    assert.equal(itemRefundCashRows[0].amount.toString(), "2000");
+    const itemRefundRevenue = await prisma.revenueRecord.findMany({
+      where: { orderId: historyCashOrder.id, source: "ADJUSTMENT" },
+      select: { amount: true },
+    });
+    assert.equal(itemRefundRevenue.length, 1);
+    assert.equal(itemRefundRevenue[0].amount.toString(), "-2000");
+    const cancelledHistoryItem = await prisma.orderItem.findUnique({
+      where: { id: historyItemId },
+      select: { status: true, cancellationReason: true },
+    });
+    assert.equal(cancelledHistoryItem.status, "CANCELLED");
+    assert.equal(cancelledHistoryItem.cancellationReason, null);
+    const cancelledHistoryOrders = await request(
+      "/cash-register/shift/" +
+        encodeURIComponent(cashierShift.id) +
+        "/orders?status=CANCELLED&limit=100&offset=0",
+      { host: tenantAHost, headers: cashierHeaders },
+    );
+    assert.equal(cancelledHistoryOrders.status, 200);
+    assert.deepEqual(
+      cancelledHistoryOrders.body.data.map((order) => order.id),
+      [payLaterOrder.id],
+    );
+    const cashierShiftDetail = await request(
+      "/cash-register/shifts/" + encodeURIComponent(cashierShift.id),
+      { host: tenantAHost, headers: cashierHeaders },
+    );
+    assert.equal(cashierShiftDetail.status, 200);
+    assert.equal(cashierShiftDetail.body.data.id, cashierShift.id);
     const cashSalePayments = await prisma.payment.findMany({
       where: { orderId: cashSaleOrder.id },
       select: { id: true, amount: true, status: true, methodCode: true },
@@ -2025,7 +2255,7 @@ async function main() {
     );
     assert.ok(liveCashierShift);
     assert.equal(Number(liveCashierShift.currentCash), 1000);
-    assert.equal(liveCashierShift.orderCount, 2);
+    assert.equal(liveCashierShift.orderCount, 3);
     const refundBody = {
       idempotencyKey: "qa-cash-refund-" + suffix,
       shiftId: cashierShift.id,
@@ -2126,7 +2356,11 @@ async function main() {
     );
     assert.deepEqual(
       shiftOrderIdsBeforeClose,
-      new Set([payLaterOperation.orderId, cashSaleOrder.id]),
+      new Set([
+        payLaterOperation.orderId,
+        cashSaleOrder.id,
+        historyCashOrder.id,
+      ]),
     );
 
     const legacySale = await prisma.cashTransaction.create({
@@ -2198,10 +2432,10 @@ async function main() {
     assert.equal(closedShiftRecord.closingBalance.toString(), "725");
     assert.equal(closedShiftRecord.expectedCash.toString(), "725");
     assert.equal(closedShiftRecord.cashDifference.toString(), "0");
-    assert.equal(closedShiftRecord.salesTotal.toString(), "1125");
-    assert.equal(closedShiftRecord.cashTotal.toString(), "1125");
-    assert.equal(closedShiftRecord.refundsTotal.toString(), "400");
-    assert.equal(closedShiftRecord.orderCount, 2);
+    assert.equal(closedShiftRecord.salesTotal.toString(), "3125");
+    assert.equal(closedShiftRecord.cashTotal.toString(), "3125");
+    assert.equal(closedShiftRecord.refundsTotal.toString(), "2400");
+    assert.equal(closedShiftRecord.orderCount, 3);
     assert.equal(
       await prisma.cashTransaction.count({
         where: {
@@ -2891,6 +3125,11 @@ async function main() {
           await prisma.permission.deleteMany({
             where: { id: { in: fixture.orderMutationPermissionIds } },
           });
+        if (fixture.receiptPermissionIds.length) {
+          await prisma.permission.deleteMany({
+            where: { id: { in: fixture.receiptPermissionIds } },
+          });
+        }
         if (fixture.kitchenViewPermissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.kitchenViewPermissionId },
