@@ -857,7 +857,12 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 
 ## Cashier history UI audit (2026-10-14)
 
-- The existing cashier-history browser QA only covered blank-reason cancellation. Expanded it to cover order search, status filtering, amount sorting, details, an optional-reason item cancellation against a paid CASH fixture, idempotency-key submission, and receipt reprint queue submission.
-- Verified against a fresh production-mode POS build from PR #303 head `a34713a`, isolated on port 3118 so the older preview on 3103 was not overwritten. Playwright passed at 375px and 1280px with no page errors or horizontal overflow.
+- The existing cashier-history browser QA only covered blank-reason cancellation. Expanded it to cover cashier and admin shift scopes, order search, status filtering, amount sorting, details, optional-reason item cancellation against a paid CASH fixture, idempotency-key submission, and receipt reprint queue submission.
+- Verified against a fresh production-mode POS build from PR #303 head `a34713a`, isolated on port 3118 so the older preview on 3103 was not overwritten. Playwright passed for both roles at 375px and 1280px with no page errors or horizontal overflow.
 - The first run on the long-lived 3103 preview could not find the fixture order; process inspection showed that preview started on Oct 13, before current commit `a34713a`. The same test passed on the fresh build, so this was a stale-preview mismatch, not an application defect.
 - Tests are mocked UI requests; no staging or production order, payment, refund, or print job was created. Authenticated staging cashier-history/reprint flow and backend cash-ledger effect remain open. Successful item cancellation refreshes and closes the detail dialog; test now follows that existing behavior.
+
+## POS role matrix recheck (2026-10-14)
+
+- Reran `qa-authenticated-role-matrix.mjs` against the isolated production-mode build on port 3118: all eight roles passed at 1440x900 and 390x844, including role redirects, non-admin denial for admin dashboard, and optional kitchen handoff/cancellation.
+- No browser page errors or horizontal overflow were observed. The API was mocked; this confirms responsive role UI behavior, not real employee credentials, backend authorization, or live workstation acceptance.
