@@ -903,5 +903,12 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 
 - Release workflow inspection found the candidate print-worker changes would otherwise ship under Desktop 0.1.117, whose `desktop-v0.1.117` tag already exists. The workflow intentionally skips an already-published version.
 - Confirmed the remote repository has no `desktop-v0.1.118` tag. Bumped `apps/desktop/package.json` to 0.1.118 so the main-branch Desktop Release workflow can publish the changed worker instead of silently skipping it.
-- The current audit head still has only the Windows package CI build; publication is triggered after merge to main. No installer was published or installed by this change.
-- Desktop tests passed 181/181 on the same source code before this metadata-only bump. Physical two-printer, user workstation update and offline reconnect acceptance remain open.
+- On PR head d377f64, CI #903 passed full verify and Windows installer packaging; the installer was built but not published. Desktop Release is triggered on main after merge. No installer has been installed on the restaurant workstation.
+- On the 0.1.118 candidate after the version bump, Desktop tests passed 181/181 and typecheck plus lint passed. Physical two-printer, user workstation update and offline reconnect acceptance remain open.
+
+## Production inventory ledger check (2026-10-15)
+
+- Ran aggregate queries in a read-only transaction directly on the production PostgreSQL container, with a 15-second statement timeout. No data was changed.
+- Production currently has 3 warehouses, 0 ingredients, 0 recipe items, 0 stock rows and 0 stock movements. There are no stock-versus-movement discrepancies or movements without a corresponding stock row to reconcile.
+- The Prisma Ingredient.currentStock column is unused by active application code; it contains no rows because the production ingredient table is empty. It was intentionally left in the schema and database rather than treated as disposable dead code.
+- Functional stock movement/replay tests remain useful and passed, but real stocked-inventory acceptance is deferred until the tenant has ingredient/recipe/stock data.
