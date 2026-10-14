@@ -801,6 +801,7 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 
 - The A/B staging harness now exercises the real staff HTTP routes on the exact running runtime image `mazetto-staging-api-crmkze:e5b201d`; the harness itself was copied to a temporary container path and did not alter the deployed app image.
 - Staff login, adding an item to a `NEW` order, and kitchen acceptance passed. Subsequent item-add and quantity-edit requests both returned HTTP 400; persisted quantity stayed 1 and the order retained exactly one kitchen ticket.
+- Commit `1d48cde000251a88dbf6ba3d838ff5cee41d07d7` passed GitHub Actions CI #888 (`38575702066`): full `verify` and Windows Desktop package jobs both succeeded.
 - Tenant A/B staff realtime delivery and reconnect/replay checks passed. The harness compares unique aggregate/order IDs so multiple valid lifecycle events for one order do not appear as cross-tenant leakage.
 - Fixture cleanup passed. A read-only post-run query showed the single pre-existing tenant and zero fixture branches, users, employees, memberships, domains, customers, orders, order events, outbox events, kitchen tickets, permissions or roles.
 - Staging runtime remains `e5b201d`, with no schema change; production service/database were not contacted for writes, no production deployment occurred, and the second restaurant remains inactive. Physical/employee acceptance and the production release gate remain distinct.
