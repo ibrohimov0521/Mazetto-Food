@@ -310,6 +310,7 @@ async function main() {
     posUsePermissionId: null,
     shiftOpenPermissionId: null,
     shiftViewPermissionId: null,
+    paymentRefundPermissionId: null,
     tenantAOnlyRoleId: null,
     tenantAOnlyPermissionId: null,
     socketClients: [],
@@ -348,6 +349,7 @@ async function main() {
       cashTransactionCount,
       paymentMethodCount,
       paymentCount,
+      paymentRefundCount,
       paymentOperationCount,
       revenueRecordCount,
       receiptCount,
@@ -372,6 +374,7 @@ async function main() {
       prisma.cashTransaction.count(),
       prisma.paymentMethod.count(),
       prisma.payment.count(),
+      prisma.paymentRefund.count(),
       prisma.paymentOperation.count(),
       prisma.revenueRecord.count(),
       prisma.receipt.count(),
@@ -397,6 +400,7 @@ async function main() {
         shiftCount,
         cashTransactionCount,
         paymentMethodCount,
+        paymentRefundCount,
         paymentCount,
         paymentOperationCount,
         revenueRecordCount,
@@ -421,6 +425,7 @@ async function main() {
         outboxEventCount: 0,
         shiftCount: 0,
         cashTransactionCount: 0,
+        paymentRefundCount: 0,
         paymentMethodCount: 0,
         paymentCount: 0,
         paymentOperationCount: 0,
@@ -647,6 +652,13 @@ async function main() {
       },
     });
     fixture.shiftViewPermissionId = shiftViewPermission.id;
+    const paymentRefundPermission = await prisma.permission.create({
+      data: {
+        code: "PAYMENT_REFUND",
+        name: "Disposable staging cash refund",
+      },
+    });
+    fixture.paymentRefundPermissionId = paymentRefundPermission.id;
     const tenantAOnlyPermission = await prisma.permission.create({
       data: {
         code: `QA_TENANT_A_ONLY_${suffix}`,
@@ -720,6 +732,9 @@ async function main() {
     });
     await prisma.rolePermission.create({
       data: { roleId: socketRole.id, permissionId: shiftViewPermission.id },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: socketRole.id, permissionId: paymentRefundPermission.id },
     });
     for (const permissionId of fixture.orderMutationPermissionIds) {
       await prisma.rolePermission.create({
@@ -1907,6 +1922,94 @@ async function main() {
     assert.ok(liveCashierShift);
     assert.equal(Number(liveCashierShift.currentCash), 1000);
     assert.equal(liveCashierShift.orderCount, 2);
+    const refundBody = {
+      idempotencyKey: "qa-cash-refund-" + suffix,
+      shiftId: cashierShift.id,
+      amount: 400,
+      reason: "QA staging partial refund",
+    };
+    const refundResponse = await request(
+      "/payments/" + cashSalePayments[0].id + "/refund",
+      {
+        host: tenantAHost,
+        method: "POST",
+        headers: cashierHeaders,
+        body: refundBody,
+      },
+    );
+    assert.equal(refundResponse.status, 201);
+    const refundReplay = await request(
+      "/payments/" + cashSalePayments[0].id + "/refund",
+      {
+        host: tenantAHost,
+        method: "POST",
+        headers: cashierHeaders,
+        body: refundBody,
+      },
+    );
+    assert.equal(refundReplay.status, 201);
+    assert.equal(refundReplay.body.data.id, refundResponse.body.data.id);
+    const refunds = await prisma.paymentRefund.findMany({
+      where: { paymentId: cashSalePayments[0].id },
+      select: { amount: true, shiftId: true, idempotencyKey: true },
+    });
+    assert.equal(refunds.length, 1);
+    assert.equal(refunds[0].amount.toString(), "400");
+    assert.equal(refunds[0].shiftId, cashierShift.id);
+    const refundedPayment = await prisma.payment.findUnique({
+      where: { id: cashSalePayments[0].id },
+      select: { status: true },
+    });
+    assert.equal(refundedPayment.status, "PARTIALLY_REFUNDED");
+    const refundedOrder = await prisma.order.findUnique({
+      where: { id: cashSaleOrder.id },
+      select: { paymentStatus: true },
+    });
+    assert.equal(refundedOrder.paymentStatus, "PENDING");
+    const postRefundTransactions = await prisma.cashTransaction.findMany({
+      where: { orderId: cashSaleOrder.id },
+      select: { type: true, amount: true },
+    });
+    assert.deepEqual(
+      postRefundTransactions
+        .map((row) => [row.type, row.amount.toString()])
+        .sort(),
+      [
+        ["REFUND", "400"],
+        ["SALE", "1000"],
+      ],
+    );
+    const postRefundRevenue = await prisma.revenueRecord.findMany({
+      where: { orderId: cashSaleOrder.id },
+      select: { source: true, amount: true },
+    });
+    assert.deepEqual(
+      postRefundRevenue
+        .map((row) => [row.source, row.amount.toString()])
+        .sort(),
+      [
+        ["ADJUSTMENT", "-400"],
+        ["ORDER", "1000"],
+      ],
+    );
+    assert.equal(
+      await prisma.receipt.count({
+        where: {
+          orderId: cashSaleOrder.id,
+          documentType: { startsWith: "REFUND:" },
+        },
+      }),
+      1,
+    );
+    const refundedShiftResponse = await request(
+      "/shifts?branchId=" + encodeURIComponent(branchA.id),
+      { host: tenantAHost, headers: cashierHeaders },
+    );
+    const refundedShift = refundedShiftResponse.body.data.find(
+      (shift) => shift.id === cashierShift.id,
+    );
+    assert.equal(refundedShiftResponse.status, 200);
+    assert.equal(Number(refundedShift.currentCash), 600);
     const boundary = "----MazettoStagingQA" + suffix;
     const imageBytes = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
@@ -2082,7 +2185,7 @@ async function main() {
     assert.equal(revokedCustomerReconnect.connected, false);
 
     console.log(
-      "Staging A/B proof passed: tenant membership/cache separation, order mutation, DINE_IN pay-later with no collection, immediate POS cash sale/idempotent replay accounting, kitchen POS visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
+      "Staging A/B proof passed: tenant membership/cache separation, order mutation, DINE_IN pay-later with no collection, immediate POS cash sale and partial cash refund with idempotent replay/accounting, kitchen POS visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
     );
   } catch (error) {
     failure = error;
@@ -2353,6 +2456,10 @@ async function main() {
           await prisma.permission.deleteMany({
             where: { id: fixture.shiftViewPermissionId },
           });
+        if (fixture.paymentRefundPermissionId)
+          await prisma.permission.deleteMany({
+            where: { id: fixture.paymentRefundPermissionId },
+          });
         if (fixture.tenantAOnlyPermissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.tenantAOnlyPermissionId },
@@ -2382,6 +2489,7 @@ async function main() {
           prisma.cashTransaction.count(),
           prisma.paymentMethod.count(),
           prisma.payment.count(),
+          prisma.paymentRefund.count(),
           prisma.paymentOperation.count(),
           prisma.revenueRecord.count(),
           prisma.receipt.count(),
@@ -2392,6 +2500,7 @@ async function main() {
           remaining,
           [
             1,
+            0,
             0,
             0,
             0,
