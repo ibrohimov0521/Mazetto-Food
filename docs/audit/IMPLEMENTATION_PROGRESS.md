@@ -771,3 +771,13 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Detail query isolated shifts #31 and #34 (2026-10-09). In both, candidate recomputation equals recorded `closingBalance`, and all cash movements predate close. Shift #34's 503,000 so'm gap is exactly two unlinked legacy SALE rows. Shift #31 has 14 unlinked SALE rows totaling 862,000 so'm, equal to closing balance, while stored `expectedCash` is 527,000 so'm; the old payment/revenue source cannot be reconstructed from current rows.
 - These are historical traceability gaps, not demonstrated cash drawer shortages. No production rows were changed. The earlier "15/24 expectedCash mismatches" wording is not reproducible with the exact 30-day window and candidate formula; do not use it as a confirmed mismatch count.
 - On branch head `4f2ac98`, focused payment/kitchen/shift tests passed 49/49. CI #882 (`38561052369`) passed both `verify` and `windows-desktop-package`. The API image remains `75d915c` on staging with health 200 and migrations 62/62; production remains `951f344`. The owner's NBU cancellation stands: no active NBU QR/SMS code exists, cash-only is enforced, and historical payment/schema records remain intact.
+
+
+## Inventory source-movement concurrency (2026-10-14)
+
+- Inventory audit found the source-key race path caught a PostgreSQL unique violation and queried again in the same transaction; PostgreSQL marks that transaction failed. A replay conflict could therefore fail instead of returning the original movement.
+- Source-key movements now use `createMany(skipDuplicates: true)`; only the transaction that inserted the movement updates stock. Manual movements without source keys still use normal `create`.
+- Added a parallel replay unit test proving one movement and one quantity increment, plus a real PostgreSQL test in `validate-unified-cash-db.ts`.
+- Verification: inventory lifecycle tests 5/5, backend suite 748/748, HTTP retry tests 3/3, backend app/script typecheck, targeted lint and Prettier all passed.
+- A fresh disposable database received all 62 migrations; the unified cash DB validator passed with the concurrent inventory replay. Its temporary `cash_qa` database was dropped; the pre-existing `ci` and `postgres` databases were preserved.
+- No schema migration or production write was made. The code fix has not yet been pushed or deployed; staging and production remain unchanged pending CI and staging rollout.

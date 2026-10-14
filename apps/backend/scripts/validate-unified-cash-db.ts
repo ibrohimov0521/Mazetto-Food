@@ -4,10 +4,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
+  IngredientUnit,
   KitchenTicketStatus,
   OrderSource,
   OrderStatus,
   PaymentStatus,
+  Prisma,
+  StockMovementType,
 } from "@prisma/client";
 import { CourierOrderStatus } from "../src/modules/customers/dto/list-customers.dto";
 import { PrismaService } from "../src/prisma/prisma.service";
@@ -146,9 +149,56 @@ async function main() {
         return value;
       },
     });
+    const inventory = new InventoryService(prisma);
+    const replayWarehouse = await prisma.warehouse.create({
+      data: { branchId: branch.id, name: "Replay QA " + id },
+    });
+    const replayIngredient = await prisma.ingredient.create({
+      data: { name: "Replay QA " + id, unit: IngredientUnit.KG },
+    });
+    const replayMovement = {
+      ingredientId: replayIngredient.id,
+      warehouseId: replayWarehouse.id,
+      type: StockMovementType.IN,
+      quantity: new Prisma.Decimal(3),
+      reason: "Concurrent replay test",
+      sourceType: "QA_ORDER_ITEM",
+      sourceId: "QA" + id,
+      sourceItemId: "QA_ORDER_ITEM_" + id,
+    };
+    const replayResults = await Promise.all([
+      prisma.$transaction((tx) =>
+        inventory.applyStockMovement(tx, replayMovement),
+      ),
+      prisma.$transaction((tx) =>
+        inventory.applyStockMovement(tx, replayMovement),
+      ),
+    ]);
+    const [replayStock, replayMovementCount] = await Promise.all([
+      prisma.stock.findUnique({
+        where: {
+          warehouseId_ingredientId: {
+            warehouseId: replayWarehouse.id,
+            ingredientId: replayIngredient.id,
+          },
+        },
+      }),
+      prisma.stockMovement.count({
+        where: {
+          sourceType: replayMovement.sourceType,
+          sourceItemId: replayMovement.sourceItemId,
+          ingredientId: replayIngredient.id,
+          warehouseId: replayWarehouse.id,
+        },
+      }),
+    ]);
+    assert.equal(replayResults[0]!.id, replayResults[1]!.id);
+    assert.equal(replayStock?.quantity.toFixed(3), "3.000");
+    assert.equal(replayMovementCount, 1);
+
     const orders = new OrdersService(
       prisma,
-      new InventoryService(prisma),
+      inventory,
       observedKitchen as never,
     );
     const sourceShift = await shifts.openShift({ openingBalance: 0 }, worker);
