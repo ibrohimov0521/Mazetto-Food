@@ -281,6 +281,7 @@ async function main() {
     deviceIds: [],
     auditLogIds: [],
     auditBaselineCount: null,
+    notificationOutboxBaselineCount: null,
     domainIds: [],
     userIds: [],
     employeeIds: [],
@@ -311,6 +312,7 @@ async function main() {
     shiftOpenPermissionId: null,
     shiftViewPermissionId: null,
     shiftClosePermissionId: null,
+    paymentCreatePermissionId: null,
     paymentRefundPermissionId: null,
     tenantAOnlyRoleId: null,
     tenantAOnlyPermissionId: null,
@@ -437,6 +439,8 @@ async function main() {
       "Staging must be an empty baseline before the disposable A/B fixture is created.",
     );
     fixture.auditBaselineCount = await prisma.auditLog.count();
+    fixture.notificationOutboxBaselineCount =
+      await prisma.notificationOutbox.count();
     guardPassed = true;
 
     const tenantB = await prisma.restaurantTenant.create({
@@ -660,6 +664,13 @@ async function main() {
     });
     fixture.shiftClosePermissionId = shiftClosePermission.id;
     fixture.shiftViewPermissionId = shiftViewPermission.id;
+    const paymentCreatePermission = await prisma.permission.create({
+      data: {
+        code: "PAYMENT_CREATE",
+        name: "Disposable staging cash payment",
+      },
+    });
+    fixture.paymentCreatePermissionId = paymentCreatePermission.id;
     const paymentRefundPermission = await prisma.permission.create({
       data: {
         code: "PAYMENT_REFUND",
@@ -740,6 +751,9 @@ async function main() {
     });
     await prisma.rolePermission.create({
       data: { roleId: socketRole.id, permissionId: shiftClosePermission.id },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: socketRole.id, permissionId: paymentCreatePermission.id },
     });
     await prisma.rolePermission.create({
       data: { roleId: socketRole.id, permissionId: shiftViewPermission.id },
@@ -1664,6 +1678,7 @@ async function main() {
         source: true,
         paymentStatus: true,
         shiftId: true,
+        version: true,
       },
     });
     assert.ok(payLaterOrder);
@@ -1739,6 +1754,84 @@ async function main() {
       1,
       "A pending dine-in sale must leave only the zero opening-balance row in the till.",
     );
+
+    const cancelOrderKey = "qa-cancel-unpaid-" + suffix;
+    const cancelOrderHeaders = {
+      ...cashierHeaders,
+      "Idempotency-Key": cancelOrderKey,
+    };
+    const cancelOrderBody = {
+      expectedVersion: payLaterOrder.version,
+      reasonCode: "CASHIER_CANCELLED",
+    };
+    const cancelOrderPath =
+      "/orders/" + encodeURIComponent(payLaterOrder.id) + "/actions/cancel";
+    const cancelOrderResponse = await request(cancelOrderPath, {
+      host: tenantAHost,
+      method: "POST",
+      headers: cancelOrderHeaders,
+      body: cancelOrderBody,
+    });
+    assert.equal(cancelOrderResponse.status, 201);
+    assert.equal(cancelOrderResponse.body.data.id, payLaterOrder.id);
+    assert.equal(cancelOrderResponse.body.data.status, "CANCELLED");
+    const cancelOrderReplay = await request(cancelOrderPath, {
+      host: tenantAHost,
+      method: "POST",
+      headers: cancelOrderHeaders,
+      body: cancelOrderBody,
+    });
+    assert.equal(cancelOrderReplay.status, 201);
+    assert.equal(cancelOrderReplay.body.data.id, payLaterOrder.id);
+    assert.equal(cancelOrderReplay.body.data.status, "CANCELLED");
+    const cancelledOrderRecord = await prisma.order.findUnique({
+      where: { id: payLaterOrder.id },
+      select: { status: true, cancellationReason: true, version: true },
+    });
+    assert.ok(cancelledOrderRecord);
+    assert.equal(cancelledOrderRecord.status, "CANCELLED");
+    assert.equal(cancelledOrderRecord.cancellationReason, null);
+    assert.equal(cancelledOrderRecord.version, payLaterOrder.version + 1);
+    assert.equal(
+      await prisma.orderEvent.count({
+        where: {
+          orderId: payLaterOrder.id,
+          eventType: "OrderCancelled",
+          idempotencyKey: cancelOrderKey,
+        },
+      }),
+      1,
+      "Cancellation replay must persist one idempotent CANCELLED order event.",
+    );
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: payLaterOrder.id } }),
+      0,
+    );
+    assert.equal(
+      await prisma.revenueRecord.count({
+        where: { orderId: payLaterOrder.id },
+      }),
+      0,
+    );
+    assert.equal(
+      await prisma.cashTransaction.count({
+        where: { orderId: payLaterOrder.id },
+      }),
+      0,
+    );
+    assert.equal(
+      await prisma.kitchenTicket.count({
+        where: { orderId: payLaterOrder.id },
+      }),
+      1,
+      "Cancelling must preserve exactly one kitchen ticket for the order.",
+    );
+    const shiftAfterCancel = await prisma.shift.findUnique({
+      where: { id: cashierShift.id },
+      select: { salesTotal: true, cashTotal: true },
+    });
+    assert.equal(shiftAfterCancel.salesTotal.toString(), "0");
+    assert.equal(shiftAfterCancel.cashTotal.toString(), "0");
     const orderB = await request("/orders", {
       host: tenantBHost,
       method: "POST",
@@ -2217,6 +2310,228 @@ async function main() {
       customerB.body.data.customer.id,
     );
 
+    const webOrderKey = "qa-web-cash-order-" + suffix;
+    const webOrderBody = {
+      idempotencyKey: webOrderKey,
+      branchId: branchA.id,
+      type: "PICKUP",
+      paymentMethod: "CASH",
+      items: [{ productId: productA.id, variantId: variantA.id, quantity: 1 }],
+    };
+    const customerAHeaders = {
+      Authorization: "Bearer " + customerA.body.data.tokens.accessToken,
+    };
+    const webOrderResponse = await request("/customer/orders", {
+      host: tenantAHost,
+      method: "POST",
+      headers: customerAHeaders,
+      body: webOrderBody,
+    });
+    assert.equal(webOrderResponse.status, 201);
+    const webOrderId = webOrderResponse.body.data.order.id;
+    assert.equal(typeof webOrderId, "string");
+    fixture.orderIds.push(webOrderId);
+    const webOrderReplay = await request("/customer/orders", {
+      host: tenantAHost,
+      method: "POST",
+      headers: customerAHeaders,
+      body: webOrderBody,
+    });
+    assert.equal(webOrderReplay.status, 201);
+    assert.equal(webOrderReplay.body.data.order.id, webOrderId);
+    assert.equal(
+      await prisma.customerOrder.count({ where: { orderId: webOrderId } }),
+      1,
+    );
+    assert.equal(
+      await prisma.customerOrderAttempt.count({
+        where: { customerId: customerA.body.data.customer.id },
+      }),
+      1,
+    );
+    const webCustomerOrder = await prisma.customerOrder.findUnique({
+      where: { orderId: webOrderId },
+      select: { type: true, paymentMethod: true },
+    });
+    assert.equal(webCustomerOrder.type, "PICKUP");
+    assert.equal(webCustomerOrder.paymentMethod, "CASH");
+    const webOrderRecord = await prisma.order.findUnique({
+      where: { id: webOrderId },
+      select: {
+        id: true,
+        source: true,
+        status: true,
+        paymentStatus: true,
+        total: true,
+      },
+    });
+    assert.ok(webOrderRecord);
+    assert.equal(webOrderRecord.source, "WEB");
+    assert.equal(webOrderRecord.total.toString(), "1000");
+    assert.equal(webOrderRecord.paymentStatus, "PENDING");
+    assert.equal(
+      await prisma.kitchenTicket.count({ where: { orderId: webOrderId } }),
+      1,
+    );
+    assert.ok(
+      (
+        await readKitchenOrderIds(
+          tenantAHost,
+          socketLoginA.body.data.tokens.accessToken,
+        )
+      ).includes(webOrderId),
+      "An online WEB order must appear in the kitchen while POS tickets stay hidden.",
+    );
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: webOrderId } }),
+      0,
+    );
+    assert.equal(
+      await prisma.revenueRecord.count({ where: { orderId: webOrderId } }),
+      0,
+    );
+    assert.equal(
+      await prisma.cashTransaction.count({ where: { orderId: webOrderId } }),
+      0,
+    );
+
+    const webShiftOpen = await request("/shifts/open", {
+      host: tenantAHost,
+      method: "POST",
+      headers: cashierHeaders,
+      body: { branchId: branchA.id, openingBalance: 0 },
+    });
+    assert.equal(webShiftOpen.status, 201);
+    const webShift = await prisma.shift.findFirst({
+      where: {
+        branchId: branchA.id,
+        employeeId: fixture.employeeIds[0],
+        status: "OPEN",
+      },
+      orderBy: { openedAt: "desc" },
+    });
+    assert.ok(webShift);
+    fixture.shiftIds.push(webShift.id);
+    const webOrderTotal = Number(webOrderRecord.total);
+    const webPaymentKey = "qa-web-cash-payment-" + suffix;
+    const webPaymentBody = {
+      orderId: webOrderId,
+      idempotencyKey: webPaymentKey,
+      shiftId: webShift.id,
+      payments: [{ paymentMethodCode: "CASH", amount: webOrderTotal }],
+    };
+    const webPaymentResponse = await request("/payments/process", {
+      host: tenantAHost,
+      method: "POST",
+      headers: cashierHeaders,
+      body: webPaymentBody,
+    });
+    assert.equal(webPaymentResponse.status, 201);
+    const webPaymentReplay = await request("/payments/process", {
+      host: tenantAHost,
+      method: "POST",
+      headers: cashierHeaders,
+      body: webPaymentBody,
+    });
+    assert.equal(webPaymentReplay.status, 201);
+    const webPaymentRecord = await prisma.payment.findMany({
+      where: { orderId: webOrderId },
+      select: { id: true, amount: true, status: true },
+    });
+    assert.equal(webPaymentRecord.length, 1);
+    assert.equal(webPaymentRecord[0].amount.toString(), String(webOrderTotal));
+    assert.equal(webPaymentRecord[0].status, "SUCCESS");
+    assert.equal(
+      await prisma.paymentOperation.count({ where: { orderId: webOrderId } }),
+      1,
+    );
+    const webRevenue = await prisma.revenueRecord.findMany({
+      where: { orderId: webOrderId },
+      select: { amount: true, shiftId: true, source: true },
+    });
+    assert.equal(webRevenue.length, 1);
+    assert.equal(webRevenue[0].amount.toString(), String(webOrderTotal));
+    assert.equal(webRevenue[0].shiftId, webShift.id);
+    assert.equal(webRevenue[0].source, "ORDER");
+    const webCashRows = await prisma.cashTransaction.findMany({
+      where: { orderId: webOrderId },
+      select: { amount: true, shiftId: true, type: true },
+    });
+    assert.equal(webCashRows.length, 1);
+    assert.equal(webCashRows[0].amount.toString(), String(webOrderTotal));
+    assert.equal(webCashRows[0].shiftId, webShift.id);
+    assert.equal(webCashRows[0].type, "SALE");
+    const paidWebOrder = await prisma.order.findUnique({
+      where: { id: webOrderId },
+      select: { paymentStatus: true },
+    });
+    assert.equal(paidWebOrder.paymentStatus, "PAID");
+    assert.ok(
+      (
+        await readKitchenOrderIds(
+          tenantAHost,
+          socketLoginA.body.data.tokens.accessToken,
+        )
+      ).includes(webOrderId),
+      "Cash payment must not hide the online order from kitchen.",
+    );
+    const webShiftSummaryResponse = await request(
+      "/shifts?branchId=" + encodeURIComponent(branchA.id),
+      { host: tenantAHost, headers: cashierHeaders },
+    );
+    assert.equal(webShiftSummaryResponse.status, 200);
+    const webShiftSummary = webShiftSummaryResponse.body.data.find(
+      (shift) => shift.id === webShift.id,
+    );
+    assert.equal(Number(webShiftSummary.currentCash), webOrderTotal);
+    const webShiftCloseKey = "qa-web-shift-close-" + suffix;
+    const webShiftCloseHeaders = {
+      ...cashierHeaders,
+      "Idempotency-Key": webShiftCloseKey,
+    };
+    const webShiftCloseBody = { closingBalance: webOrderTotal };
+    const webShiftCloseResponse = await request(
+      "/shifts/" + webShift.id + "/close",
+      {
+        host: tenantAHost,
+        method: "POST",
+        headers: webShiftCloseHeaders,
+        body: webShiftCloseBody,
+      },
+    );
+    assert.equal(webShiftCloseResponse.status, 201);
+    const webShiftCloseReplay = await request(
+      "/shifts/" + webShift.id + "/close",
+      {
+        host: tenantAHost,
+        method: "POST",
+        headers: webShiftCloseHeaders,
+        body: webShiftCloseBody,
+      },
+    );
+    assert.equal(webShiftCloseReplay.status, 201);
+    const closedWebShift = await prisma.shift.findUnique({
+      where: { id: webShift.id },
+      select: {
+        status: true,
+        expectedCash: true,
+        cashDifference: true,
+        cashTotal: true,
+        orderCount: true,
+      },
+    });
+    assert.equal(closedWebShift.status, "CLOSED");
+    assert.equal(closedWebShift.expectedCash.toString(), String(webOrderTotal));
+    assert.equal(closedWebShift.cashDifference.toString(), "0");
+    assert.equal(closedWebShift.cashTotal.toString(), String(webOrderTotal));
+    assert.equal(closedWebShift.orderCount, 1);
+    assert.equal(
+      await prisma.cashTransaction.count({
+        where: { shiftId: webShift.id, type: "CLOSING_BALANCE" },
+      }),
+      1,
+    );
+
     const customerMe = (host, token) =>
       request("/customer/auth/me", {
         host,
@@ -2282,7 +2597,7 @@ async function main() {
     assert.equal(revokedCustomerReconnect.connected, false);
 
     console.log(
-      "Staging A/B proof passed: tenant membership/cache separation, order mutation, DINE_IN pay-later with no collection, immediate POS cash sale and partial cash refund with idempotent replay/accounting, idempotent shift close and totals, kitchen POS visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
+      "Staging A/B proof passed: tenant membership/cache separation, order mutation and cancellation, WEB cash order replay/settlement, immediate POS cash sale and partial refund, shift-close totals, kitchen source visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
     );
   } catch (error) {
     failure = error;
@@ -2341,6 +2656,15 @@ async function main() {
             where: { userId: { in: fixture.userIds } },
           });
         }
+        const fixtureCustomers = await prisma.customer.findMany({
+          where: { tenantId: { in: tenantIds }, phone: SHARED_PHONE },
+          select: { id: true },
+        });
+        if (fixtureCustomers.length) {
+          await prisma.customerOrder.deleteMany({
+            where: { customerId: { in: fixtureCustomers.map(({ id }) => id) } },
+          });
+        }
         await prisma.customer.deleteMany({
           where: { tenantId: { in: tenantIds }, phone: SHARED_PHONE },
         });
@@ -2358,6 +2682,14 @@ async function main() {
               ...operations.map((row) => row.orderId),
             ]),
           ];
+          if (fixture.orderIds.length) {
+            await prisma.notificationOutbox.deleteMany({
+              where: {
+                tenantId: { in: tenantIds },
+                orderId: { in: fixture.orderIds },
+              },
+            });
+          }
           const shifts = await prisma.shift.findMany({
             where: {
               branchId: { in: fixture.branchIds },
@@ -2561,6 +2893,10 @@ async function main() {
           await prisma.permission.deleteMany({
             where: { id: fixture.shiftClosePermissionId },
           });
+        if (fixture.paymentCreatePermissionId)
+          await prisma.permission.deleteMany({
+            where: { id: fixture.paymentCreatePermissionId },
+          });
         if (fixture.tenantAOnlyPermissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.tenantAOnlyPermissionId },
@@ -2627,6 +2963,12 @@ async function main() {
             fixture.auditBaselineCount,
           ],
           "All staging fixtures must be removed.",
+        );
+        assert.equal(await prisma.customerOrder.count(), 0);
+        assert.equal(await prisma.customerOrderAttempt.count(), 0);
+        assert.equal(
+          await prisma.notificationOutbox.count(),
+          fixture.notificationOutboxBaselineCount,
         );
       } catch {
         cleanupFailure = new Error(

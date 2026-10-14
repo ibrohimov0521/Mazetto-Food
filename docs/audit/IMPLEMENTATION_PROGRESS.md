@@ -833,8 +833,24 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 
 ## Authenticated staging shift-close acceptance (2026-10-14)
 
-- Extended the guarded tenant A/B harness through close on the same cashier shift after an unpaid DINE_IN and a 1,000 so'm CASH TAKEAWAY sale with a 400 so'm partial refund.
+- Extended the guarded tenant A/B harness through close on the same cashier shift after an unpaid DINE_IN cancellation and a 1,000 so'm CASH TAKEAWAY sale with a 400 so'm partial refund.
 - Before close, the shift order endpoint returned both orders. Closing with 600 so'm returned CLOSED; repeating the same idempotency key returned the same shift and created only one closing-balance transaction.
 - Exact runtime mazetto-staging-api-crmkze:e5b201d persisted expectedCash=600, closingBalance=600, cashDifference=0, salesTotal=1,000, cashTotal=1,000, refundsTotal=400, and orderCount=2. The order endpoint returned the same two orders after close.
 - The exact-image staging A/B harness passed again, including its cleanup assertions back to the one-tenant, zero-fixture baseline. Node syntax, Prettier, and git diff --check passed.
 - Physical shift-close report printing is still unverified; the prior mocked 205-order report test is not physical printer proof. This QA/docs-only checkpoint does not change the staging app image or production; no production write, migration, deploy, or second-restaurant activation occurred.
+
+## Unpaid-order cancellation staging acceptance (2026-10-14)
+
+- On exact staging runtime mazetto-staging-api-crmkze:e5b201d, authenticated cashier cancelled the pending DINE_IN order without sending a customer-entered reason/note; the internal audit reason code remained populated.
+- The first request and same-key replay both returned the same CANCELLED order. Exactly one OrderCancelled event was stored and the order version incremented once; cancellationReason stayed null.
+- No Payment, RevenueRecord or order-linked CashTransaction was created. Shift sales/cash stayed zero, and the order retained the existing kitchen-ticket count.
+- The full tenant A/B staging harness passed and cleaned up its fixture data. This verifies unpaid whole-order cancellation and no-note acceptance, not item-level cancellation from history, paid-order cancellation, or offline replay.
+
+## WEB pickup cash settlement staging acceptance (2026-10-14)
+
+- Against exact staging runtime mazetto-staging-api-crmkze:e5b201d, a tenant-A customer created a PICKUP WEB order with CASH selected. Replaying the customer checkout key returned the same order and left one CustomerOrder and one CustomerOrderAttempt.
+- Before cashier acceptance, the order had no Payment, RevenueRecord or CashTransaction. Its WEB kitchen ticket was visible even with cashier POS tickets hidden by the default setting.
+- An authenticated cashier opened a new shift and accepted the 1,000 so'm cash payment through /payments/process. An idempotent replay left exactly one SUCCESS Payment, one ORDER revenue row and one SALE cash transaction linked to that shift.
+- The WEB order remained visible to kitchen after payment. Closing the cashier shift at 1,000 so'm stored expectedCash/cashTotal=1,000, cashDifference=0 and orderCount=1; close replay left one closing-balance transaction.
+- Cleanup removed CustomerOrder, CustomerOrderAttempt, notification-outbox rows and financial/order fixtures; the harness asserted all staging baselines were restored. The complete exact-image A/B harness passed.
+- This is staging API evidence only. Telegram order/settlement, live staff/device acceptance, offline replay, physical shift-report print, production reconciliation and production release remain separate.
