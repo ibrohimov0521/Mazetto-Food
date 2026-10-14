@@ -17,6 +17,7 @@ import { KitchenService } from "../src/modules/kitchen/kitchen.service";
 import { InventoryService } from "../src/modules/inventory/inventory.service";
 import { OrdersService } from "../src/modules/orders/orders.service";
 import { PaymentsService } from "../src/modules/payments/payments.service";
+import { SettingsService } from "../src/modules/settings/settings.service";
 import { CustomerCourierService } from "../src/modules/customers/customer-courier.service";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 
@@ -106,13 +107,20 @@ async function main() {
     });
     const shifts = new ShiftsService(prisma);
     const cash = new CashRegisterService(prisma, shifts);
-    const kitchen = new KitchenService(prisma, {
-      emitOrderCreated() {},
-      emitOrderConfirmed() {},
-      emitOrderSentToKitchen() {},
-      emitOrderStatusChanged() {},
+    const settings = new SettingsService(prisma, {
+      getClient: () => null,
     } as never);
-    const payments = new PaymentsService(prisma);
+    const kitchen = new KitchenService(
+      prisma,
+      {
+        emitOrderCreated() {},
+        emitOrderConfirmed() {},
+        emitOrderSentToKitchen() {},
+        emitOrderStatusChanged() {},
+      } as never,
+      settings,
+    );
+    const payments = new PaymentsService(prisma, settings);
     const courier = new CustomerCourierService(prisma, kitchen, payments);
     const posEvents: string[] = [];
     const observedKitchen = new Proxy(kitchen, {
@@ -827,6 +835,73 @@ async function main() {
     const waiter = await actor("Waiter", ["WAITER"]);
     assert.ok(waiter.employeeId);
     assert.ok(receiver.employeeId);
+    const hiddenPosCashier = await actor("POSHiddenCashier", ["CASHIER"]);
+    const hiddenPosShift = await shifts.openShift(
+      { openingBalance: 0 },
+      hiddenPosCashier,
+    );
+    const hiddenPosOrder = await prisma.order.create({
+      data: {
+        tenantId: branch.tenantId,
+        branchId: branch.id,
+        source: OrderSource.POS,
+        type: "DINE_IN",
+        status: OrderStatus.READY,
+        paymentStatus: PaymentStatus.PENDING,
+        total: 6000,
+        subtotal: 6000,
+        orderNumber: "QA" + crypto.randomUUID(),
+        createdById: hiddenPosCashier.employeeId!,
+        kitchenTickets: {
+          create: {
+            status: KitchenTicketStatus.READY,
+            ticketNumber: "QA" + crypto.randomUUID(),
+          },
+        },
+      },
+    });
+    await payments.processOrderPayment(
+      {
+        orderId: hiddenPosOrder.id,
+        idempotencyKey: "qa-hidden-pos-" + id,
+        shiftId: hiddenPosShift.id,
+        payments: [{ paymentMethodCode: "CASH", amount: 6000 }],
+      },
+      hiddenPosCashier,
+    );
+    const hiddenPosResult = await prisma.order.findUniqueOrThrow({
+      where: { id: hiddenPosOrder.id },
+      select: { status: true },
+    });
+    assert.equal(
+      hiddenPosResult.status,
+      OrderStatus.COMPLETED,
+      "hidden POS tickets complete when POS collection settles",
+    );
+    assert.equal(
+      await prisma.kitchenTicket.count({
+        where: {
+          orderId: hiddenPosOrder.id,
+          status: KitchenTicketStatus.COMPLETED,
+        },
+      }),
+      1,
+    );
+    assert.equal(await balance(hiddenPosCashier), 6000);
+    await prisma.setting.upsert({
+      where: {
+        tenantId_key: {
+          tenantId: branch.tenantId,
+          key: "kitchen_pos_orders_enabled",
+        },
+      },
+      update: { value: "true" },
+      create: {
+        tenantId: branch.tenantId,
+        key: "kitchen_pos_orders_enabled",
+        value: "true",
+      },
+    });
     const diningOrder = await prisma.order.create({
       data: {
         tenantId: branch.tenantId,

@@ -451,24 +451,29 @@ export class PaymentsService {
             ? PaymentStatus.PAID
             : PaymentStatus.PENDING;
 
-          // A POS payment settles the till, but it must not close kitchen work.
-          // Kitchen handoff and payment are separate actions, especially for
-          // dine-in orders that may be paid before preparation is finished.
-          const activeKitchenTicket =
-            order.source === OrderSource.POS
-              ? await tx.kitchenTicket.findFirst({
-                  where: {
-                    orderId: order.id,
-                    status: {
-                      notIn: [
-                        KitchenTicketStatus.COMPLETED,
-                        KitchenTicketStatus.CANCELLED,
-                      ],
-                    },
+          // Kitchen handoff owns POS completion only when POS tickets are visible there.
+          const kitchenManagesPosOrders =
+            order.source === OrderSource.POS &&
+            paymentStatus === PaymentStatus.PAID &&
+            (await this.settings?.getBool(
+              "kitchen_pos_orders_enabled",
+              tenantId,
+              tx,
+            ));
+          const activeKitchenTicket = kitchenManagesPosOrders
+            ? await tx.kitchenTicket.findFirst({
+                where: {
+                  orderId: order.id,
+                  status: {
+                    notIn: [
+                      KitchenTicketStatus.COMPLETED,
+                      KitchenTicketStatus.CANCELLED,
+                    ],
                   },
-                  select: { id: true },
-                })
-              : null;
+                },
+                select: { id: true },
+              })
+            : null;
           const shouldCompleteOrder =
             paymentStatus === PaymentStatus.PAID &&
             order.source === OrderSource.POS &&
