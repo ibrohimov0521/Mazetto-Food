@@ -2129,12 +2129,34 @@ async function main() {
       new Set([payLaterOperation.orderId, cashSaleOrder.id]),
     );
 
+    const legacySale = await prisma.cashTransaction.create({
+      data: {
+        branchId: branchA.id,
+        shiftId: cashierShift.id,
+        employeeId: fixture.employeeIds[0],
+        type: "SALE",
+        amount: 125,
+      },
+    });
+    assert.equal(legacySale.orderId, null);
+    assert.equal(legacySale.paymentId, null);
+    const currentCashWithLegacySaleResponse = await request(
+      "/shifts?branchId=" + encodeURIComponent(branchA.id),
+      { host: tenantAHost, headers: cashierHeaders },
+    );
+    const currentCashWithLegacySale =
+      currentCashWithLegacySaleResponse.body.data.find(
+        (shift) => shift.id === cashierShift.id,
+      );
+    assert.equal(currentCashWithLegacySaleResponse.status, 200);
+    assert.equal(Number(currentCashWithLegacySale.currentCash), 725);
+
     const closeShiftKey = "qa-shift-close-" + suffix;
     const closeShiftHeaders = {
       ...cashierHeaders,
       "Idempotency-Key": closeShiftKey,
     };
-    const closeShiftBody = { closingBalance: 600 };
+    const closeShiftBody = { closingBalance: 725 };
     const closeShiftResponse = await request(
       "/shifts/" + cashierShift.id + "/close",
       {
@@ -2173,11 +2195,11 @@ async function main() {
     });
     assert.ok(closedShiftRecord);
     assert.equal(closedShiftRecord.status, "CLOSED");
-    assert.equal(closedShiftRecord.closingBalance.toString(), "600");
-    assert.equal(closedShiftRecord.expectedCash.toString(), "600");
+    assert.equal(closedShiftRecord.closingBalance.toString(), "725");
+    assert.equal(closedShiftRecord.expectedCash.toString(), "725");
     assert.equal(closedShiftRecord.cashDifference.toString(), "0");
-    assert.equal(closedShiftRecord.salesTotal.toString(), "1000");
-    assert.equal(closedShiftRecord.cashTotal.toString(), "1000");
+    assert.equal(closedShiftRecord.salesTotal.toString(), "1125");
+    assert.equal(closedShiftRecord.cashTotal.toString(), "1125");
     assert.equal(closedShiftRecord.refundsTotal.toString(), "400");
     assert.equal(closedShiftRecord.orderCount, 2);
     assert.equal(
