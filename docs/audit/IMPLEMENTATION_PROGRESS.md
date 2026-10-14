@@ -854,3 +854,10 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - The WEB order remained visible to kitchen after payment. Closing the cashier shift at 1,000 so'm stored expectedCash/cashTotal=1,000, cashDifference=0 and orderCount=1; close replay left one closing-balance transaction.
 - Cleanup removed CustomerOrder, CustomerOrderAttempt, notification-outbox rows and financial/order fixtures; the harness asserted all staging baselines were restored. The complete exact-image A/B harness passed.
 - This is staging API evidence only. Telegram order/settlement, live staff/device acceptance, offline replay, physical shift-report print, production reconciliation and production release remain separate.
+
+## Cashier history UI audit (2026-10-14)
+
+- The existing cashier-history browser QA only covered blank-reason cancellation. Expanded it to cover order search, status filtering, amount sorting, details, an optional-reason item cancellation against a paid CASH fixture, idempotency-key submission, and receipt reprint queue submission.
+- Verified against a fresh production-mode POS build from PR #303 head `a34713a`, isolated on port 3118 so the older preview on 3103 was not overwritten. Playwright passed at 375px and 1280px with no page errors or horizontal overflow.
+- The first run on the long-lived 3103 preview could not find the fixture order; process inspection showed that preview started on Oct 13, before current commit `a34713a`. The same test passed on the fresh build, so this was a stale-preview mismatch, not an application defect.
+- Tests are mocked UI requests; no staging or production order, payment, refund, or print job was created. Authenticated staging cashier-history/reprint flow and backend cash-ledger effect remain open. Successful item cancellation refreshes and closes the detail dialog; test now follows that existing behavior.
