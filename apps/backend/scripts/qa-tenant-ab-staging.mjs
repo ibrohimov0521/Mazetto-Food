@@ -310,6 +310,7 @@ async function main() {
     posUsePermissionId: null,
     shiftOpenPermissionId: null,
     shiftViewPermissionId: null,
+    shiftClosePermissionId: null,
     paymentRefundPermissionId: null,
     tenantAOnlyRoleId: null,
     tenantAOnlyPermissionId: null,
@@ -651,6 +652,13 @@ async function main() {
         name: "Disposable staging shift view",
       },
     });
+    const shiftClosePermission = await prisma.permission.create({
+      data: {
+        code: "SHIFT_CLOSE",
+        name: "Disposable staging shift close",
+      },
+    });
+    fixture.shiftClosePermissionId = shiftClosePermission.id;
     fixture.shiftViewPermissionId = shiftViewPermission.id;
     const paymentRefundPermission = await prisma.permission.create({
       data: {
@@ -729,6 +737,9 @@ async function main() {
     });
     await prisma.rolePermission.create({
       data: { roleId: socketRole.id, permissionId: shiftOpenPermission.id },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: socketRole.id, permissionId: shiftClosePermission.id },
     });
     await prisma.rolePermission.create({
       data: { roleId: socketRole.id, permissionId: shiftViewPermission.id },
@@ -2010,6 +2021,92 @@ async function main() {
     );
     assert.equal(refundedShiftResponse.status, 200);
     assert.equal(Number(refundedShift.currentCash), 600);
+    const shiftOrdersBeforeCloseResponse = await request(
+      "/cash-register/shift/" +
+        encodeURIComponent(cashierShift.id) +
+        "/orders?limit=100&offset=0",
+      { host: tenantAHost, headers: cashierHeaders },
+    );
+    assert.equal(shiftOrdersBeforeCloseResponse.status, 200);
+    const shiftOrderIdsBeforeClose = new Set(
+      shiftOrdersBeforeCloseResponse.body.data.map((order) => order.id),
+    );
+    assert.deepEqual(
+      shiftOrderIdsBeforeClose,
+      new Set([payLaterOperation.orderId, cashSaleOrder.id]),
+    );
+
+    const closeShiftKey = "qa-shift-close-" + suffix;
+    const closeShiftHeaders = {
+      ...cashierHeaders,
+      "Idempotency-Key": closeShiftKey,
+    };
+    const closeShiftBody = { closingBalance: 600 };
+    const closeShiftResponse = await request(
+      "/shifts/" + cashierShift.id + "/close",
+      {
+        host: tenantAHost,
+        method: "POST",
+        headers: closeShiftHeaders,
+        body: closeShiftBody,
+      },
+    );
+    assert.equal(closeShiftResponse.status, 201);
+    assert.equal(closeShiftResponse.body.data.id, cashierShift.id);
+    assert.equal(closeShiftResponse.body.data.status, "CLOSED");
+    const closeShiftReplay = await request(
+      "/shifts/" + cashierShift.id + "/close",
+      {
+        host: tenantAHost,
+        method: "POST",
+        headers: closeShiftHeaders,
+        body: closeShiftBody,
+      },
+    );
+    assert.equal(closeShiftReplay.status, 201);
+    assert.equal(closeShiftReplay.body.data.id, cashierShift.id);
+    const closedShiftRecord = await prisma.shift.findUnique({
+      where: { id: cashierShift.id },
+      select: {
+        status: true,
+        closingBalance: true,
+        expectedCash: true,
+        cashDifference: true,
+        salesTotal: true,
+        cashTotal: true,
+        refundsTotal: true,
+        orderCount: true,
+      },
+    });
+    assert.ok(closedShiftRecord);
+    assert.equal(closedShiftRecord.status, "CLOSED");
+    assert.equal(closedShiftRecord.closingBalance.toString(), "600");
+    assert.equal(closedShiftRecord.expectedCash.toString(), "600");
+    assert.equal(closedShiftRecord.cashDifference.toString(), "0");
+    assert.equal(closedShiftRecord.salesTotal.toString(), "1000");
+    assert.equal(closedShiftRecord.cashTotal.toString(), "1000");
+    assert.equal(closedShiftRecord.refundsTotal.toString(), "400");
+    assert.equal(closedShiftRecord.orderCount, 2);
+    assert.equal(
+      await prisma.cashTransaction.count({
+        where: {
+          shiftId: cashierShift.id,
+          type: "CLOSING_BALANCE",
+        },
+      }),
+      1,
+    );
+    const shiftOrdersAfterCloseResponse = await request(
+      "/cash-register/shift/" +
+        encodeURIComponent(cashierShift.id) +
+        "/orders?limit=100&offset=0",
+      { host: tenantAHost, headers: cashierHeaders },
+    );
+    assert.equal(shiftOrdersAfterCloseResponse.status, 200);
+    assert.deepEqual(
+      new Set(shiftOrdersAfterCloseResponse.body.data.map((order) => order.id)),
+      shiftOrderIdsBeforeClose,
+    );
     const boundary = "----MazettoStagingQA" + suffix;
     const imageBytes = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
@@ -2185,7 +2282,7 @@ async function main() {
     assert.equal(revokedCustomerReconnect.connected, false);
 
     console.log(
-      "Staging A/B proof passed: tenant membership/cache separation, order mutation, DINE_IN pay-later with no collection, immediate POS cash sale and partial cash refund with idempotent replay/accounting, kitchen POS visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
+      "Staging A/B proof passed: tenant membership/cache separation, order mutation, DINE_IN pay-later with no collection, immediate POS cash sale and partial cash refund with idempotent replay/accounting, idempotent shift close and totals, kitchen POS visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
     );
   } catch (error) {
     failure = error;
@@ -2459,6 +2556,10 @@ async function main() {
         if (fixture.paymentRefundPermissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.paymentRefundPermissionId },
+          });
+        if (fixture.shiftClosePermissionId)
+          await prisma.permission.deleteMany({
+            where: { id: fixture.shiftClosePermissionId },
           });
         if (fixture.tenantAOnlyPermissionId)
           await prisma.permission.deleteMany({

@@ -828,5 +828,13 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Against the exact staging runtime mazetto-staging-api-crmkze:e5b201d, the order has exactly one SUCCESS cash payment, one ORDER revenue row, one SALE cash transaction, one payment operation, and the expected KITCHEN plus customer RECEIPT documents. The replay returned the same order without duplicate financial rows.
 - The shift API reported currentCash=1000 before refund and 600 after a 400 so'm partial refund; the unpaid DINE_IN remained excluded from payment/revenue/cash totals. Refund replay returned the same refund, leaving exactly one PaymentRefund, one REFUND cash transaction, one negative ADJUSTMENT revenue row and one refund receipt.
 - Cleanup deleted the temporary payment method, permissions, orders, receipts, refund/ledger rows and shift, then asserted the staging counts returned to the one-tenant, zero-fixture baseline. The temporary script was removed from the container.
-- CI #892 passed the DINE_IN checkpoint; CI #893 passed full verify and Windows Desktop packaging for the cash-sale-only commit. The refund extension needs its own CI run. These QA/docs-only updates do not rebuild or redeploy the app.
+- CI #892 passed the DINE_IN checkpoint, CI #893 passed full verify and Windows Desktop packaging for the cash-sale-only commit, and CI #894 passed full verify and Windows Desktop packaging for the refund commit. These QA/docs-only updates do not rebuild or redeploy the app.
 - A literal source scan found no active NBU QR/SMS integration. Cash-only policy is already live; cancelled NBU analysis remains historical documentation, with schema and historical payments untouched.
+
+## Authenticated staging shift-close acceptance (2026-10-14)
+
+- Extended the guarded tenant A/B harness through close on the same cashier shift after an unpaid DINE_IN and a 1,000 so'm CASH TAKEAWAY sale with a 400 so'm partial refund.
+- Before close, the shift order endpoint returned both orders. Closing with 600 so'm returned CLOSED; repeating the same idempotency key returned the same shift and created only one closing-balance transaction.
+- Exact runtime mazetto-staging-api-crmkze:e5b201d persisted expectedCash=600, closingBalance=600, cashDifference=0, salesTotal=1,000, cashTotal=1,000, refundsTotal=400, and orderCount=2. The order endpoint returned the same two orders after close.
+- The exact-image staging A/B harness passed again, including its cleanup assertions back to the one-tenant, zero-fixture baseline. Node syntax, Prettier, and git diff --check passed.
+- Physical shift-close report printing is still unverified; the prior mocked 205-order report test is not physical printer proof. This QA/docs-only checkpoint does not change the staging app image or production; no production write, migration, deploy, or second-restaurant activation occurred.
