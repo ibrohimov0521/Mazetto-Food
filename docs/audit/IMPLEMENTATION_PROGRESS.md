@@ -912,3 +912,9 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Production currently has 3 warehouses, 0 ingredients, 0 recipe items, 0 stock rows and 0 stock movements. There are no stock-versus-movement discrepancies or movements without a corresponding stock row to reconcile.
 - The Prisma Ingredient.currentStock column is unused by active application code; it contains no rows because the production ingredient table is empty. It was intentionally left in the schema and database rather than treated as disposable dead code.
 - Functional stock movement/replay tests remain useful and passed, but real stocked-inventory acceptance is deferred until the tenant has ingredient/recipe/stock data.
+
+## Production release completion (2026-10-15)
+
+- PR #303 was squash-merged as 76faae8. Main CI #905 passed; Deploy #337 passed its release gate, Dokploy rollout, production smoke and production-tag update. The production tag resolves to 76faae8; database remains at 62 migrations and no schema migration was required.
+- Desktop Release #179 published MAZETTO Desktop 0.1.118: versioned and latest Windows installers, latest.yml and blockmap. The release is available, but installation or update on the restaurant workstation is not independently confirmed.
+- Production application code is deployed. Physical simultaneous multi-printer output, workstation reconnect and other live operator acceptance remain open. The second restaurant remains inactive.
