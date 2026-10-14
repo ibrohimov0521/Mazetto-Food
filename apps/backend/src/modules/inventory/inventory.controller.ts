@@ -1,4 +1,13 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from "@nestjs/common";
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
+  Query,
+} from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
@@ -61,8 +70,11 @@ export class InventoryController {
 
   @Post("ingredients")
   @Permissions(PERMISSIONS.INVENTORY_CREATE)
-  createIngredient(@Body() dto: CreateIngredientDto) {
-    return this.inventoryService.createIngredient(dto);
+  createIngredient(
+    @Body() dto: CreateIngredientDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.inventoryService.createIngredient(dto, user);
   }
 
   @Post("warehouses")
