@@ -898,3 +898,10 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - The cashier/admin history staging acceptance is recorded above: exact staging image e5b201d, cross-tenant 404s, one-time 2,000 so'm refund/REFUND/-2,000 ADJUSTMENT, both-role reprint enqueue, and a zero-difference 725 so'm close. No paper was printed by that test.
 - Remaining external gates are unchanged: live operator/domain walkthrough, Desktop install and offline reconnect, simultaneous physical two-printer test, physical shift-report/reprint, live Telegram group check, and fuller inventory-ledger reconciliation. The line-by-line manual audit of every tracked file is not complete; uncertain .orig/.~N~ files remain untouched.
 - Production remains on app 951f344. Historical shift #31/#34 summaries were corrected only from existing ledger rows with owner approval; PR #303 application code has not been deployed, and restaurant two remains inactive.
+
+## Desktop print-worker release readiness (2026-10-15)
+
+- Release workflow inspection found the candidate print-worker changes would otherwise ship under Desktop 0.1.117, whose `desktop-v0.1.117` tag already exists. The workflow intentionally skips an already-published version.
+- Confirmed the remote repository has no `desktop-v0.1.118` tag. Bumped `apps/desktop/package.json` to 0.1.118 so the main-branch Desktop Release workflow can publish the changed worker instead of silently skipping it.
+- The current audit head still has only the Windows package CI build; publication is triggered after merge to main. No installer was published or installed by this change.
+- Desktop tests passed 181/181 on the same source code before this metadata-only bump. Physical two-printer, user workstation update and offline reconnect acceptance remain open.
