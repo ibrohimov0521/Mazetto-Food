@@ -3,7 +3,12 @@ import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { OrderSource, OrderStatus, PaymentStatus } from "@prisma/client";
+import {
+  KitchenTicketStatus,
+  OrderSource,
+  OrderStatus,
+  PaymentStatus,
+} from "@prisma/client";
 import { CourierOrderStatus } from "../src/modules/customers/dto/list-customers.dto";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { ShiftsService } from "../src/modules/shifts/shifts.service";
@@ -17,11 +22,11 @@ import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 
 async function main() {
   assert.equal(process.env.MAZETTO_CASH_DB_SMOKE, "1");
-  assertDisposableLoopbackDatabase(
-    process.env.DATABASE_URL,
-    "cash_qa",
-    ["5432", "5433", "15432"],
-  );
+  assertDisposableLoopbackDatabase(process.env.DATABASE_URL, "cash_qa", [
+    "5432",
+    "5433",
+    "15432",
+  ]);
   const prisma = new PrismaService();
   await prisma.$connect();
   try {
@@ -834,6 +839,12 @@ async function main() {
         orderNumber: "QA" + crypto.randomUUID(),
         createdById: waiter.employeeId,
         waiterId: waiter.employeeId,
+        kitchenTickets: {
+          create: {
+            status: "READY",
+            ticketNumber: "QA" + crypto.randomUUID(),
+          },
+        },
       },
     });
     const diningPayment = {
@@ -856,6 +867,56 @@ async function main() {
           shiftId: replacementTargetShift.id,
           employeeId: receiver.employeeId,
         },
+      }),
+      1,
+    );
+    const diningAfterPayment = await prisma.order.findUniqueOrThrow({
+      where: { id: diningOrder.id },
+      select: { status: true },
+    });
+    assert.equal(
+      diningAfterPayment.status,
+      OrderStatus.READY,
+      "cash settlement must not mark a dine-in order complete before kitchen handoff",
+    );
+    const diningTicket = await prisma.kitchenTicket.findFirstOrThrow({
+      where: { orderId: diningOrder.id },
+    });
+    assert.equal(
+      diningTicket.status,
+      KitchenTicketStatus.READY,
+      "cash settlement must not close the kitchen ticket",
+    );
+    const cashBeforeKitchenHandoff = await balance(receiver);
+    await kitchen.completeTicket(diningTicket.id, worker);
+    const diningAfterHandoff = await prisma.order.findUniqueOrThrow({
+      where: { id: diningOrder.id },
+      select: { status: true },
+    });
+    assert.equal(diningAfterHandoff.status, OrderStatus.COMPLETED);
+    assert.equal(
+      await prisma.kitchenTicket.count({
+        where: {
+          id: diningTicket.id,
+          status: KitchenTicketStatus.COMPLETED,
+        },
+      }),
+      1,
+    );
+    assert.equal(
+      await balance(receiver),
+      cashBeforeKitchenHandoff,
+      "kitchen handoff must not add the same order to cash a second time",
+    );
+    assert.equal(
+      await prisma.cashTransaction.count({
+        where: { orderId: diningOrder.id, type: "SALE" },
+      }),
+      1,
+    );
+    assert.equal(
+      await prisma.revenueRecord.count({
+        where: { orderId: diningOrder.id },
       }),
       1,
     );
