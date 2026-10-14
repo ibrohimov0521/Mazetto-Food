@@ -209,8 +209,8 @@ async function request(
   if (body !== undefined && !Buffer.isBuffer(body)) {
     requestHeaders["Content-Type"] = "application/json";
   }
-  if (Buffer.isBuffer(payload) && !requestHeaders["Content-Length"]) {
-    requestHeaders["Content-Length"] = String(payload.length);
+  if (payload !== undefined && !requestHeaders["Content-Length"]) {
+    requestHeaders["Content-Length"] = String(Buffer.byteLength(payload));
   }
 
   if (!host) {
@@ -237,7 +237,11 @@ async function request(
               body: JSON.parse(Buffer.concat(chunks).toString("utf8")),
             });
           } catch {
-            reject(new Error("The staging API returned a non-JSON response."));
+            reject(
+              new Error(
+                `The staging API returned a non-JSON response for ${method} ${url.pathname} (HTTP ${response.statusCode}).`,
+              ),
+            );
           }
         });
       },
@@ -492,6 +496,7 @@ async function main() {
     for (const [code, name] of [
       ["HOMEPAGE_MANAGE", "Disposable staging homepage access"],
       ["INVENTORY_VIEW", "Disposable staging inventory access"],
+      ["RECIPE_MANAGE", "Disposable staging recipe access"],
     ]) {
       const catalogPermission = await prisma.permission.create({
         data: { code, name },
@@ -859,7 +864,7 @@ async function main() {
     ]);
     for (const response of catalogGuardChecks) {
       assert.equal(response.status, 403);
-      assert.equal(response.body.message, catalogTenantGuardMessage);
+      assert.equal(response.body.error?.message, catalogTenantGuardMessage);
     }
     const authMeA = await request("/auth/me", {
       host: tenantAHost,
@@ -959,7 +964,15 @@ async function main() {
         body: { variantId: foreignVariant.id, items: [] },
       }),
     ]);
-    assert.ok(foreignWrites.every((response) => response.status === 404));
+    assert.ok(
+      foreignWrites.every((response) => response.status === 404),
+      JSON.stringify(
+        foreignWrites.map(({ status, body }) => ({
+          status,
+          message: body?.error?.message,
+        })),
+      ),
+    );
     const retainedCatalogFixtures = await Promise.all([
       prisma.homepageHeroSlide.count({ where: { id: foreignHeroSlide.id } }),
       prisma.promotion.count({ where: { id: foreignPromotion.id } }),
