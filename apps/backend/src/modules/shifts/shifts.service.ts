@@ -2090,15 +2090,54 @@ export class ShiftsService {
   }
 
   private calculateShiftTotals(
-    payments: { amount: Prisma.Decimal; method: { code: string } }[],
-    cashTransactions: { amount: Prisma.Decimal; type: CashTransactionType }[],
+    payments: {
+      id?: string;
+      amount: Prisma.Decimal;
+      method: { code: string };
+    }[],
+    cashTransactions: {
+      amount: Prisma.Decimal;
+      paymentId?: string | null;
+      type: CashTransactionType;
+    }[],
     orderCount: number,
   ) {
-    const salesTotal = payments.reduce(
-      (total, payment) => total.add(payment.amount),
+    const cashSaleTransactions = cashTransactions.filter(
+      (transaction) => transaction.type === CashTransactionType.SALE,
+    );
+    const paymentIds = new Set(
+      payments.flatMap((payment) => (payment.id ? [payment.id] : [])),
+    );
+    const cashSalePaymentIds = new Set(
+      cashSaleTransactions.flatMap((transaction) =>
+        transaction.paymentId ? [transaction.paymentId] : [],
+      ),
+    );
+    const legacySalesTotal = cashSaleTransactions.reduce(
+      (total, transaction) =>
+        transaction.paymentId && paymentIds.has(transaction.paymentId)
+          ? total
+          : total.add(transaction.amount),
       new Prisma.Decimal(0),
     );
-    const cashTotal = this.sumPaymentsByCodes(payments, ["CASH"]);
+    const salesTotal = payments
+      .reduce(
+        (total, payment) => total.add(payment.amount),
+        new Prisma.Decimal(0),
+      )
+      .add(legacySalesTotal);
+    const cashSaleTotal = this.sumCashTransactions(cashTransactions, [
+      CashTransactionType.SALE,
+    ]);
+    const cashPaymentFallbackTotal = payments.reduce(
+      (total, payment) =>
+        payment.method.code === "CASH" &&
+        (!payment.id || !cashSalePaymentIds.has(payment.id))
+          ? total.add(payment.amount)
+          : total,
+      new Prisma.Decimal(0),
+    );
+    const cashTotal = cashSaleTotal.add(cashPaymentFallbackTotal);
     const terminalTotal = this.sumPaymentsByCodes(payments, [
       "CARD",
       "TERMINAL",
@@ -2152,37 +2191,37 @@ export class ShiftsService {
   ) {
     const shiftRevenue = { shiftId: shift.id, branchId: shift.branchId };
     const payments = await tx.payment.findMany({
-        where: {
-          status: {
-            in: [
-              PaymentStatus.PAID,
-              PaymentStatus.SUCCESS,
-              PaymentStatus.REFUNDED,
-              PaymentStatus.PARTIALLY_REFUNDED,
-            ],
-          },
-          revenueRecords: {
-            some: { ...shiftRevenue, source: RevenueRecordSource.ORDER },
-          },
+      where: {
+        status: {
+          in: [
+            PaymentStatus.PAID,
+            PaymentStatus.SUCCESS,
+            PaymentStatus.REFUNDED,
+            PaymentStatus.PARTIALLY_REFUNDED,
+          ],
         },
-        include: { method: true },
-      });
+        revenueRecords: {
+          some: { ...shiftRevenue, source: RevenueRecordSource.ORDER },
+        },
+      },
+      include: { method: true },
+    });
     const cashTransactions = await tx.cashTransaction.findMany({
       where: shiftRevenue,
     });
     const orderCount = await tx.order.count({
-        where: {
-          branchId: shift.branchId,
-          AND: [
-            {
-              OR: [
-                { shiftId: shift.id },
-                { revenueRecords: { some: shiftRevenue } },
-              ],
-            },
-          ],
-        },
-      });
+      where: {
+        branchId: shift.branchId,
+        AND: [
+          {
+            OR: [
+              { shiftId: shift.id },
+              { revenueRecords: { some: shiftRevenue } },
+            ],
+          },
+        ],
+      },
+    });
     const totals = this.calculateShiftTotals(
       payments,
       cashTransactions,
