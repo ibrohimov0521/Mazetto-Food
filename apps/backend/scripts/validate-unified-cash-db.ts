@@ -371,6 +371,54 @@ async function main() {
       await prisma.payment.count({ where: { orderId: unpaidHallOrder.id } }),
       0,
     );
+    await orders.addItem(
+      unpaidHallOrder.id,
+      { productId: product.id, quantity: 1 },
+      worker,
+    );
+    const unpaidHallItem = await prisma.orderItem.findFirstOrThrow({
+      where: { orderId: unpaidHallOrder.id },
+      select: { id: true, quantity: true },
+    });
+    await prisma.$transaction((tx) =>
+      orders.confirmOrderForPreparation(tx, {
+        orderId: unpaidHallOrder.id,
+        userId: worker.id,
+        employeeId: worker.employeeId,
+        source: "POS",
+      }),
+    );
+    await assert.rejects(
+      () =>
+        orders.addItem(
+          unpaidHallOrder.id,
+          { productId: product.id, quantity: 1 },
+          worker,
+        ),
+      /Oshxonaga yuborilgan/,
+    );
+    await assert.rejects(
+      () =>
+        orders.updateItem(
+          unpaidHallOrder.id,
+          unpaidHallItem.id,
+          { quantity: 2 },
+          worker,
+        ),
+      /Oshxonaga yuborilgan/,
+    );
+    assert.equal(
+      (await prisma.orderItem.findUniqueOrThrow({
+        where: { id: unpaidHallItem.id },
+      })).quantity.toNumber(),
+      1,
+    );
+    assert.equal(
+      await prisma.kitchenTicket.count({
+        where: { orderId: unpaidHallOrder.id },
+      }),
+      1,
+    );
     const pickup = await online("TAKEAWAY", 20000);
     const ticket = await prisma.kitchenTicket.findFirstOrThrow({
       where: { orderId: pickup.order.id },
