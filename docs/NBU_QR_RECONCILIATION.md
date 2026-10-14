@@ -1,6 +1,8 @@
 # NBU QR to'lovlarini buyurtmaga bog'lash
 
-## Hozirgi holat
+> **BEKOR QILINGAN TAKLIF (2026-10-14):** Mazetto Food hozir faqat naqd to'lovni ishlatadi. NBU QR/SMS integratsiyasini qurish rejalashtirilmaydi. Bu hujjat tarixiy tahlil sifatida saqlangan; undagi ishga tushirish bosqichlarini bajarmang. Faol ilova kodida NBU SMS o'quvchi yoki QR-to-order tasdiqlash moduli yo'q.
+
+## Taklif yozilgan paytdagi vaziyat
 
 Mazetto Food kassasida hozir faqat naqd to'lov usuli faol. Restoranda bitta
 doimiy NBU QR mavjud. Menejerning Android telefoniga tushadigan SMS summa,

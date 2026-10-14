@@ -246,7 +246,11 @@ async function proveBranchScope(
   assert.equal(visibleIds.has(ownBranch.ticketId), true);
   assert.equal(visibleIds.has(otherBranch.ticketId), false);
 
-  await assert.rejects(() => kitchenService.acceptTicket(otherBranch.ticketId, fixture.user), /Boshqa filialga kirish huquqi yo'q/);
+  // Branch-scoped lookup intentionally hides cross-branch ticket existence.
+  await assert.rejects(
+    () => kitchenService.acceptTicket(otherBranch.ticketId, fixture.user),
+    /Oshxona chiptasi topilmadi/,
+  );
   await kitchenService.acceptTicket(otherBranch.ticketId, fixture.globalUser);
   await assertOrderState(prisma, otherBranch.orderId, OrderStatus.CONFIRMED, KitchenTicketStatus.ACCEPTED);
 }
