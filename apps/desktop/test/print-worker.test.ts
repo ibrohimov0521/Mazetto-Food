@@ -948,6 +948,98 @@ test("server print worker drains assigned printers concurrently but preserves ea
   assert.deepEqual(printedByPrinter.get("Till 2"), [1, 2, 3]);
 });
 
+test("duplicate printer records for one Windows queue stay sequential", async () => {
+  const queueJobs = [
+    { printerId: "printer-1", orderNumber: 1 },
+    { printerId: "printer-1-alias", orderNumber: 2 },
+    { printerId: "printer-1", orderNumber: 3 },
+    { printerId: "printer-1-alias", orderNumber: 4 },
+  ];
+  const printed: number[] = [];
+  const completed: string[] = [];
+  let active = 0;
+  let maxActive = 0;
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Till 1", displayName: "Till 1", roles: ["RECEIPT"] },
+    ],
+    printSystem: async (_name, receipt) => {
+      active += 1;
+      maxActive = Math.max(maxActive, active);
+      printed.push(Number(receipt.content?.orderNumber));
+      await new Promise((resolve) => setTimeout(resolve, 2));
+      active -= 1;
+    },
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/dispatching")) return jsonResponse({});
+      if (url.endsWith("/printers")) {
+        return jsonResponse([
+          {
+            id: "printer-1",
+            name: "Till 1",
+            isActive: true,
+            status: "ONLINE",
+            metadata: { printRoles: ["RECEIPT"] },
+          },
+          {
+            id: "printer-1-alias",
+            name: "Till 1",
+            isActive: true,
+            status: "ONLINE",
+            metadata: { printRoles: ["RECEIPT"] },
+          },
+        ]);
+      }
+      if (url.endsWith("/print-jobs/claim")) {
+        const body = JSON.parse(String(init?.body)) as {
+          printerIds: string[];
+          acceptUnassigned: boolean;
+        };
+        assert.deepEqual(body.printerIds, ["printer-1", "printer-1-alias"]);
+        assert.equal(body.acceptUnassigned, false);
+        const index = queueJobs.findIndex((job) =>
+          body.printerIds.includes(job.printerId),
+        );
+        if (index < 0) return jsonResponse(null);
+        const { printerId, orderNumber } = queueJobs.splice(index, 1)[0]!;
+        return jsonResponse({
+          id: printerId + "-job-" + orderNumber,
+          receiptId: printerId + "-receipt-" + orderNumber,
+          leaseToken: "lease-" + printerId + "-" + orderNumber,
+          payload: {
+            documentType: "RECEIPT",
+            orderNumber: String(orderNumber),
+            items: [{ name: "Lavash", quantity: 1 }],
+          },
+          receipt: {
+            orderId: printerId + "-order-" + orderNumber,
+            documentType: "RECEIPT",
+          },
+          printer: { id: printerId, name: "Till 1", metadata: {} },
+        });
+      }
+      const completedMatch = url.match(/\/print-jobs\/([^/]+)\/complete$/);
+      if (completedMatch) {
+        completed.push(decodeURIComponent(completedMatch[1]!));
+        return jsonResponse({});
+      }
+      throw new Error("Unexpected request: " + url);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.equal(completed.length, 4);
+  assert.deepEqual(printed, [1, 2, 3, 4]);
+  assert.equal(maxActive, 1);
+});
+
 test("offline local print jobs keep draining while a timed-out server poll backs off", async () => {
   const localJobs = ["q1", "q2"];
   const printed: string[] = [];

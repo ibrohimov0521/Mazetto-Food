@@ -171,12 +171,12 @@ export class DesktopPrintWorker {
   private activeTick: Promise<void> | null = null;
   private managedPrinters = 0;
   private managedPrinterDetails: ManagedPrinter[] = [];
-  private localAssignedPrinterIds: string[] = [];
+  private localAssignedPrinterGroups: string[][] = [];
   private systemPrinters: SystemPrinterTarget[];
   private printerDiscoveryCache: {
     expiresAt: number;
     readyPrinters: ManagedPrinter[];
-    localAssignedPrinterIds: string[];
+    localAssignedPrinterGroups: string[][];
   } | null = null;
   private serverRetryAt = 0;
   private serverFailureCount = 0;
@@ -306,11 +306,17 @@ export class DesktopPrintWorker {
         this.resetServerPollingBackoff();
         return;
       }
-      const printerIds = [
-        ...new Set([
-          ...readyPrinters.map((printer) => printer.id),
-          ...this.localAssignedPrinterIds,
-        ]),
+      const tcpPrinterQueues = new Map<string, string[]>();
+      for (const printer of readyPrinters) {
+        const queueKey =
+          printer.host.toLocaleLowerCase() + ":" + printer.port;
+        const queue = tcpPrinterQueues.get(queueKey) ?? [];
+        queue.push(printer.id);
+        tcpPrinterQueues.set(queueKey, queue);
+      }
+      const printerQueues = [
+        ...tcpPrinterQueues.values(),
+        ...this.localAssignedPrinterGroups.map((group) => [...group]),
       ];
       let claimedJobs = 0;
       let reservedClaims = 0;
@@ -353,14 +359,14 @@ export class DesktopPrintWorker {
         }
       };
 
-      // One lane owns each printer queue; distinct printers can drain concurrently.
-      let nextPrinter = 0;
+      // One lane owns each physical queue, even when duplicate config records target it.
+      let nextPrinterQueue = 0;
       const drainAssignedPrinters = async () => {
-        while (!stopClaiming && nextPrinter < printerIds.length) {
-          const printerId = printerIds[nextPrinter++];
-          if (!printerId) continue;
+        while (!stopClaiming && nextPrinterQueue < printerQueues.length) {
+          const printerIds = printerQueues[nextPrinterQueue++];
+          if (!printerIds?.length) continue;
           await claimAndPrint({
-            printerIds: [printerId],
+            printerIds,
             acceptUnassigned: false,
             unassignedRoutes: [],
           });
@@ -369,7 +375,10 @@ export class DesktopPrintWorker {
       await Promise.all(
         Array.from(
           {
-            length: Math.min(MAX_CONCURRENT_PRINTER_TARGETS, printerIds.length),
+            length: Math.min(
+              MAX_CONCURRENT_PRINTER_TARGETS,
+              printerQueues.length,
+            ),
           },
           () => drainAssignedPrinters(),
         ),
@@ -890,9 +899,10 @@ export class DesktopPrintWorker {
       this.printerDiscoveryCache &&
       this.printerDiscoveryCache.expiresAt > now
     ) {
-      this.localAssignedPrinterIds = [
-        ...this.printerDiscoveryCache.localAssignedPrinterIds,
-      ];
+      this.localAssignedPrinterGroups =
+        this.printerDiscoveryCache.localAssignedPrinterGroups.map((group) => [
+          ...group,
+        ]);
       this.managedPrinterDetails = this.printerDiscoveryCache.readyPrinters.map(
         (printer) => ({ ...printer }),
       );
@@ -901,10 +911,8 @@ export class DesktopPrintWorker {
     }
 
     const printers = await this.request<PrinterConfig[]>("/printers");
-    const localRoles = new Set(
-      this.systemPrinters.flatMap((printer) => printer.roles),
-    );
-    this.localAssignedPrinterIds = printers.flatMap((printer) => {
+    const localPrinterGroups = new Map<string, string[]>();
+    for (const printer of printers) {
       const roles = Array.isArray(printer.metadata?.printRoles)
         ? printer.metadata.printRoles.filter(
             (role): role is string => typeof role === "string",
@@ -913,20 +921,29 @@ export class DesktopPrintWorker {
       const hasHost =
         typeof printer.metadata?.host === "string" &&
         printer.metadata.host.trim();
-      return printer.isActive !== false &&
+      const localTarget = this.systemPrinters.find((target) =>
+        roles.some((role) => target.roles.includes(role)) &&
+        [target.name, target.displayName].some(
+          (name) =>
+            name.trim().toLocaleLowerCase() ===
+            (printer.name?.trim().toLocaleLowerCase() ?? ""),
+        ),
+      );
+      if (
+        printer.isActive !== false &&
         printer.status === "ONLINE" &&
         !hasHost &&
-        roles.some((role) => localRoles.has(role)) &&
-        this.systemPrinters.some((target) =>
-          [target.name, target.displayName].some(
-            (name) =>
-              name.trim().toLocaleLowerCase() ===
-              (printer.name?.trim().toLocaleLowerCase() ?? ""),
-          ),
-        )
-        ? [printer.id]
-        : [];
-    });
+        localTarget
+      ) {
+        const queueKey = localTarget.name.trim().toLocaleLowerCase();
+        const group = localPrinterGroups.get(queueKey) ?? [];
+        group.push(printer.id);
+        localPrinterGroups.set(queueKey, group);
+      }
+    }
+    this.localAssignedPrinterGroups = [...localPrinterGroups.values()].map(
+      (group) => [...group],
+    );
     const readyPrinters = printers.flatMap((printer) => {
       const host = printer.metadata?.host;
       if (
@@ -954,7 +971,9 @@ export class DesktopPrintWorker {
     this.printerDiscoveryCache = {
       expiresAt: now + 10_000,
       readyPrinters: readyPrinters.map((printer) => ({ ...printer })),
-      localAssignedPrinterIds: [...this.localAssignedPrinterIds],
+      localAssignedPrinterGroups: this.localAssignedPrinterGroups.map(
+        (group) => [...group],
+      ),
     };
     return readyPrinters;
   }
