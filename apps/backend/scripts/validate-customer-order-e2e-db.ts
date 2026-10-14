@@ -93,6 +93,11 @@ async function main(): Promise<void> {
     const services = createServices(prisma);
     const fixture = await createFixture(prisma);
     const initialCounts = await orderGraphCounts(prisma);
+    await proveManualStockMovementLedger(
+      prisma,
+      services.inventoryService,
+      fixture,
+    );
     await proveCancellationStockBehavior(
       prisma,
       services.ordersService,
@@ -422,6 +427,7 @@ function createServices(prisma: PrismaService) {
 
   return {
     customersService,
+    inventoryService,
     kitchenService,
     orderEngine,
     ordersService,
@@ -510,6 +516,7 @@ async function createFixture(prisma: PrismaService) {
     data: {
       name: `STEP 8 test ingredient ${runId}`,
       unit: "GRAM",
+      costPerUnit: 2,
     },
   });
   const recipe = await prisma.recipe.create({
@@ -691,6 +698,7 @@ async function createFixture(prisma: PrismaService) {
   return {
     branch,
     offlineDevices,
+    ingredient,
     warehouse,
     burger,
     configurable,
@@ -1410,6 +1418,127 @@ async function proveOrderCashStockPrint(
     }),
     1,
     "valid refund must be written to the shift containing the original cash sale",
+  );
+}
+
+async function proveManualStockMovementLedger(
+  prisma: PrismaService,
+  inventory: InventoryService,
+  fixture: Awaited<ReturnType<typeof createFixture>>,
+): Promise<void> {
+  const actor = {
+    id: fixture.staffUser.id,
+    employeeId: fixture.employee.id,
+    branchId: fixture.branch.id,
+    roles: ["BRANCH_MANAGER"],
+    permissions: ["*"],
+  };
+  const stockKey = {
+    warehouseId_ingredientId: {
+      warehouseId: fixture.warehouse.id,
+      ingredientId: fixture.ingredient.id,
+    },
+  };
+  const readQuantity = async () =>
+    prisma.stock
+      .findUniqueOrThrow({ where: stockKey, select: { quantity: true } })
+      .then(({ quantity }) => quantity);
+  const initial = await readQuantity();
+  assert.equal(initial.toFixed(3), "100000.000");
+
+  const actions = [
+    { type: StockMovementType.IN, quantity: 5.25, expected: "5.250" },
+    { type: StockMovementType.OUT, quantity: 2.5, expected: "-2.500" },
+    { type: StockMovementType.WASTE, quantity: 0.5, expected: "-0.500" },
+    {
+      type: StockMovementType.ADJUSTMENT,
+      quantity: 1.25,
+      expected: "1.250",
+    },
+  ] as const;
+  const saved = [];
+  for (const action of actions) {
+    saved.push(
+      await inventory.createMovement(
+        {
+          warehouseId: fixture.warehouse.id,
+          ingredientId: fixture.ingredient.id,
+          type: action.type,
+          quantity: action.quantity,
+          reason: "Isolated stock ledger validation",
+        },
+        actor,
+      ),
+    );
+    assert.equal(saved.at(-1)?.quantity.toFixed(3), action.expected);
+  }
+
+  const expectedQuantity = initial.add(3.5);
+  assert.equal((await readQuantity()).toFixed(3), expectedQuantity.toFixed(3));
+  const movements = await inventory.getMovements(
+    {
+      branchId: fixture.branch.id,
+      ingredientId: fixture.ingredient.id,
+      limit: 20,
+    },
+    actor,
+  );
+  assert.equal(movements.length, actions.length);
+  assert.deepEqual(
+    new Set(movements.map(({ id }) => id)),
+    new Set(saved.map(({ id }) => id)),
+  );
+
+  const cost = await inventory.getCost(
+    { branchId: fixture.branch.id, limit: 20 },
+    actor,
+  );
+  const ingredientValue = cost.ingredients.find(
+    ({ ingredientId }) => ingredientId === fixture.ingredient.id,
+  );
+  assert.ok(ingredientValue);
+  assert.equal(
+    ingredientValue.quantity.toFixed(3),
+    expectedQuantity.toFixed(3),
+  );
+  assert.equal(
+    ingredientValue.value.toFixed(2),
+    expectedQuantity.mul(2).toFixed(2),
+  );
+  assert.equal(
+    cost.totalInventoryValue.toFixed(2),
+    expectedQuantity.mul(2).toFixed(2),
+  );
+
+  const movementCount = await prisma.stockMovement.count({
+    where: {
+      ingredientId: fixture.ingredient.id,
+      warehouseId: fixture.warehouse.id,
+    },
+  });
+  await assert.rejects(
+    inventory.createMovement(
+      {
+        warehouseId: fixture.warehouse.id,
+        ingredientId: fixture.ingredient.id,
+        type: StockMovementType.OUT,
+        quantity: Number(expectedQuantity.toFixed(3)) + 0.001,
+        reason: "Must rollback when stock would be negative",
+      },
+      actor,
+    ),
+    /Stock cannot go below zero/,
+  );
+  assert.equal((await readQuantity()).toFixed(3), expectedQuantity.toFixed(3));
+  assert.equal(
+    await prisma.stockMovement.count({
+      where: {
+        ingredientId: fixture.ingredient.id,
+        warehouseId: fixture.warehouse.id,
+      },
+    }),
+    movementCount,
+    "a rejected stock movement must not leave a ledger row",
   );
 }
 
