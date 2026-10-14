@@ -820,4 +820,13 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Against the exact staging runtime mazetto-staging-api-crmkze:e5b201d, the order persisted only its KITCHEN ticket receipt; no customer RECEIPT, Payment, RevenueRecord, or order-linked CashTransaction appeared. The shift retained zero sales/cash totals and only its zero opening-balance row.
 - The added POS order's live socket delivery and reconnect replay were included in tenant A's expected event set; tenant B remained isolated. The cleanup now removes payment, receipt, cash, revenue, operation and shift rows and verifies their baseline counts.
 - The exact-image A/B harness passed and restored the staging database to its one-tenant, zero-fixture baseline. node --check, Prettier and git diff --check passed. This QA/docs-only update does not rebuild or redeploy the app.
-- Production remains unchanged; no production database writes, migrations, app deploy or second-restaurant activation occurred. WEB/Telegram settlement, immediate cash acceptance and the remaining ledger/history checks stay separate acceptance gates.
+- Production remains unchanged; no production database writes, migrations, app deploy or second-restaurant activation occurred. WEB/Telegram settlement and the remaining ledger/history checks stay separate acceptance gates.
+
+## Immediate POS cash-sale staging acceptance (2026-10-14)
+
+- The guarded tenant A/B harness now creates a temporary branch-scoped CASH method, logs in an authenticated synthetic cashier, submits a POS TAKEAWAY cash sale, and retries the same idempotency key.
+- Against the exact staging runtime mazetto-staging-api-crmkze:e5b201d, the order has exactly one SUCCESS cash payment, one ORDER revenue row, one SALE cash transaction, one payment operation, and the expected KITCHEN plus customer RECEIPT documents. The replay returned the same order without duplicate financial rows.
+- The shift API reported currentCash=1000 and two shift orders (the prior unpaid DINE_IN plus this paid takeaway); the unpaid DINE_IN remained excluded from payment/revenue/cash totals.
+- Cleanup deleted the temporary payment method, permissions, orders, receipts, ledger rows and shift, then asserted the staging counts returned to the one-tenant, zero-fixture baseline. The temporary script was removed from the container.
+- CI #892 passed full verify and Windows Desktop packaging for the preceding checkpoint; this cash-sale harness change needs its own CI run. It changes QA/docs only, so no app image rebuild or staging redeploy is needed.
+- A literal source scan found no active NBU QR/SMS integration. Cash-only policy is already live; cancelled NBU analysis remains historical documentation, with schema and historical payments untouched.

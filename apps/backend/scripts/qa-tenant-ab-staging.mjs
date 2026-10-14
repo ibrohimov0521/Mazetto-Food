@@ -302,12 +302,14 @@ async function main() {
     outboxEventIds: [],
     orderIds: [],
     shiftIds: [],
+    paymentMethodIds: [],
     realtimePermissionId: null,
     orderCreatePermissionId: null,
     orderMutationPermissionIds: [],
     kitchenViewPermissionId: null,
     posUsePermissionId: null,
     shiftOpenPermissionId: null,
+    shiftViewPermissionId: null,
     tenantAOnlyRoleId: null,
     tenantAOnlyPermissionId: null,
     socketClients: [],
@@ -344,6 +346,7 @@ async function main() {
       outboxEventCount,
       shiftCount,
       cashTransactionCount,
+      paymentMethodCount,
       paymentCount,
       paymentOperationCount,
       revenueRecordCount,
@@ -367,6 +370,7 @@ async function main() {
       prisma.outboxEvent.count(),
       prisma.shift.count(),
       prisma.cashTransaction.count(),
+      prisma.paymentMethod.count(),
       prisma.payment.count(),
       prisma.paymentOperation.count(),
       prisma.revenueRecord.count(),
@@ -392,6 +396,7 @@ async function main() {
         outboxEventCount,
         shiftCount,
         cashTransactionCount,
+        paymentMethodCount,
         paymentCount,
         paymentOperationCount,
         revenueRecordCount,
@@ -416,6 +421,7 @@ async function main() {
         outboxEventCount: 0,
         shiftCount: 0,
         cashTransactionCount: 0,
+        paymentMethodCount: 0,
         paymentCount: 0,
         paymentOperationCount: 0,
         revenueRecordCount: 0,
@@ -634,6 +640,13 @@ async function main() {
     });
     fixture.shiftOpenPermissionId = shiftOpenPermission.id;
 
+    const shiftViewPermission = await prisma.permission.create({
+      data: {
+        code: "SHIFT_VIEW_BRANCH",
+        name: "Disposable staging shift view",
+      },
+    });
+    fixture.shiftViewPermissionId = shiftViewPermission.id;
     const tenantAOnlyPermission = await prisma.permission.create({
       data: {
         code: `QA_TENANT_A_ONLY_${suffix}`,
@@ -704,6 +717,9 @@ async function main() {
     });
     await prisma.rolePermission.create({
       data: { roleId: socketRole.id, permissionId: shiftOpenPermission.id },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: socketRole.id, permissionId: shiftViewPermission.id },
     });
     for (const permissionId of fixture.orderMutationPermissionIds) {
       await prisma.rolePermission.create({
@@ -1784,6 +1800,113 @@ async function main() {
       "Tenant staff WebSocket must be rejected on an unknown host.",
     );
 
+    const qaCashMethod = await prisma.paymentMethod.create({
+      data: {
+        branchId: branchA.id,
+        code: "CASH",
+        name: "Disposable staging cash",
+        isActive: true,
+      },
+    });
+    fixture.paymentMethodIds.push(qaCashMethod.id);
+
+    const cashSaleKey = "qa-pos-cash-sale-" + suffix;
+    const cashSaleBody = {
+      idempotencyKey: cashSaleKey,
+      type: "TAKEAWAY",
+      payments: [{ paymentMethodCode: "CASH", amount: 1000 }],
+      items: [{ productId: productA.id, variantId: variantA.id, quantity: 1 }],
+    };
+    const cashSaleResponse = await request("/pos/orders", {
+      host: tenantAHost,
+      method: "POST",
+      headers: cashierHeaders,
+      body: cashSaleBody,
+    });
+    const cashSaleOperation = await prisma.paymentOperation.findUnique({
+      where: { idempotencyKey: "POS_CHECKOUT:" + cashSaleKey },
+      select: { orderId: true },
+    });
+    if (cashSaleOperation) fixture.orderIds.push(cashSaleOperation.orderId);
+    assert.equal(cashSaleResponse.status, 201);
+    assert.ok(cashSaleOperation, "The cash sale operation must be stored.");
+    const cashSaleOrder = await prisma.order.findUnique({
+      where: { id: cashSaleOperation.orderId },
+      select: {
+        id: true,
+        type: true,
+        source: true,
+        paymentStatus: true,
+        shiftId: true,
+      },
+    });
+    assert.ok(cashSaleOrder);
+    assert.equal(cashSaleOrder.type, "TAKEAWAY");
+    assert.equal(cashSaleOrder.source, "POS");
+    assert.equal(cashSaleOrder.paymentStatus, "PAID");
+    assert.equal(cashSaleOrder.shiftId, cashierShift.id);
+    assert.equal(cashSaleResponse.body.data.order.id, cashSaleOrder.id);
+    assert.equal(cashSaleResponse.body.data.payment.method, "CASH");
+
+    const cashSaleReplay = await request("/pos/orders", {
+      host: tenantAHost,
+      method: "POST",
+      headers: cashierHeaders,
+      body: cashSaleBody,
+    });
+    assert.equal(cashSaleReplay.status, 201);
+    assert.equal(cashSaleReplay.body.data.order.id, cashSaleOrder.id);
+    const cashSalePayments = await prisma.payment.findMany({
+      where: { orderId: cashSaleOrder.id },
+      select: { id: true, amount: true, status: true, methodCode: true },
+    });
+    assert.equal(cashSalePayments.length, 1);
+    assert.equal(cashSalePayments[0].amount.toString(), "1000");
+    assert.equal(cashSalePayments[0].status, "SUCCESS");
+    assert.equal(cashSalePayments[0].methodCode, "CASH");
+    const cashSaleRevenue = await prisma.revenueRecord.findMany({
+      where: { orderId: cashSaleOrder.id },
+      select: { amount: true, shiftId: true, source: true, paymentId: true },
+    });
+    assert.equal(cashSaleRevenue.length, 1);
+    assert.equal(cashSaleRevenue[0].amount.toString(), "1000");
+    assert.equal(cashSaleRevenue[0].shiftId, cashierShift.id);
+    assert.equal(cashSaleRevenue[0].source, "ORDER");
+    assert.equal(cashSaleRevenue[0].paymentId, cashSalePayments[0].id);
+    const cashSaleTransactions = await prisma.cashTransaction.findMany({
+      where: { orderId: cashSaleOrder.id },
+      select: { type: true, amount: true, shiftId: true, paymentId: true },
+    });
+    assert.equal(cashSaleTransactions.length, 1);
+    assert.equal(cashSaleTransactions[0].type, "SALE");
+    assert.equal(cashSaleTransactions[0].amount.toString(), "1000");
+    assert.equal(cashSaleTransactions[0].shiftId, cashierShift.id);
+    assert.equal(cashSaleTransactions[0].paymentId, cashSalePayments[0].id);
+    const cashSaleReceipts = await prisma.receipt.findMany({
+      where: { orderId: cashSaleOrder.id },
+      select: { documentType: true },
+    });
+    assert.deepEqual(
+      cashSaleReceipts.map((receipt) => receipt.documentType).sort(),
+      ["KITCHEN", "RECEIPT"],
+    );
+    assert.equal(
+      await prisma.paymentOperation.count({
+        where: { orderId: cashSaleOrder.id },
+      }),
+      1,
+    );
+    const shiftListResponse = await request(
+      "/shifts?branchId=" + encodeURIComponent(branchA.id),
+      { host: tenantAHost, headers: cashierHeaders },
+    );
+    assert.equal(shiftListResponse.status, 200);
+    const liveCashierShift = shiftListResponse.body.data.find(
+      (shift) => shift.id === cashierShift.id,
+    );
+    assert.ok(liveCashierShift);
+    assert.equal(Number(liveCashierShift.currentCash), 1000);
+    assert.equal(liveCashierShift.orderCount, 2);
     const boundary = "----MazettoStagingQA" + suffix;
     const imageBytes = Buffer.from(
       "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADUlEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC",
@@ -1959,7 +2082,7 @@ async function main() {
     assert.equal(revokedCustomerReconnect.connected, false);
 
     console.log(
-      "Staging A/B proof passed: tenant membership/cache separation, order mutation, DINE_IN pay-later with no collection, kitchen POS visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
+      "Staging A/B proof passed: tenant membership/cache separation, order mutation, DINE_IN pay-later with no collection, immediate POS cash sale/idempotent replay accounting, kitchen POS visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
     );
   } catch (error) {
     failure = error;
@@ -2151,6 +2274,11 @@ async function main() {
           await prisma.promotion.deleteMany({
             where: { id: { in: fixture.promotionIds } },
           });
+        if (fixture.paymentMethodIds.length) {
+          await prisma.paymentMethod.deleteMany({
+            where: { id: { in: fixture.paymentMethodIds } },
+          });
+        }
         if (fixture.variantIds.length)
           await prisma.productVariant.deleteMany({
             where: { id: { in: fixture.variantIds } },
@@ -2221,6 +2349,10 @@ async function main() {
           await prisma.permission.deleteMany({
             where: { id: fixture.shiftOpenPermissionId },
           });
+        if (fixture.shiftViewPermissionId)
+          await prisma.permission.deleteMany({
+            where: { id: fixture.shiftViewPermissionId },
+          });
         if (fixture.tenantAOnlyPermissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.tenantAOnlyPermissionId },
@@ -2248,6 +2380,7 @@ async function main() {
           prisma.outboxEvent.count(),
           prisma.shift.count(),
           prisma.cashTransaction.count(),
+          prisma.paymentMethod.count(),
           prisma.payment.count(),
           prisma.paymentOperation.count(),
           prisma.revenueRecord.count(),
@@ -2259,6 +2392,7 @@ async function main() {
           remaining,
           [
             1,
+            0,
             0,
             0,
             0,
