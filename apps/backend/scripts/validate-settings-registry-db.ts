@@ -4,7 +4,6 @@ import { BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { RedisService } from "../src/redis/redis.service";
 import { SettingsService } from "../src/modules/settings/settings.service";
-import { resolveSoleActiveTenantId } from "../src/common/auth/tenant-scope";
 import {
   isKnownSettingKey,
   settingKeys,
@@ -92,18 +91,34 @@ async function main(): Promise<void> {
   await prisma.$connect();
   const redis = new RedisService();
   const settings = new SettingsService(prisma, redis);
-  const actor = await prisma.user.findFirst({ select: { id: true } });
-  assert.ok(actor, "test uchun kamida bitta foydalanuvchi kerak");
-  const tenantId = await resolveSoleActiveTenantId(prisma);
-  const settingsActor = {
-    id: actor.id,
-    tenantId,
-    membershipId: "settings-registry-smoke",
-    roles: ["SUPER_ADMIN"],
-    permissions: ["*"],
-  };
+  let tenantId = "";
 
   try {
+    const runId = Date.now().toString();
+    const tenant = await prisma.restaurantTenant.create({
+      data: {
+        code: `SETTINGS_QA_${runId}`,
+        name: "Settings registry QA",
+        status: "ACTIVE",
+      },
+      select: { id: true },
+    });
+    tenantId = tenant.id;
+    const actor = await prisma.user.create({
+      data: {
+        email: `settings-registry-${runId}@example.test`,
+        displayName: "Settings registry QA",
+      },
+      select: { id: true },
+    });
+    const settingsActor = {
+      id: actor.id,
+      tenantId,
+      membershipId: `settings-registry-smoke-${runId}`,
+      roles: ["SUPER_ADMIN"],
+      permissions: ["*"],
+    };
+
     // Saqlanmagan kalit reestr default'ini beradi.
     await prisma.setting.deleteMany({
       where: { tenantId, key: "customer_code_ttl_minutes" },
@@ -144,9 +159,11 @@ async function main(): Promise<void> {
     console.log("Settings registry validation passed");
     console.log(`  reestr: ${settingKeys.length} ta kalit`);
   } finally {
-    await prisma.setting.deleteMany({
-      where: { tenantId, key: "customer_code_ttl_minutes" },
-    });
+    if (tenantId) {
+      await prisma.setting.deleteMany({
+        where: { tenantId, key: "customer_code_ttl_minutes" },
+      });
+    }
     await prisma.$disconnect();
     // Redis ulanishi ochiq qolsa jarayon tugamaydi — skript osilib qoladi.
     await redis.onModuleDestroy();
