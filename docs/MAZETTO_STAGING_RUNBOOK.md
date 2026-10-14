@@ -199,3 +199,11 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - Before deployment, backed up database `mazetto_staging` to `/home/javohir/backups/mazetto-staging/mazetto-staging-before-pr303-379f3c0-20261014T101942Z.dump` (299,114 bytes; SHA-256 `80a2a101ca6ab6e3056946bfc0e9242c6fba37f9f9dcea2d6519c1059311d8c7`). `pg_restore --list` passed with 722 archive entries. No schema migration was added; staging remained at 62/62.
 - Post-deploy internal health returned HTTP 200, PostgreSQL `ok`, Redis `connected`. The guarded tenant A/B harness passed on the exact image, including catalog/homepage isolation, realtime order delivery/reconnect, logout revocation, host/domain, reports/audit, OTP and media isolation. Cleanup verified baseline restoration and removal of synthetic fixtures.
 - The staging A/B harness does not execute an authenticated POS cash write. CI proves the database-level cash/kitchen rules; exact-candidate authenticated staging, staff/device acceptance and production release remain open.
+
+## Legacy shift cash reconciliation rollout (2026-10-14)
+
+- Commit 75d915c9fe72b0e4c44783c3d9b3a9bb1b9d0482 passed CI run #881 (38559698948), including the Windows Desktop package and full verification.
+- Built image mazetto-staging-api-crmkze:75d915c (sha256:4e64089abed862e103ee179c264d3ef1e7cac7828e5c070adeb59b1f610cd41f). The previous staging image 379f3c0 is preserved as rollback-75d915c.
+- Before rollout, backed up only database mazetto_staging to /home/javohir/backups/mazetto-staging/mazetto-20261014-115612441.dump (299,114 bytes; SHA-256 59fd35d5bb26455e562277249a5a610fe1f3d57d5c558f6710c40b30dd240fa5). pg_restore --list passed with 707 entries.
+- Deployed only to the staging Swarm service with stop-first and rollback-on-failure; the service converged after its 60-second stability monitor. No schema migration was needed.
+- Exact image health returned HTTP 200, PostgreSQL ok, Redis connected. Prisma reported 62 migrations found and schema up to date.
