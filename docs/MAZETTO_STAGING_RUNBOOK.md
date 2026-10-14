@@ -190,3 +190,20 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - Staging Swarm service converged on the candidate image with stop-first update and rollback-on-failure. Internal `/api/v1/health` returned HTTP 200, database `ok`, Redis `connected`.
 - The guarded `qa-tenant-ab-staging.mjs` harness passed on the candidate, including tenant membership/cache separation, live order delivery/reconnect, logout revocation, host/domain, reports/audit, OTP and tenant media isolation. Synthetic fixtures were cleaned up; post-cleanup health remained 200 and migrations 61/61.
 - This does not prove full cashier-to-kitchen-to-cash/receipt UI acceptance, physical printer paper output, real Telegram/SMS or NBU settlement. Those remain open. Production DB/service and second-tenant activation were not changed.
+
+## PR #303 follow-up candidate staging rollout (2026-10-14)
+
+- Exact PR head `379f3c0660c054d8e1e50e1ff66b37744c3b0e7b`; CI run #874 (`38547858823`) passed both `windows-desktop-package` and `verify`, including migrations on clean PostgreSQL, full CI suite, media smoke, unified cash DB integration, customer checkout/outbox DB integration and backend health smoke.
+- The source change makes POS cash completion conditional on `kitchen_pos_orders_enabled`. With kitchen visibility off, full cash payment completes the POS order; with it on, kitchen handoff owns ticket completion without double-counting cash. Customer payment input now accepts CASH only; unsupported methods are rejected. NBU QR/SMS integration is absent from active app code; historical proposals remain cancelled.
+- Built image `mazetto-staging-api-crmkze:379f3c0` (image ID `sha256:31abad2c25f3c84935f4b0f035aeb51db60b439145c468d7b7d7fd0d294084b8`) and deployed it only to the staging Swarm service with stop-first update, a 60-second stability monitor and rollback-on-failure. Previous image tag `rollback-98f4027` remains available.
+- Before deployment, backed up database `mazetto_staging` to `/home/javohir/backups/mazetto-staging/mazetto-staging-before-pr303-379f3c0-20261014T101942Z.dump` (299,114 bytes; SHA-256 `80a2a101ca6ab6e3056946bfc0e9242c6fba37f9f9dcea2d6519c1059311d8c7`). `pg_restore --list` passed with 722 archive entries. No schema migration was added; staging remained at 62/62.
+- Post-deploy internal health returned HTTP 200, PostgreSQL `ok`, Redis `connected`. The guarded tenant A/B harness passed on the exact image, including catalog/homepage isolation, realtime order delivery/reconnect, logout revocation, host/domain, reports/audit, OTP and media isolation. Cleanup verified baseline restoration and removal of synthetic fixtures.
+- The staging A/B harness does not execute an authenticated POS cash write. CI proves the database-level cash/kitchen rules; exact-candidate authenticated staging, staff/device acceptance and production release remain open.
+
+## Legacy shift cash reconciliation rollout (2026-10-14)
+
+- Commit 75d915c9fe72b0e4c44783c3d9b3a9bb1b9d0482 passed CI run #881 (38559698948), including the Windows Desktop package and full verification.
+- Built image mazetto-staging-api-crmkze:75d915c (sha256:4e64089abed862e103ee179c264d3ef1e7cac7828e5c070adeb59b1f610cd41f). The previous staging image 379f3c0 is preserved as rollback-75d915c.
+- Before rollout, backed up only database mazetto_staging to /home/javohir/backups/mazetto-staging/mazetto-20261014-115612441.dump (299,114 bytes; SHA-256 59fd35d5bb26455e562277249a5a610fe1f3d57d5c558f6710c40b30dd240fa5). pg_restore --list passed with 707 entries.
+- Deployed only to the staging Swarm service with stop-first and rollback-on-failure; the service converged after its 60-second stability monitor. No schema migration was needed.
+- Exact image health returned HTTP 200, PostgreSQL ok, Redis connected. Prisma reported 62 migrations found and schema up to date.

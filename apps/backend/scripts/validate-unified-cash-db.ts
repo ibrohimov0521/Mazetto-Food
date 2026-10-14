@@ -3,7 +3,15 @@ import { assertDisposableLoopbackDatabase } from "./isolated-db-target";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { OrderSource, OrderStatus, PaymentStatus } from "@prisma/client";
+import {
+  IngredientUnit,
+  KitchenTicketStatus,
+  OrderSource,
+  OrderStatus,
+  PaymentStatus,
+  Prisma,
+  StockMovementType,
+} from "@prisma/client";
 import { CourierOrderStatus } from "../src/modules/customers/dto/list-customers.dto";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { ShiftsService } from "../src/modules/shifts/shifts.service";
@@ -12,16 +20,17 @@ import { KitchenService } from "../src/modules/kitchen/kitchen.service";
 import { InventoryService } from "../src/modules/inventory/inventory.service";
 import { OrdersService } from "../src/modules/orders/orders.service";
 import { PaymentsService } from "../src/modules/payments/payments.service";
+import { SettingsService } from "../src/modules/settings/settings.service";
 import { CustomerCourierService } from "../src/modules/customers/customer-courier.service";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 
 async function main() {
   assert.equal(process.env.MAZETTO_CASH_DB_SMOKE, "1");
-  assertDisposableLoopbackDatabase(
-    process.env.DATABASE_URL,
-    "cash_qa",
-    ["5432", "5433", "15432"],
-  );
+  assertDisposableLoopbackDatabase(process.env.DATABASE_URL, "cash_qa", [
+    "5432",
+    "5433",
+    "15432",
+  ]);
   const prisma = new PrismaService();
   await prisma.$connect();
   try {
@@ -101,13 +110,20 @@ async function main() {
     });
     const shifts = new ShiftsService(prisma);
     const cash = new CashRegisterService(prisma, shifts);
-    const kitchen = new KitchenService(prisma, {
-      emitOrderCreated() {},
-      emitOrderConfirmed() {},
-      emitOrderSentToKitchen() {},
-      emitOrderStatusChanged() {},
+    const settings = new SettingsService(prisma, {
+      getClient: () => null,
     } as never);
-    const payments = new PaymentsService(prisma);
+    const kitchen = new KitchenService(
+      prisma,
+      {
+        emitOrderCreated() {},
+        emitOrderConfirmed() {},
+        emitOrderSentToKitchen() {},
+        emitOrderStatusChanged() {},
+      } as never,
+      settings,
+    );
+    const payments = new PaymentsService(prisma, settings);
     const courier = new CustomerCourierService(prisma, kitchen, payments);
     const posEvents: string[] = [];
     const observedKitchen = new Proxy(kitchen, {
@@ -133,9 +149,56 @@ async function main() {
         return value;
       },
     });
+    const inventory = new InventoryService(prisma);
+    const replayWarehouse = await prisma.warehouse.create({
+      data: { branchId: branch.id, name: "Replay QA " + id },
+    });
+    const replayIngredient = await prisma.ingredient.create({
+      data: { name: "Replay QA " + id, unit: IngredientUnit.KG },
+    });
+    const replayMovement = {
+      ingredientId: replayIngredient.id,
+      warehouseId: replayWarehouse.id,
+      type: StockMovementType.IN,
+      quantity: new Prisma.Decimal(3),
+      reason: "Concurrent replay test",
+      sourceType: "QA_ORDER_ITEM",
+      sourceId: "QA" + id,
+      sourceItemId: "QA_ORDER_ITEM_" + id,
+    };
+    const replayResults = await Promise.all([
+      prisma.$transaction((tx) =>
+        inventory.applyStockMovement(tx, replayMovement),
+      ),
+      prisma.$transaction((tx) =>
+        inventory.applyStockMovement(tx, replayMovement),
+      ),
+    ]);
+    const [replayStock, replayMovementCount] = await Promise.all([
+      prisma.stock.findUnique({
+        where: {
+          warehouseId_ingredientId: {
+            warehouseId: replayWarehouse.id,
+            ingredientId: replayIngredient.id,
+          },
+        },
+      }),
+      prisma.stockMovement.count({
+        where: {
+          sourceType: replayMovement.sourceType,
+          sourceItemId: replayMovement.sourceItemId,
+          ingredientId: replayIngredient.id,
+          warehouseId: replayWarehouse.id,
+        },
+      }),
+    ]);
+    assert.equal(replayResults[0]!.id, replayResults[1]!.id);
+    assert.equal(replayStock?.quantity.toFixed(3), "3.000");
+    assert.equal(replayMovementCount, 1);
+
     const orders = new OrdersService(
       prisma,
-      new InventoryService(prisma),
+      inventory,
       observedKitchen as never,
     );
     const sourceShift = await shifts.openShift({ openingBalance: 0 }, worker);
@@ -307,6 +370,54 @@ async function main() {
     assert.equal(
       await prisma.payment.count({ where: { orderId: unpaidHallOrder.id } }),
       0,
+    );
+    await orders.addItem(
+      unpaidHallOrder.id,
+      { productId: product.id, quantity: 1 },
+      worker,
+    );
+    const unpaidHallItem = await prisma.orderItem.findFirstOrThrow({
+      where: { orderId: unpaidHallOrder.id },
+      select: { id: true, quantity: true },
+    });
+    await prisma.$transaction((tx) =>
+      orders.confirmOrderForPreparation(tx, {
+        orderId: unpaidHallOrder.id,
+        userId: worker.id,
+        employeeId: worker.employeeId,
+        source: "POS",
+      }),
+    );
+    await assert.rejects(
+      () =>
+        orders.addItem(
+          unpaidHallOrder.id,
+          { productId: product.id, quantity: 1 },
+          worker,
+        ),
+      /Oshxonaga yuborilgan/,
+    );
+    await assert.rejects(
+      () =>
+        orders.updateItem(
+          unpaidHallOrder.id,
+          unpaidHallItem.id,
+          { quantity: 2 },
+          worker,
+        ),
+      /Oshxonaga yuborilgan/,
+    );
+    assert.equal(
+      (await prisma.orderItem.findUniqueOrThrow({
+        where: { id: unpaidHallItem.id },
+      })).quantity.toNumber(),
+      1,
+    );
+    assert.equal(
+      await prisma.kitchenTicket.count({
+        where: { orderId: unpaidHallOrder.id },
+      }),
+      1,
     );
     const pickup = await online("TAKEAWAY", 20000);
     const ticket = await prisma.kitchenTicket.findFirstOrThrow({
@@ -822,6 +933,73 @@ async function main() {
     const waiter = await actor("Waiter", ["WAITER"]);
     assert.ok(waiter.employeeId);
     assert.ok(receiver.employeeId);
+    const hiddenPosCashier = await actor("POSHiddenCashier", ["CASHIER"]);
+    const hiddenPosShift = await shifts.openShift(
+      { openingBalance: 0 },
+      hiddenPosCashier,
+    );
+    const hiddenPosOrder = await prisma.order.create({
+      data: {
+        tenantId: branch.tenantId,
+        branchId: branch.id,
+        source: OrderSource.POS,
+        type: "DINE_IN",
+        status: OrderStatus.READY,
+        paymentStatus: PaymentStatus.PENDING,
+        total: 6000,
+        subtotal: 6000,
+        orderNumber: "QA" + crypto.randomUUID(),
+        createdById: hiddenPosCashier.employeeId!,
+        kitchenTickets: {
+          create: {
+            status: KitchenTicketStatus.READY,
+            ticketNumber: "QA" + crypto.randomUUID(),
+          },
+        },
+      },
+    });
+    await payments.processOrderPayment(
+      {
+        orderId: hiddenPosOrder.id,
+        idempotencyKey: "qa-hidden-pos-" + id,
+        shiftId: hiddenPosShift.id,
+        payments: [{ paymentMethodCode: "CASH", amount: 6000 }],
+      },
+      hiddenPosCashier,
+    );
+    const hiddenPosResult = await prisma.order.findUniqueOrThrow({
+      where: { id: hiddenPosOrder.id },
+      select: { status: true },
+    });
+    assert.equal(
+      hiddenPosResult.status,
+      OrderStatus.COMPLETED,
+      "hidden POS tickets complete when POS collection settles",
+    );
+    assert.equal(
+      await prisma.kitchenTicket.count({
+        where: {
+          orderId: hiddenPosOrder.id,
+          status: KitchenTicketStatus.COMPLETED,
+        },
+      }),
+      1,
+    );
+    assert.equal(await balance(hiddenPosCashier), 6000);
+    await prisma.setting.upsert({
+      where: {
+        tenantId_key: {
+          tenantId: branch.tenantId,
+          key: "kitchen_pos_orders_enabled",
+        },
+      },
+      update: { value: "true" },
+      create: {
+        tenantId: branch.tenantId,
+        key: "kitchen_pos_orders_enabled",
+        value: "true",
+      },
+    });
     const diningOrder = await prisma.order.create({
       data: {
         tenantId: branch.tenantId,
@@ -834,6 +1012,12 @@ async function main() {
         orderNumber: "QA" + crypto.randomUUID(),
         createdById: waiter.employeeId,
         waiterId: waiter.employeeId,
+        kitchenTickets: {
+          create: {
+            status: "READY",
+            ticketNumber: "QA" + crypto.randomUUID(),
+          },
+        },
       },
     });
     const diningPayment = {
@@ -856,6 +1040,56 @@ async function main() {
           shiftId: replacementTargetShift.id,
           employeeId: receiver.employeeId,
         },
+      }),
+      1,
+    );
+    const diningAfterPayment = await prisma.order.findUniqueOrThrow({
+      where: { id: diningOrder.id },
+      select: { status: true },
+    });
+    assert.equal(
+      diningAfterPayment.status,
+      OrderStatus.READY,
+      "cash settlement must not mark a dine-in order complete before kitchen handoff",
+    );
+    const diningTicket = await prisma.kitchenTicket.findFirstOrThrow({
+      where: { orderId: diningOrder.id },
+    });
+    assert.equal(
+      diningTicket.status,
+      KitchenTicketStatus.READY,
+      "cash settlement must not close the kitchen ticket",
+    );
+    const cashBeforeKitchenHandoff = await balance(receiver);
+    await kitchen.completeTicket(diningTicket.id, worker);
+    const diningAfterHandoff = await prisma.order.findUniqueOrThrow({
+      where: { id: diningOrder.id },
+      select: { status: true },
+    });
+    assert.equal(diningAfterHandoff.status, OrderStatus.COMPLETED);
+    assert.equal(
+      await prisma.kitchenTicket.count({
+        where: {
+          id: diningTicket.id,
+          status: KitchenTicketStatus.COMPLETED,
+        },
+      }),
+      1,
+    );
+    assert.equal(
+      await balance(receiver),
+      cashBeforeKitchenHandoff,
+      "kitchen handoff must not add the same order to cash a second time",
+    );
+    assert.equal(
+      await prisma.cashTransaction.count({
+        where: { orderId: diningOrder.id, type: "SALE" },
+      }),
+      1,
+    );
+    assert.equal(
+      await prisma.revenueRecord.count({
+        where: { orderId: diningOrder.id },
       }),
       1,
     );

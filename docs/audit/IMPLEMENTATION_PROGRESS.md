@@ -720,5 +720,195 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Applied only `20261013130000_order_tenant_legacy_writer_guard` to staging. The candidate service converged on image `fc12251` with automatic rollback enabled; rollback tag `mazetto-staging-api-crmkze:rollback-fc12251` preserves the previous staging image.
 - Post-deploy health returned 200 with PostgreSQL `ok` and Redis connected; candidate Prisma status is 62/62.
 - The guarded staging A/B harness passed tenant membership/cache isolation, host/domain policy, realtime order delivery/reconnect, logout revocation, reports/audit, OTP sessions, and tenant media isolation. Its cleanup assertions restored one baseline tenant and zero fixture branches, users, memberships, domains, customers, settings, orders, roles, permissions, outbox rows, or media objects.
-- PR #296 description was updated with this exact-head CI and staging evidence. Production remains at the verified 59-migration baseline; no production migration, service deploy, or second-restaurant activation occurred.
-- Remaining live acceptance: real Windows/offline workstation flows, authenticated POS/Kitchen/cashier acceptance, physical customer receipt printers and transports, real Telegram group delivery/buttons, current object-store restore plus application rollback exercise, and NBU QR reconciliation integration.
+- Historical PR #296 staging checkpoint (2026-10-13): its description recorded production at the then-verified 59-migration baseline; no production migration, service deploy, or second-restaurant activation occurred at that checkpoint. Later release PRs supersede that production version.
+- Historical live-acceptance list as of 2026-10-13: real Windows/offline workstation flows, authenticated POS/Kitchen/cashier acceptance, physical customer receipt printers and transports, real Telegram group delivery/buttons, and current object-store restore plus application rollback exercise. NBU integration was cancelled by the owner on 2026-10-14 and is not an active requirement.
+
+## Tenant-bound catalog and homepage candidate (2026-10-14)
+
+- The production release PR #302 is merged at `951f344214e11446428d2fdc2c79d26ba27d5380`; CI #867, Desktop Release #178, Deploy #336 and production smoke succeeded. The production tag is on that commit. No migration was needed for that release.
+- Continued on `audit/catalog-tenant-boundary-20261014`. Recipe list/detail/upsert and homepage public/admin operations now fail closed on ambiguous active tenants. Branch-linked products/categories are scoped to the sole active tenant, including list, validation and bulk deletion. Homepage rows without linked products/categories have no tenant column and remain shared; a schema ownership migration plus staging A/B proof is needed before multiple active tenants can be served.
+- Six focused tests passed, including foreign variant/product/branch behavior, route fail-closed behavior, and tenant-scoped bulk deletion. Full backend tests passed 746/746; shared transient HTTP tests 3/3. Backend application/script typechecks, targeted ESLint and Prettier, backend Nest build, POS-web typecheck and production build passed.
+- User confirmed current operations are cash-only and cancelled NBU integration. Repository source has no active NBU reconciliation module; removed the stale bank-SMS instruction from cashier UI. Historical NBU notes are explicitly canceled and preserved for audit; payment records were not changed.
+- PR #303 is open from this branch at exact head `98f40274addd2fbc227aa9b0a8e5e31bcc4159f6`; GitHub CI run #871 (`38542246010`) passed both `verify` and `windows-desktop-package`.
+- Built and deployed exact candidate image `mazetto-staging-api-crmkze:98f4027` (image ID `sha256:f5c4f2576d72a11bcf02c07501c738c238cf33d7fcc29ead29fa2914bd7cb7b7`). Staging service converged with rollback-on-failure enabled; health returned 200, PostgreSQL and Redis were healthy, and Prisma reported 62/62 migrations. No schema migration was added by this PR.
+- Staging-only pre-deploy backup: `/home/javohir/backups/mazetto-staging/mazetto-staging-before-pr303-98f4027-20261014T092849Z.dump`, 299,114 bytes, SHA-256 `ea95add9c9d6a0028ec5ef61fb7e3e14f755b9d50a8d12193773b44bc3fb5d72`; `pg_restore --list` succeeded. Previous staging image is preserved as `mazetto-staging-api-crmkze:rollback-98f4027`.
+- Exact-image staging tenant A/B proof passed for catalog recipe/homepage scoping, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions and tenant media isolation. Fixture cleanup returned the database to one baseline tenant and zero fixture branches, devices, users, employees, memberships, domains, customers, challenges, settings, roles, permissions, orders, order events and outbox rows; media cleanup also passed.
+- Current acceptance matrix is K/A/S=PASS, R/P=OPEN for this candidate. Production remains on `951f344`; no production migration/deploy or second-restaurant activation occurred. Owner cancelled NBU integration on 2026-10-14; active policy is cash-only and historical payment records were not altered.
+
+## Cash-only POS and kitchen completion follow-up (2026-10-14)
+
+- Fixed POS cash completion to respect `kitchen_pos_orders_enabled`: when POS tickets are hidden from kitchen (default), full cash payment completes the POS order/ticket; when enabled, an active kitchen ticket remains for kitchen handoff, and handoff does not add the payment to cash a second time.
+- Narrowed the customer online-payment DTO to `CASH`. The DB checkout integration sends unsupported `CLICK`, `PAYME` and `CARD` values and confirms rejection; historical payment rows and display labels were not removed.
+- Searched active application source for NBU/`QR_ID`/bank-SMS reconciliation. No such integration exists; historical notes are cancelled, not active runtime behavior.
+- Backend 746/746 tests, HTTP retry 3/3, targeted lint/typecheck, and CI run #874 (`38547858823`) passed, including Windows desktop packaging, the full verify pipeline, unified cash DB integration, customer checkout/outbox DB integration and production-mode health smoke.
+- Built exact commit `379f3c0660c054d8e1e50e1ff66b37744c3b0e7b` as `mazetto-staging-api-crmkze:379f3c0`, image ID `sha256:31abad2c25f3c84935f4b0f035aeb51db60b439145c468d7b7d7fd0d294084b8`. Deployed only to staging service `mazetto-staging-api-crmkze` with stop-first update and rollback-on-failure; service converged.
+- Before deploy, verified staging-only backup `/home/javohir/backups/mazetto-staging/mazetto-staging-before-pr303-379f3c0-20261014T101942Z.dump` (299,114 bytes, SHA-256 `80a2a101ca6ab6e3056946bfc0e9242c6fba37f9f9dcea2d6519c1059311d8c7`; `pg_restore --list` passed, 722 archive entries). Previous image remains available as `rollback-98f4027`.
+- After rollout, health was HTTP 200 with PostgreSQL `ok` and Redis `connected`; migration status remained 62/62 (no migration was added). Exact-image staging A/B passed tenant membership/cache, order delivery/reconnect, logout revocation, host/domain, report/audit, OTP and media isolation; cleanup assertions restored one baseline tenant and zero test fixtures.
+- This staging run proves startup and tenant isolation, not an authenticated cash write-path, real staff/device acceptance or production settlement. Production remains at `951f344`; no production migration/deploy and no second-restaurant activation occurred.
+
+## Assigned printer queue concurrency (2026-10-14)
+
+- Printer audit found the Desktop server-job worker claimed and awaited every print job serially, even when backend jobs targeted distinct assigned printers. The unassigned-job regression test explicitly required serial writes.
+- Assigned jobs use one serial lane per physical queue, with at most four distinct queues active and a shared cap of five claimed jobs per tick. Duplicate local records are grouped by the matched Windows queue name; TCP records sharing normalized host and port are grouped too. Distinct queue writes can run concurrently. Unassigned jobs, which can fan out across Windows queues, remain serial and run after assigned lanes to avoid overlapping writes. Local offline queue behavior is unchanged.
+- Automated tests prove two different printers can print concurrently while each printer's order is preserved, and duplicate Windows queue records remain sequential; the five-job cap and serial unassigned queue tests remain in place.
+- First implementation verification: print-worker 39/39, full Desktop suite 180/180, typecheck/lint/build/preload build, and GitHub CI #876 passed. Follow-up duplicate-queue verification: print-worker 40/40; full Desktop 181/181; typecheck, targeted ESLint, Desktop TypeScript build and preload build passed. GitHub CI #878 (38555113236) passed Windows installer packaging and full verify, including migrations, CI tests/builds/validators, cash DB integration, checkout/outbox integration and backend health smoke. CI #876 did not include the follow-up.
+- PR #303 follow-up commit `59d34e22558918da85622cc8abad629e17607dfe` is pushed after initial printer-worker commit `ef03afc3d202405162d124f54437cfebfb81a736`. No staging backend redeploy was needed because these changes affect only Desktop code; staging API remains `mazetto-staging-api-crmkze:379f3c0`. CI built an installer but does not publish or install it. Physical simultaneous multi-printer acceptance and production Desktop release remain open; Godex G500 single-printer confirmation does not prove concurrency. Grouping protects identical configured Windows queue names and TCP host/port pairs; separate aliases for the same hardware cannot be inferred automatically.
+- NBU QR/SMS reconciliation was not present in active application source during this audit. Cash-only controls remain in place; historical payment rows and cancelled audit notes were preserved.
+
+## Legacy shift cash reconciliation (2026-10-14)
+
+- The owner confirmed current cash-only operation and cancelled NBU integration. A literal NBU search found no active reconciliation code in backend, POS web, customer web, or Desktop. NBU analysis files remain explicitly marked cancelled historical notes; payment schema and historical records were preserved.
+- Read-only production aggregates for the last 30 days found 21 CASH payments totaling 1,645,000 so'm; each had one equal ORDER revenue record and one equal SALE cash transaction. No refunds were recorded in that window.
+- The same read-only review found that 15 of 24 shifts closed in the last 30 days stored an expectedCash different from current-ledger recomputation. All 24 stored cashDifference values still equal closingBalance - expectedCash.
+- Root cause: old SALE ledger rows have no Payment link, while the old shift-close formula derives cash sales only from Payment records. Current linked SALE rows must not be counted again.
+- calculateShiftTotals now includes unmatched legacy SALE rows once in shift sales/cash totals, counts linked SALE plus Payment once, and keeps a CASH-Payment fallback when its SALE row is absent. No historical production ledger values were rewritten.
+- Verification: focused shift tests 5/5; full backend suite 747/747; backend app and script typechecks passed; Nest build and HTTP retry tests 3/3 passed. Full-file Prettier still flags existing formatting elsewhere in shifts.service.ts; the edited calculation and test blocks are formatted. ESLint/npm runner was unavailable on the server checkout.
+- Commit 75d915c was pushed to PR #303, passed CI #881, and deployed only to staging as image mazetto-staging-api-crmkze:75d915c. The staging-only pre-deploy backup is /home/javohir/backups/mazetto-staging/mazetto-20261014-115612441.dump (299,114 bytes; SHA-256 59fd35d5bb26455e562277249a5a610fe1f3d57d5c558f6710c40b30dd240fa5; pg_restore --list: 707 entries). The previous staging image is rollback-75d915c. Health returned 200 with PostgreSQL ok and Redis connected; migrations remain 62/62. No authenticated staging cash write was run. Production remains 951f344 with no writes, migration or deploy; the second restaurant remains inactive.
+
+### Read-only reconciliation recheck (2026-10-14)
+
+- Rechecked the production `mazetto` database inside a read-only transaction with a 10-second statement timeout. The trailing 30-day window contained 23 closed shifts; the candidate calculation matched stored `expectedCash` for 21. Stored `cashDifference` equaled `closingBalance - expectedCash` for all 23.
+- Detail query isolated shifts #31 and #34 (2026-10-09). In both, candidate recomputation equals recorded `closingBalance`, and all cash movements predate close. Shift #34's 503,000 so'm gap is exactly two unlinked legacy SALE rows. Shift #31 has 14 unlinked SALE rows totaling 862,000 so'm, equal to closing balance, while stored `expectedCash` is 527,000 so'm; the old payment/revenue source cannot be reconstructed from current rows.
+- These are historical traceability gaps, not demonstrated cash drawer shortages. No production rows were changed. The earlier "15/24 expectedCash mismatches" wording is not reproducible with the exact 30-day window and candidate formula; do not use it as a confirmed mismatch count.
+- On branch head `4f2ac98`, focused payment/kitchen/shift tests passed 49/49. CI #882 (`38561052369`) passed both `verify` and `windows-desktop-package`. The API image remains `75d915c` on staging with health 200 and migrations 62/62; production remains `951f344`. The owner's NBU cancellation stands: no active NBU QR/SMS code exists, cash-only is enforced, and historical payment/schema records remain intact.
+
+
+## Inventory source-movement concurrency (2026-10-14)
+
+- Inventory audit found the source-key race path caught a PostgreSQL unique violation and queried again in the same transaction; PostgreSQL marks that transaction failed. A replay conflict could therefore fail instead of returning the original movement.
+- Source-key movements now use `createMany(skipDuplicates: true)`; only the transaction that inserted the movement updates stock. Manual movements without source keys still use normal `create`.
+- Added a parallel replay unit test proving one movement and one quantity increment, plus a real PostgreSQL test in `validate-unified-cash-db.ts`.
+- Verification: inventory lifecycle tests 5/5, backend suite 748/748, HTTP retry tests 3/3, backend app/script typecheck, targeted lint and Prettier all passed.
+- A fresh disposable database received all 62 migrations; the unified cash DB validator passed with the concurrent inventory replay. Its temporary `cash_qa` database was dropped; the pre-existing `ci` and `postgres` databases were preserved.
+- No schema migration or production write was made. The code fix has not yet been pushed or deployed; staging and production remain unchanged pending CI and staging rollout.
+
+## Order mutation guard and inventory staging checkpoint (2026-10-14)
+
+- This checkpoint supersedes the preceding inventory entry's pending-release status: the source-movement fix was pushed as `d4ddb38` to PR #303. GitHub Actions run #885 (`38565939222`) passed `verify` and Windows Desktop packaging.
+- Exact image `mazetto-staging-api-crmkze:d4ddb38` was deployed only to the isolated staging service. The pre-deploy backup `/home/javohir/backups/mazetto-staging/mazetto-20261014-before-inventory-race-d4ddb38.dump` is 299,114 bytes, SHA-256 `cc663c8a3cd1c1752f194eb35e19f5d9bfcdde3c033636d596b19e973615d32f`; `pg_restore --list` returned 722 entries. Candidate health was HTTP 200 with PostgreSQL and Redis healthy; Prisma reported 62/62 migrations. The exact-image tenant A/B harness passed and cleaned up its fixtures.
+- A separate order-lifecycle audit found that item additions and edits remained possible after kitchen submission, so persisted order contents could diverge from the existing kitchen ticket and stock effects. New item additions and quantity/modifier/note edits are now limited to `NEW` orders; item cancellation remains available through its existing path.
+- The unified cash PostgreSQL validator now creates a NEW order, adds an item, submits it to the kitchen, and asserts later additions/edits are rejected without changing quantity or duplicating the kitchen ticket. Fresh disposable DB validation passed after all 62 migrations. Backend tests passed 748/748, shared HTTP retry tests 3/3, backend application/script typechecks and targeted ESLint passed.
+- At the time of this pre-release checkpoint, the order-mutation guard and validator were uncommitted and had not passed CI or staging. Production remained unchanged; no production migration/write/deploy or second-restaurant activation occurred. NBU was cancelled by the owner; no active NBU integration exists in application source, and the cash-only policy remains in force. Untracked `.orig`/`.~N~` artifacts were left untouched.
+
+## Order mutation guard staging rollout (2026-10-14)
+
+- Commit `e5b201d354ecb436350b87ee0239f188ed9940db` was pushed to PR #303. GitHub Actions run `38570267400` passed full verification and Windows Desktop packaging, including clean-database migrations, unified cash DB integration, checkout/outbox integration and production-mode health smoke.
+- Built exact image `mazetto-staging-api-crmkze:e5b201d` (image ID `sha256:fc75dbeda8327395d4f7ce66169f352ca7ab87eca7cc69191d3cffdcf07a2d20`). Previous image was preserved as `rollback-e5b201d`. Pre-rollout staging backup `/home/javohir/backups/mazetto-staging/mazetto-20261014-before-order-guard-e5b201d.dump` is 299,114 bytes, SHA-256 `9c746ad4dd8f90f6e5096019b3eeb3bbf8af51dd8e9170b16e8f3abc3dd67ab0`; `pg_restore --list` returned 722 entries.
+- The staging service converged after the 60-second rollback-on-failure monitor. Health returned HTTP 200, PostgreSQL `ok`, Redis `connected`, and Prisma reported 62/62 migrations. The exact-image tenant A/B harness passed and cleaned up its synthetic fixtures.
+- The authenticated order-mutation route itself had not been exercised at this checkpoint. Production service/database remain unchanged; there was no production migration/write/deploy and the second restaurant remains inactive.
+
+## Authenticated order mutation route staging acceptance (2026-10-14)
+
+- The A/B staging harness now exercises the real staff HTTP routes on the exact running runtime image `mazetto-staging-api-crmkze:e5b201d`; the harness itself was copied to a temporary container path and did not alter the deployed app image.
+- Staff login, adding an item to a `NEW` order, and kitchen acceptance passed. Subsequent item-add and quantity-edit requests both returned HTTP 400; persisted quantity stayed 1 and the order retained exactly one kitchen ticket.
+- Commit `1d48cde000251a88dbf6ba3d838ff5cee41d07d7` passed GitHub Actions CI #888 (`38575702066`): full `verify` and Windows Desktop package jobs both succeeded.
+- Tenant A/B staff realtime delivery and reconnect/replay checks passed. The harness compares unique aggregate/order IDs so multiple valid lifecycle events for one order do not appear as cross-tenant leakage.
+- Fixture cleanup passed. A read-only post-run query showed the single pre-existing tenant and zero fixture branches, users, employees, memberships, domains, customers, orders, order events, outbox events, kitchen tickets, permissions or roles.
+- Staging runtime remains `e5b201d`, with no schema change; production service/database were not contacted for writes, no production deployment occurred, and the second restaurant remains inactive. Physical/employee acceptance and the production release gate remain distinct.
+
+## Tenant-scoped kitchen POS visibility staging acceptance (2026-10-14)
+
+- Extended the guarded A/B harness with an authenticated kitchen view role and real settings/kitchen HTTP requests. The test creates a POS order and kitchen ticket, verifies the setting defaults off, and checks the ticket is hidden.
+- Enabling kitchen_pos_orders_enabled for tenant A made its ticket visible immediately. Tenant B's setting remained off and its kitchen endpoint could not see tenant A's ticket. Disabling the setting hid the ticket again.
+- The exact running staging image was mazetto-staging-api-crmkze:e5b201d; only the disposable harness file was copied into the container. No app image, schema, production service or production data was changed.
+- Harness completion and cleanup assertions passed: synthetic settings, roles, permissions, orders, tickets and other fixtures returned to the one-tenant, zero-fixture baseline. The temporary test script was removed from the container.
+- Commit bd5276b0df52f1a413f171484b6c11ff6f4ea623 adds this guarded staging test to PR #303. GitHub Actions CI #890 (38579945599) passed full verify and Windows Desktop packaging. No staging redeploy or production deploy is required for this QA harness/documentation-only change.
+
+## DINE_IN pay-later cashier staging acceptance (2026-10-14)
+
+- The guarded tenant A/B harness now opens a temporary cashier shift, creates a POS DINE_IN order with payLater enabled, and retries the same idempotency key. Both responses resolve to one PENDING order and one PaymentOperation.
+- Against the exact staging runtime mazetto-staging-api-crmkze:e5b201d, the order persisted only its KITCHEN ticket receipt; no customer RECEIPT, Payment, RevenueRecord, or order-linked CashTransaction appeared. The shift retained zero sales/cash totals and only its zero opening-balance row.
+- The added POS order's live socket delivery and reconnect replay were included in tenant A's expected event set; tenant B remained isolated. The cleanup now removes payment, receipt, cash, revenue, operation and shift rows and verifies their baseline counts.
+- The exact-image A/B harness passed and restored the staging database to its one-tenant, zero-fixture baseline. node --check, Prettier and git diff --check passed. This QA/docs-only update does not rebuild or redeploy the app.
+- Production remains unchanged; no production database writes, migrations, app deploy or second-restaurant activation occurred. WEB/Telegram settlement and the remaining ledger/history checks stay separate acceptance gates.
+
+## Immediate POS cash-sale staging acceptance (2026-10-14)
+
+- The guarded tenant A/B harness now creates a temporary branch-scoped CASH method, logs in an authenticated synthetic cashier, submits a POS TAKEAWAY cash sale, and retries the same idempotency key.
+- Against the exact staging runtime mazetto-staging-api-crmkze:e5b201d, the order has exactly one SUCCESS cash payment, one ORDER revenue row, one SALE cash transaction, one payment operation, and the expected KITCHEN plus customer RECEIPT documents. The replay returned the same order without duplicate financial rows.
+- The shift API reported currentCash=1000 before refund and 600 after a 400 so'm partial refund; the unpaid DINE_IN remained excluded from payment/revenue/cash totals. Refund replay returned the same refund, leaving exactly one PaymentRefund, one REFUND cash transaction, one negative ADJUSTMENT revenue row and one refund receipt.
+- Cleanup deleted the temporary payment method, permissions, orders, receipts, refund/ledger rows and shift, then asserted the staging counts returned to the one-tenant, zero-fixture baseline. The temporary script was removed from the container.
+- CI #892 passed the DINE_IN checkpoint, CI #893 passed full verify and Windows Desktop packaging for the cash-sale-only commit, and CI #894 passed full verify and Windows Desktop packaging for the refund commit. These QA/docs-only updates do not rebuild or redeploy the app.
+- A literal source scan found no active NBU QR/SMS integration. Cash-only policy is already live; cancelled NBU analysis remains historical documentation, with schema and historical payments untouched.
+
+## Authenticated staging shift-close acceptance (2026-10-14)
+
+- Extended the guarded tenant A/B harness through close on the same cashier shift after an unpaid DINE_IN cancellation and a 1,000 so'm CASH TAKEAWAY sale with a 400 so'm partial refund.
+- Before close, the shift order endpoint returned both orders. Closing with 600 so'm returned CLOSED; repeating the same idempotency key returned the same shift and created only one closing-balance transaction.
+- Exact runtime mazetto-staging-api-crmkze:e5b201d persisted expectedCash=600, closingBalance=600, cashDifference=0, salesTotal=1,000, cashTotal=1,000, refundsTotal=400, and orderCount=2. The order endpoint returned the same two orders after close.
+- The exact-image staging A/B harness passed again, including its cleanup assertions back to the one-tenant, zero-fixture baseline. Node syntax, Prettier, and git diff --check passed.
+- Physical shift-close report printing is still unverified; the prior mocked 205-order report test is not physical printer proof. This QA/docs-only checkpoint does not change the staging app image or production; no production write, migration, deploy, or second-restaurant activation occurred.
+
+## Unpaid-order cancellation staging acceptance (2026-10-14)
+
+- On exact staging runtime mazetto-staging-api-crmkze:e5b201d, authenticated cashier cancelled the pending DINE_IN order without sending a customer-entered reason/note; the internal audit reason code remained populated.
+- The first request and same-key replay both returned the same CANCELLED order. Exactly one OrderCancelled event was stored and the order version incremented once; cancellationReason stayed null.
+- No Payment, RevenueRecord or order-linked CashTransaction was created. Shift sales/cash stayed zero, and the order retained the existing kitchen-ticket count.
+- The full tenant A/B staging harness passed and cleaned up its fixture data. This verifies unpaid whole-order cancellation and no-note acceptance, not item-level cancellation from history, paid-order cancellation, or offline replay.
+
+## WEB pickup cash settlement staging acceptance (2026-10-14)
+
+- Against exact staging runtime mazetto-staging-api-crmkze:e5b201d, a tenant-A customer created a PICKUP WEB order with CASH selected. Replaying the customer checkout key returned the same order and left one CustomerOrder and one CustomerOrderAttempt.
+- Before cashier acceptance, the order had no Payment, RevenueRecord or CashTransaction. Its WEB kitchen ticket was visible even with cashier POS tickets hidden by the default setting.
+- An authenticated cashier opened a new shift and accepted the 1,000 so'm cash payment through /payments/process. An idempotent replay left exactly one SUCCESS Payment, one ORDER revenue row and one SALE cash transaction linked to that shift.
+- The WEB order remained visible to kitchen after payment. Closing the cashier shift at 1,000 so'm stored expectedCash/cashTotal=1,000, cashDifference=0 and orderCount=1; close replay left one closing-balance transaction.
+- Cleanup removed CustomerOrder, CustomerOrderAttempt, notification-outbox rows and financial/order fixtures; the harness asserted all staging baselines were restored. The complete exact-image A/B harness passed.
+- This is staging API evidence only. Telegram order/settlement, live staff/device acceptance, offline replay, physical shift-report print, production reconciliation and production release remain separate.
+
+## Cashier history UI audit (2026-10-14)
+
+- The existing cashier-history browser QA only covered blank-reason cancellation. Expanded it to cover cashier and admin shift scopes, order search, status filtering, amount sorting, details, optional-reason item cancellation against a paid CASH fixture, idempotency-key submission, and receipt reprint queue submission.
+- Verified against a fresh production-mode POS build from PR #303 head `a34713a`, isolated on port 3118 so the older preview on 3103 was not overwritten. Playwright passed for both roles at 375px and 1280px with no page errors or horizontal overflow.
+- The first run on the long-lived 3103 preview could not find the fixture order; process inspection showed that preview started on Oct 13, before current commit `a34713a`. The same test passed on the fresh build, so this was a stale-preview mismatch, not an application defect.
+- Tests are mocked UI requests; no staging or production order, payment, refund, or print job was created. Authenticated staging cashier-history/reprint flow and backend cash-ledger effect remain open. Successful item cancellation refreshes and closes the detail dialog; test now follows that existing behavior.
+
+## POS role matrix recheck (2026-10-14)
+
+- Reran `qa-authenticated-role-matrix.mjs` against the isolated production-mode build on port 3118: all eight roles passed at 1440x900 and 390x844, including role redirects, non-admin denial for admin dashboard, and optional kitchen handoff/cancellation.
+- No browser page errors or horizontal overflow were observed. The API was mocked; this confirms responsive role UI behavior, not real employee credentials, backend authorization, or live workstation acceptance.
+
+## Owner-authorized production ledger correction (2026-10-14)
+
+- The owner explicitly approved correcting the historic closed-shift snapshots from the cash ledger. Re-read production rows inside a read-only transaction immediately before the write and confirmed exact prior values: shift #31 had sales/cash/expected cash 527,000 so'm, closing balance 862,000 and cash difference 335,000; shift #34 had 373,000 so'm, closing balance 876,000 and cash difference 503,000.
+- Captured a restricted pre-change snapshot before writing: /home/javohir/backups/mazetto-prod-cash-reconcile/mazetto-prod-shifts-31-34-before-20261014.json, mode 600, 15,744 bytes, SHA-256 47634c26b2dcc57c3ef6cf3fe2dfb14bcf3ed296a2cf757f1b3f4c6c8f78aba2. JSON validation confirmed exactly the two intended shift rows and their original values.
+- A SERIALIZABLE production transaction locked the two exact shift rows, recomputed totals from their existing PAYMENT/revenue and cash-transaction rows using the branch formula, and conditionally updated only salesTotal, cashTotal, expectedCash, cashDifference, plus updatedAt. It required the original snapshot values and ledger recomputation to match the approved shifts; exactly two rows were updated. No order, payment, revenue, or cash-transaction rows were written.
+- Read-only post-check: #31 now has sales/cash/expected/closing 862,000 so'm and difference 0; its ledger remains 16 rows, including 14 SALE rows totaling 862,000. #34 now has sales/cash/expected/closing 876,000 so'm and difference 0; its ledger remains 8 rows, including 6 SALE rows totaling 876,000. No business movement occurred after either close; each has one expected CLOSING_BALANCE row timestamped milliseconds after the shift close.
+- This repairs the two historical production snapshots only. Production app remains 951f344; PR #303's ledger-calculation fix is not deployed. Legacy-unlinked SALE staging fixture and code release are still open; no migration or application deploy was performed.
+
+## Legacy SALE staging acceptance (2026-10-14)
+
+- Extended the guarded A/B harness to create a synthetic 125 so'm SALE without order/payment links on the disposable cashier shift. Existing fixture also contains a 1,000 so'm linked CASH sale and a 400 so'm partial refund.
+- Ran the harness against staging API image mazetto-staging-api-crmkze:e5b201d, which descends from cash-reconciliation commit 75d915c. The live shift API reported currentCash=725 after the unlinked SALE. Closing at 725 persisted salesTotal=1,125, cashTotal=1,125, refundsTotal=400, expectedCash=725, cashDifference=0; the duplicate close replay left exactly one CLOSING_BALANCE row.
+- The complete A/B harness passed, including its cleanup and baseline assertions. The temporary runner copy was removed from the staging container; only the guarded test change remains in the server checkout.
+- The ledger calculation now has unit/CI coverage plus the previously missing exact-image staging fixture. Production historical snapshots were corrected separately above, but the application code remains unreleased at production 951f344; no production deploy or migration was performed.
+
+## Cashier/admin history and item-refund staging acceptance (2026-10-14)
+
+- Extended the guarded tenant A/B harness to exercise authenticated cashier and owner/admin history search, amount sorting, cancelled-order filtering, order detail, shift detail, and receipt reprint endpoints. Cross-tenant access to a shift and a receipt both returned 404.
+- A CASHIER cancelled a 2,000 so'm item without a customer note. Replaying the same idempotency key left exactly one 2,000 so'm PaymentRefund, one 2,000 so'm REFUND cash transaction, and one -2,000 so'm ADJUSTMENT revenue row; the item is CANCELLED and its optional customer reason remains null.
+- Cashier and owner/admin reprint requests each queued exactly one print job. No job was sent to a physical printer. After a 1,000 so'm linked sale, 400 so'm partial refund, 2,000 so'm item refund, and 125 so'm legacy unlinked SALE, shift close recorded sales/cash 3,125, refunds 2,400, expected/closing cash 725, and zero difference. Close replay did not duplicate the closing row.
+- The complete authenticated A/B harness passed on staging image mazetto-staging-api-crmkze:e5b201d; its cleanup and baseline assertions passed, and the temporary runner copy was removed from the container. This changes staging acceptance for cashier/admin history to PASS. Real employee/browser-device interaction and physical reprint acceptance remain pending; production remains on 951f344 and was not deployed or modified by this test.
+
+## Broad audit verification checkpoint (2026-10-14, head 7158b2a)
+
+- Reviewed the changed production-code paths in PR #303 for cash/shift totals, POS-to-kitchen handoff, post-handoff item mutation, recipe/homepage tenant scoping, stock-movement replay, cash-only checkout and assigned printer queue concurrency. No new defect was confirmed in this pass.
+- Focused tests passed: backend inventory/stock 15/15; reports, settings, payment method and kitchen visibility 20/20; backend Telegram 51/51; Telegram bot 5/5; POS web 87/87; customer web 38/38; Desktop 181/181. The PR's exact application-code commit a34713a had already passed full CI verify and Windows package build; current audit/docs head 7158b2a passed its Windows package check.
+- A fresh disposable PostgreSQL E2E on the current checkout applied all 62 migrations, passed 12 concurrent order-number allocations, POS/Kassa DB validation and customer WEB/Telegram checkout validation. The isolated database was dropped and the temporary loopback-only PostgreSQL container was stopped and removed. Production and staging databases were not used by this E2E.
+- Telegram source has no active Yandex map URL in the notification path; generated staff notifications use an explicit validated Google Maps URL button and suppress link previews. This is automated payload evidence, not a live Telegram group acceptance.
+- The cashier/admin history staging acceptance is recorded above: exact staging image e5b201d, cross-tenant 404s, one-time 2,000 so'm refund/REFUND/-2,000 ADJUSTMENT, both-role reprint enqueue, and a zero-difference 725 so'm close. No paper was printed by that test.
+- Remaining external gates are unchanged: live operator/domain walkthrough, Desktop install and offline reconnect, simultaneous physical two-printer test, physical shift-report/reprint, live Telegram group check, and fuller inventory-ledger reconciliation. The line-by-line manual audit of every tracked file is not complete; uncertain .orig/.~N~ files remain untouched.
+- Production remains on app 951f344. Historical shift #31/#34 summaries were corrected only from existing ledger rows with owner approval; PR #303 application code has not been deployed, and restaurant two remains inactive.
+
+## Desktop print-worker release readiness (2026-10-15)
+
+- Release workflow inspection found the candidate print-worker changes would otherwise ship under Desktop 0.1.117, whose `desktop-v0.1.117` tag already exists. The workflow intentionally skips an already-published version.
+- Confirmed the remote repository has no `desktop-v0.1.118` tag. Bumped `apps/desktop/package.json` to 0.1.118 so the main-branch Desktop Release workflow can publish the changed worker instead of silently skipping it.
+- On PR head d377f64, CI #903 passed full verify and Windows installer packaging; the installer was built but not published. Desktop Release is triggered on main after merge. No installer has been installed on the restaurant workstation.
+- On the 0.1.118 candidate after the version bump, Desktop tests passed 181/181 and typecheck plus lint passed. Physical two-printer, user workstation update and offline reconnect acceptance remain open.
+
+## Production inventory ledger check (2026-10-15)
+
+- Ran aggregate queries in a read-only transaction directly on the production PostgreSQL container, with a 15-second statement timeout. No data was changed.
+- Production currently has 3 warehouses, 0 ingredients, 0 recipe items, 0 stock rows and 0 stock movements. There are no stock-versus-movement discrepancies or movements without a corresponding stock row to reconcile.
+- The Prisma Ingredient.currentStock column is unused by active application code; it contains no rows because the production ingredient table is empty. It was intentionally left in the schema and database rather than treated as disposable dead code.
+- Functional stock movement/replay tests remain useful and passed, but real stocked-inventory acceptance is deferred until the tenant has ingredient/recipe/stock data.

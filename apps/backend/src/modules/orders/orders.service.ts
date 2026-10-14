@@ -1078,6 +1078,11 @@ export class OrdersService {
           }
 
           assertOrderCanChange(order.status);
+          if (order.status !== OrderStatus.NEW) {
+            throw new BadRequestException(
+              "Oshxonaga yuborilgan buyurtmaga yangi mahsulot qo'shib bo'lmaydi.",
+            );
+          }
           await assertEmployeeInBranch(tx, employeeId, order.branchId);
 
           if (
@@ -1335,6 +1340,17 @@ export class OrdersService {
         if (dto.status && dto.status !== OrderItemStatus.CANCELLED) {
           throw new BadRequestException(
             "Bekor qilingan mahsulot qayta faollashtirilmaydi",
+          );
+        }
+        if (
+          !isCancelling &&
+          order.status !== OrderStatus.NEW &&
+          (dto.quantity !== undefined ||
+            dto.modifiers !== undefined ||
+            dto.notes !== undefined)
+        ) {
+          throw new BadRequestException(
+            "Oshxonaga yuborilgan mahsulotni o'zgartirib bo'lmaydi. Bekor qilish amalidan foydalaning.",
           );
         }
 

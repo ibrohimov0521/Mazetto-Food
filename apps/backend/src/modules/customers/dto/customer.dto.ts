@@ -20,9 +20,6 @@ export enum OnlineOrderTypeDto {
 
 export enum OnlinePaymentMethodDto {
   CASH = "CASH",
-  CLICK = "CLICK",
-  PAYME = "PAYME",
-  CARD = "CARD",
 }
 
 export class CustomerRequestCodeDto {

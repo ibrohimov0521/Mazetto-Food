@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { Prisma, StockMovementType } from "@prisma/client";
 import { BadRequestException } from "@nestjs/common";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { InventoryService } from "../src/modules/inventory/inventory.service";
@@ -174,4 +175,64 @@ test("ingredient change audit entries use the resolved tenant for a global owner
       },
     ],
   );
+});
+
+test("parallel replay of a source stock movement changes stock exactly once", async () => {
+  let initialLookups = 0;
+  let movementExists = false;
+  let stockWrites = 0;
+  let stockQuantity = new Prisma.Decimal(0);
+  let releaseInitialLookups!: () => void;
+  const initialLookupsFinished = new Promise<void>((resolve) => {
+    releaseInitialLookups = resolve;
+  });
+  const movement = { id: "movement-order-item-a" };
+  const tx = {
+    stockMovement: {
+      findFirst: async () => {
+        if (initialLookups < 2) {
+          initialLookups += 1;
+          if (initialLookups === 2) releaseInitialLookups();
+          await initialLookupsFinished;
+          return null;
+        }
+        return movementExists ? movement : null;
+      },
+      createMany: async (args: { skipDuplicates?: boolean }) => {
+        assert.equal(args.skipDuplicates, true);
+        if (movementExists) return { count: 0 };
+        movementExists = true;
+        return { count: 1 };
+      },
+    },
+    stock: {
+      upsert: async (args: {
+        update: { quantity: { increment: Prisma.Decimal } };
+      }) => {
+        stockWrites += 1;
+        stockQuantity = stockQuantity.add(args.update.quantity.increment);
+        return { quantity: stockQuantity };
+      },
+    },
+  };
+  const service = new InventoryService({} as never);
+  const input = {
+    ingredientId: "ingredient-a",
+    warehouseId: "warehouse-a",
+    type: StockMovementType.IN,
+    quantity: new Prisma.Decimal(3),
+    reason: null,
+    sourceType: "ORDER_ITEM",
+    sourceItemId: "order-item-a",
+  };
+
+  const results = await Promise.all([
+    service.applyStockMovement(tx as never, input),
+    service.applyStockMovement(tx as never, input),
+  ]);
+
+  assert.equal(results[0]?.id, movement.id);
+  assert.equal(results[1]?.id, movement.id);
+  assert.equal(stockWrites, 1);
+  assert.equal(stockQuantity.toFixed(0), "3");
 });

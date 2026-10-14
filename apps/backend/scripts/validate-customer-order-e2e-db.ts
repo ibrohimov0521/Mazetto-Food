@@ -2359,18 +2359,14 @@ async function proveUnsupportedCustomerPayments(
 ): Promise<void> {
   const before = await orderGraphCounts(prisma);
 
-  for (const paymentMethod of [
-    OnlinePaymentMethodDto.CLICK,
-    OnlinePaymentMethodDto.PAYME,
-    OnlinePaymentMethodDto.CARD,
-  ]) {
+  for (const paymentMethod of ["CLICK", "PAYME", "CARD"] as const) {
     await assert.rejects(() =>
       orderEngine.createOnlineOrder(fixture.webCustomer.id, {
         branchId: fixture.branch.id,
         idempotencyKey: `step11-unsupported-${paymentMethod}-${fixture.runId}`,
         name: fixture.webCustomer.name,
         type: OnlineOrderTypeDto.PICKUP,
-        paymentMethod,
+        paymentMethod: paymentMethod as unknown as OnlinePaymentMethodDto,
         items: [
           {
             productId: fixture.configurable.id,

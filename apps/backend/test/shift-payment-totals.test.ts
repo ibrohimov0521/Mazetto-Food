@@ -48,6 +48,106 @@ test("smena hisobotida Uzcard va Humo terminalga, naqd esa kassaga yoziladi", ()
   assert.equal(totals.orderCount, 6);
 });
 
+test("smena jami eski SALE va yangi to'lovlarni aynan bir marta sanaydi", () => {
+  type Totals = {
+    salesTotal: Prisma.Decimal;
+    cashTotal: Prisma.Decimal;
+    expensesTotal: Prisma.Decimal;
+    incomeTotal: Prisma.Decimal;
+    refundsTotal: Prisma.Decimal;
+  };
+  type ShiftTotals = {
+    calculateShiftTotals: (
+      payments: {
+        id: string;
+        amount: Prisma.Decimal;
+        method: { code: string };
+      }[],
+      transactions: {
+        amount: Prisma.Decimal;
+        paymentId: string | null;
+        type: CashTransactionType;
+      }[],
+      orderCount: number,
+    ) => Totals;
+    calculateExpectedCash: (
+      openingBalance: Prisma.Decimal,
+      totals: Totals,
+      transactions: {
+        amount: Prisma.Decimal;
+        paymentId: string | null;
+        type: CashTransactionType;
+      }[],
+    ) => Prisma.Decimal;
+  };
+  const service = new ShiftsService({} as never);
+  const methods = service as unknown as ShiftTotals;
+  const payments = [
+    {
+      id: "cash-linked",
+      amount: new Prisma.Decimal(10_000),
+      method: { code: "CASH" },
+    },
+    {
+      id: "cash-no-sale-row",
+      amount: new Prisma.Decimal(5_000),
+      method: { code: "CASH" },
+    },
+    {
+      id: "card",
+      amount: new Prisma.Decimal(20_000),
+      method: { code: "CARD" },
+    },
+  ];
+  const transactions = [
+    {
+      type: CashTransactionType.SALE,
+      paymentId: "cash-linked",
+      amount: new Prisma.Decimal(10_000),
+    },
+    {
+      type: CashTransactionType.SALE,
+      paymentId: null,
+      amount: new Prisma.Decimal(4_000),
+    },
+    {
+      type: CashTransactionType.SALE,
+      paymentId: "missing-payment",
+      amount: new Prisma.Decimal(3_000),
+    },
+    {
+      type: CashTransactionType.INCOME,
+      paymentId: null,
+      amount: new Prisma.Decimal(3_000),
+    },
+    {
+      type: CashTransactionType.EXPENSE,
+      paymentId: null,
+      amount: new Prisma.Decimal(1_000),
+    },
+    {
+      type: CashTransactionType.REFUND,
+      paymentId: null,
+      amount: new Prisma.Decimal(2_000),
+    },
+    {
+      type: CashTransactionType.WITHDRAW,
+      paymentId: null,
+      amount: new Prisma.Decimal(500),
+    },
+  ];
+  const totals = methods.calculateShiftTotals(payments, transactions, 3);
+  const expectedCash = methods.calculateExpectedCash(
+    new Prisma.Decimal(10_000),
+    totals,
+    transactions,
+  );
+
+  assert.equal(totals.salesTotal.toFixed(0), "42000");
+  assert.equal(totals.cashTotal.toFixed(0), "22000");
+  assert.equal(expectedCash.toFixed(0), "31500");
+});
+
 test("smena yopilishi to'lovsiz zal buyurtmasini sanaydi va keyingi refundni qayta qo'shmaydi", async () => {
   const shiftState: Record<string, unknown> = {
     id: "shift-b",
@@ -99,21 +199,21 @@ test("smena yopilishi to'lovsiz zal buyurtmasini sanaydi va keyingi refundni qay
       create: async () => ({ id: "closing-row-b" }),
     },
     order: {
-      count: async (args: {
-        where: { branchId: string; AND: unknown[] };
-      }) => {
+      count: async (args: { where: { branchId: string; AND: unknown[] } }) => {
         assert.deepEqual(args.where, {
           branchId: "branch-a",
-          AND: [{
-            OR: [
-              { shiftId: "shift-b" },
-              {
-                revenueRecords: {
-                  some: { shiftId: "shift-b", branchId: "branch-a" },
+          AND: [
+            {
+              OR: [
+                { shiftId: "shift-b" },
+                {
+                  revenueRecords: {
+                    some: { shiftId: "shift-b", branchId: "branch-a" },
+                  },
                 },
-              },
-            ],
-          }],
+              ],
+            },
+          ],
         });
         // The direct shift order is an unpaid DINE_IN order; the other is a
         // legacy/refund-linked order that only has a revenue-record relation.

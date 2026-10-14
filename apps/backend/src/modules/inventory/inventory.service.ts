@@ -557,33 +557,25 @@ export class InventoryService {
       return existingMovement;
     }
 
-    const movementResult = await tx.stockMovement
-      .create({
-        data: {
-          ingredientId: data.ingredientId,
-          warehouseId: data.warehouseId,
-          type: data.type,
-          quantity: signedQuantity,
-          reason: data.reason,
-          createdById: data.createdById ?? null,
-          orderItemId: data.orderItemId ?? null,
-          sourceType: data.sourceType ?? null,
-          sourceId: data.sourceId ?? null,
-          sourceItemId: data.sourceItemId ?? null,
-        },
-      })
-      .then((movement) => ({ movement, created: true }))
-      .catch(async (error: unknown) => {
-        if (this.isUniqueConstraintError(error)) {
-          const movement = await this.findExistingSourceMovement(tx, data);
-
-          if (movement) {
-            return { movement, created: false };
-          }
-        }
-
-        throw error;
-      });
+    const movementData = {
+      ingredientId: data.ingredientId,
+      warehouseId: data.warehouseId,
+      type: data.type,
+      quantity: signedQuantity,
+      reason: data.reason,
+      createdById: data.createdById ?? null,
+      orderItemId: data.orderItemId ?? null,
+      sourceType: data.sourceType ?? null,
+      sourceId: data.sourceId ?? null,
+      sourceItemId: data.sourceItemId ?? null,
+    };
+    const movementResult =
+      data.sourceType && data.sourceItemId
+        ? await this.createOrGetSourceMovement(tx, data, movementData)
+        : {
+            movement: await tx.stockMovement.create({ data: movementData }),
+            created: true,
+          };
 
     if (!movementResult.created) {
       return movementResult.movement;
@@ -684,11 +676,29 @@ export class InventoryService {
     });
   }
 
-  private isUniqueConstraintError(error: unknown): boolean {
-    return (
-      error instanceof Prisma.PrismaClientKnownRequestError &&
-      error.code === "P2002"
-    );
+  private async createOrGetSourceMovement(
+    tx: Prisma.TransactionClient,
+    data: {
+      ingredientId: string;
+      warehouseId: string;
+      sourceType?: string | null;
+      sourceItemId?: string | null;
+    },
+    movementData: Prisma.StockMovementCreateManyInput,
+  ): Promise<{
+    movement: Prisma.StockMovementGetPayload<Record<string, never>>;
+    created: boolean;
+  }> {
+    // PostgreSQL aborts the transaction after a unique violation; skip duplicates at insert time.
+    const result = await tx.stockMovement.createMany({
+      data: movementData,
+      skipDuplicates: true,
+    });
+    const movement = await this.findExistingSourceMovement(tx, data);
+    if (!movement) {
+      throw new Error("Stock movement insert was not visible after creation");
+    }
+    return { movement, created: result.count > 0 };
   }
 
   private assertSingleTenantCatalog() {

@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
 import { PrismaService } from "../../prisma/prisma.service";
+import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
 import type { UpsertRecipeDto } from "./dto/recipe.dto";
 
 @Injectable()
@@ -8,15 +9,18 @@ export class RecipesService {
   constructor(private readonly prisma: PrismaService) {}
 
   async listRecipes() {
+    const tenantId = await resolveSoleActiveTenantId(this.prisma);
     return this.prisma.recipe.findMany({
+      where: this.recipeTenantWhere(tenantId),
       include: this.recipeInclude(),
       orderBy: { updatedAt: "desc" },
     });
   }
 
   async getRecipeByVariant(variantId: string) {
-    const recipe = await this.prisma.recipe.findUnique({
-      where: { variantId },
+    const tenantId = await resolveSoleActiveTenantId(this.prisma);
+    const recipe = await this.prisma.recipe.findFirst({
+      where: { variantId, ...this.recipeTenantWhere(tenantId) },
       include: this.recipeInclude(),
     });
 
@@ -28,9 +32,13 @@ export class RecipesService {
   }
 
   async upsertRecipe(dto: UpsertRecipeDto) {
+    const tenantId = await resolveSoleActiveTenantId(this.prisma);
     return this.prisma.$transaction(async (tx) => {
-      const variant = await tx.productVariant.findUnique({
-        where: { id: dto.variantId },
+      const variant = await tx.productVariant.findFirst({
+        where: {
+          id: dto.variantId,
+          product: { is: this.tenantProductWhere(tenantId) },
+        },
         select: { id: true },
       });
 
@@ -59,6 +67,20 @@ export class RecipesService {
         include: this.recipeInclude(),
       });
     });
+  }
+
+  private recipeTenantWhere(tenantId: string): Prisma.RecipeWhereInput {
+    return {
+      variant: {
+        is: { product: { is: this.tenantProductWhere(tenantId) } },
+      },
+    };
+  }
+
+  private tenantProductWhere(tenantId: string): Prisma.ProductWhereInput {
+    return {
+      OR: [{ branch: { tenantId } }, { branchId: null }],
+    };
   }
 
   private recipeInclude() {
