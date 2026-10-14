@@ -77,25 +77,23 @@ assert.doesNotMatch(
 );
 
 /*
- * 3. To'lov usullari YASHIRILMAYDI.
- *
- * Yashirilgan usul "bu yerda yo'q" deydi; belgi esa "hozircha yo'q" deydi.
+ * 3. Mijoz checkout'ida yagona to'lov usuli naqd pul.
  */
+assert.match(checkout, /type PaymentMethod = "CASH";/);
+const paymentChoices =
+  checkout.match(/const paymentOptions:[\s\S]*?\n\];/)?.[0] ?? "";
+assert.ok(paymentChoices, "To'lov usullari ro'yxati topilmadi.");
+assert.match(paymentChoices, /value: "CASH"/);
+assert.doesNotMatch(paymentChoices, /value: "(?:CLICK|PAYME|CARD|ONLINE)"/);
 assert.match(
   checkout,
   /available: allowedCodes\.has\(option\.value\)/,
   "Usul mavjudligi server javobidan olinmayapti.",
 );
-assert.doesNotMatch(
-  checkout,
-  /paymentOptions\.filter\(/,
-  "Usullar filtrlanib YASHIRILYAPTI — ular ko'rsatilib, sababi tushuntirilishi kerak.",
-);
-assert.match(checkout, /Tez kunda/, '"Tez kunda" belgisi yo\'q.');
 assert.match(
   checkoutCss,
   /\.mf-checkout-payment\.is-soon/,
-  "Ishga tushmagan usul uchun uslub yo'q.",
+  "Naqd usul vaqtincha mavjud bo'lmaganda uslub yo'q.",
 );
 /*
  * Kotirovka kelmagunicha server hech narsa aytmagan — o'shanda hammasini

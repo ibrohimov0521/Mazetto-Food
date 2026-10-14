@@ -1,8 +1,6 @@
 /*
- * Bu ro'yxat faqat TypeScript kodlarini cheklaydi. Kassadagi amaldagi
- * tanlov API'dan, PaymentMethod yozuvlari va tenant sozlamasidan keladi.
- * CLICK/PAYME uchun avtomatik bank callback yo'q: kassir tushumni o'zi
- * tekshirganidan keyin usulni tanlashi kerak.
+ * Kod va nomlar tarixiy to'lovlarni o'qish uchun saqlanadi. Yangi to'lovlarda
+ * faqat CASH mavjud; backend va kassadagi tanlov buni majburiy qiladi.
  */
 
 export type PaymentMethodCode =

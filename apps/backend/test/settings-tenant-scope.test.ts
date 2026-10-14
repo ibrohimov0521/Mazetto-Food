@@ -107,7 +107,7 @@ test("business settings and Redis cache are isolated by restaurant", async () =>
   );
   assert.equal(
     (await service.getCsv("cashier_payment_methods", "tenant-b")).join(","),
-    "CARD,CLICK",
+    "",
   );
   assert.deepEqual(reads, ["tenant-a", "tenant-b"]);
   assert.deepEqual([...cache.keys()].sort(), [

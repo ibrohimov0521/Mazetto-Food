@@ -54,9 +54,13 @@ async function main(): Promise<void> {
   assert.equal(validateSettingValue("customer_delivery_enabled", "0"), "false");
   assert.equal(validateSettingValue("customer_code_ttl_minutes", " 15 "), "15");
   assert.equal(
-    validateSettingValue("cashier_payment_methods", "cash, CASH , card"),
-    "CASH,CARD",
+    validateSettingValue("cashier_payment_methods", "cash, CASH"),
+    "CASH",
     "takrorlar olib tashlanib, katta harfga keltirilishi kerak",
+  );
+  assert.throws(
+    () => validateSettingValue("cashier_payment_methods", "CASH,CARD"),
+    BadRequestException,
   );
   assert.throws(
     () => validateSettingValue("customer_payment_methods", "CASH,CLICK"),

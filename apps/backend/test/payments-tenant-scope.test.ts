@@ -219,7 +219,7 @@ test("disabled payment method cannot be collected against an existing order", as
       undefined,
       transaction as never,
     ),
-    /CLICK to'lov usuli tizim sozlamalarida o'chirilgan/,
+    /CLICK payment provider is not enabled/,
   );
   assert.equal(paymentWrites, 0);
   assert.equal(revenueWrites, 0);
