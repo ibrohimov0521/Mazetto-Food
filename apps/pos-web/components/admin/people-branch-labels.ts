@@ -126,6 +126,8 @@ const auditEntityLabels: Record<string, string> = {
   Product: "Mahsulot",
   Printer: "Printer",
   Device: "Qurilma",
+  Ingredient: "Masalliq",
+  Warehouse: "Ombor",
 };
 
 export function auditEntityLabel(value: string): string {
@@ -163,6 +165,14 @@ const auditActionLabels: Record<string, string> = {
   LOGIN_SUCCESS: "Muvaffaqiyatli kirish",
   LOGIN_FAILED: "Muvaffaqiyatsiz kirish urinishi",
   LOGOUT: "Chiqish",
+  INGREDIENT_CREATED: "Masalliq qo'shildi",
+  INGREDIENT_UPDATED: "Masalliq o'zgartirildi",
+  INGREDIENT_ARCHIVED: "Masalliq arxivlandi",
+  INGREDIENT_DELETED: "Masalliq butunlay o'chirildi",
+  WAREHOUSE_CREATED: "Ombor yaratildi",
+  WAREHOUSE_UPDATED: "Ombor o'zgartirildi",
+  WAREHOUSE_ARCHIVED: "Ombor arxivlandi",
+  WAREHOUSE_DELETED: "Ombor butunlay o'chirildi",
 };
 
 export function auditActionLabel(value: string): string {
