@@ -306,31 +306,91 @@ export class DesktopPrintWorker {
         this.resetServerPollingBackoff();
         return;
       }
-      for (let index = 0; index < MAX_SERVER_PRINT_JOBS_PER_TICK; index += 1) {
-        if (this.stopping) return;
-        const job = await this.request<PrintJob | null>(
-          "/receipts/print-jobs/claim",
+      const printerIds = [
+        ...new Set([
+          ...readyPrinters.map((printer) => printer.id),
+          ...this.localAssignedPrinterIds,
+        ]),
+      ];
+      let claimedJobs = 0;
+      let reservedClaims = 0;
+      let stopClaiming = false;
+      let claimError: unknown;
+      const claimAndPrint = async (body: {
+        printerIds: string[];
+        acceptUnassigned: boolean;
+        unassignedRoutes: string[];
+      }) => {
+        while (!stopClaiming && !this.stopping) {
+          if (
+            claimedJobs + reservedClaims >= MAX_SERVER_PRINT_JOBS_PER_TICK
+          ) {
+            return;
+          }
+          reservedClaims += 1;
+          let job: PrintJob | null;
+          try {
+            job = await this.request<PrintJob | null>(
+              "/receipts/print-jobs/claim",
+              {
+                method: "POST",
+                body: JSON.stringify({ agentId: this.agentId, ...body }),
+              },
+            );
+          } catch (error) {
+            reservedClaims -= 1;
+            stopClaiming = true;
+            claimError ??= error;
+            return;
+          }
+          reservedClaims -= 1;
+          if (!job) return;
+          claimedJobs += 1;
+          if (!(await this.printServerJob(job))) {
+            stopClaiming = true;
+            return;
+          }
+        }
+      };
+
+      // One lane owns each printer queue; distinct printers can drain concurrently.
+      let nextPrinter = 0;
+      const drainAssignedPrinters = async () => {
+        while (!stopClaiming && nextPrinter < printerIds.length) {
+          const printerId = printerIds[nextPrinter++];
+          if (!printerId) continue;
+          await claimAndPrint({
+            printerIds: [printerId],
+            acceptUnassigned: false,
+            unassignedRoutes: [],
+          });
+        }
+      };
+      await Promise.all(
+        Array.from(
           {
-            method: "POST",
-            body: JSON.stringify({
-              agentId: this.agentId,
-              printerIds: [
-                ...readyPrinters.map((printer) => printer.id),
-                ...this.localAssignedPrinterIds,
-              ],
-              acceptUnassigned: acceptsUnassigned,
-              unassignedRoutes,
-            }),
+            length: Math.min(MAX_CONCURRENT_PRINTER_TARGETS, printerIds.length),
           },
-        );
-        if (!job) {
-          this.resetServerPollingBackoff();
-          return;
-        }
-        if (!(await this.printServerJob(job))) {
-          this.deferServerPolling();
-          return;
-        }
+          () => drainAssignedPrinters(),
+        ),
+      );
+      if (claimError) throw claimError;
+      if (stopClaiming) {
+        this.deferServerPolling();
+        return;
+      }
+      // Unassigned jobs can fan out to multiple Windows queues, so keep them serial.
+      if (acceptsUnassigned) {
+        await claimAndPrint({
+          printerIds: [],
+          acceptUnassigned: true,
+          unassignedRoutes,
+        });
+      }
+      if (claimError) throw claimError;
+      if (stopClaiming) {
+        this.deferServerPolling();
+        return;
       }
       this.resetServerPollingBackoff();
     } catch (error) {

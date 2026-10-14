@@ -765,7 +765,7 @@ test("a failed printer target does not block other targets or duplicate successf
     assert.equal(printCounts.get(name), 1);
 });
 
-test("server print worker drains at most five jobs per tick without parallel printer writes", async () => {
+test("server print worker keeps unassigned printer writes sequential and drains at most five jobs per tick", async () => {
   const jobs = Array.from({ length: 7 }, (_, index) => ({
     id: `job-${index + 1}`,
     receiptId: `receipt-${index + 1}`,
@@ -833,6 +833,119 @@ test("server print worker drains at most five jobs per tick without parallel pri
   assert.equal(claims, 8);
   assert.equal(completed.length, 7);
   assert.equal(maxActivePrints, 1);
+});
+
+test("server print worker drains assigned printers concurrently but preserves each printer queue order", async () => {
+  const queues = new Map([
+    ["printer-1", [1, 2, 3]],
+    ["printer-2", [1, 2, 3]],
+  ]);
+  const activeByPrinter = new Map<string, number>();
+  const printedByPrinter = new Map<string, number[]>();
+  let activePrints = 0;
+  let maxActivePrints = 0;
+  const completed: string[] = [];
+  const worker = new DesktopPrintWorker({
+    apiUrl: "https://api.example.test/api/v1",
+    printerHost: null,
+    agentId: "desktop-device-1",
+    deviceId: "device-1",
+    systemPrinters: [
+      { name: "Till 1", displayName: "Till 1", roles: ["RECEIPT"] },
+      { name: "Till 2", displayName: "Till 2", roles: ["RECEIPT"] },
+    ],
+    printSystem: async (name, receipt) => {
+      const orderNumber = Number(receipt.content?.orderNumber);
+      activePrints += 1;
+      maxActivePrints = Math.max(maxActivePrints, activePrints);
+      activeByPrinter.set(name, (activeByPrinter.get(name) ?? 0) + 1);
+      const orders = printedByPrinter.get(name) ?? [];
+      orders.push(orderNumber);
+      printedByPrinter.set(name, orders);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      assert.equal(activeByPrinter.get(name), 1, name + " queue overlapped");
+      activeByPrinter.set(name, activeByPrinter.get(name)! - 1);
+      activePrints -= 1;
+    },
+    fetchImpl: async (input, init) => {
+      const url = String(input);
+      if (url.endsWith("/dispatching")) return jsonResponse({});
+      if (url.endsWith("/printers")) {
+        return jsonResponse([
+          {
+            id: "printer-1",
+            name: "Till 1",
+            isActive: true,
+            status: "ONLINE",
+            metadata: { printRoles: ["RECEIPT"] },
+          },
+          {
+            id: "printer-2",
+            name: "Till 2",
+            isActive: true,
+            status: "ONLINE",
+            metadata: { printRoles: ["RECEIPT"] },
+          },
+        ]);
+      }
+      if (url.endsWith("/print-jobs/claim")) {
+        const body = JSON.parse(String(init?.body)) as {
+          printerIds: string[];
+          acceptUnassigned: boolean;
+        };
+        assert.equal(body.acceptUnassigned, false);
+        assert.equal(body.printerIds.length, 1);
+        const printerId = body.printerIds[0]!;
+        const orderNumber = queues.get(printerId)?.shift();
+        if (orderNumber === undefined) return jsonResponse(null);
+        const printerNumber = printerId === "printer-1" ? 1 : 2;
+        return jsonResponse({
+          id: printerId + "-job-" + orderNumber,
+          receiptId: printerId + "-receipt-" + orderNumber,
+          leaseToken: "lease-" + printerId + "-" + orderNumber,
+          payload: {
+            documentType: "RECEIPT",
+            orderNumber: String(orderNumber),
+            items: [{ name: "Lavash", quantity: 1 }],
+          },
+          receipt: {
+            orderId: printerId + "-order-" + orderNumber,
+            documentType: "RECEIPT",
+          },
+          printer: {
+            id: printerId,
+            name: "Till " + printerNumber,
+            metadata: {},
+          },
+        });
+      }
+      const completedMatch = url.match(/\/print-jobs\/([^/]+)\/complete$/);
+      if (completedMatch) {
+        completed.push(decodeURIComponent(completedMatch[1]!));
+        return jsonResponse({});
+      }
+      throw new Error("Unexpected request: " + url);
+    },
+  });
+  worker.setAuthorization("Bearer test-token");
+
+  await worker.tick();
+
+  assert.equal(completed.length, 5);
+  assert.equal(maxActivePrints, 2);
+  for (const printerName of ["Till 1", "Till 2"]) {
+    const orders = printedByPrinter.get(printerName) ?? [];
+    assert.deepEqual(orders, [1, 2, 3].slice(0, orders.length));
+  }
+  assert.equal(activeByPrinter.get("Till 1"), 0);
+  assert.equal(activeByPrinter.get("Till 2"), 0);
+
+  await worker.tick();
+
+  assert.equal(completed.length, 6);
+  assert.equal(maxActivePrints, 2);
+  assert.deepEqual(printedByPrinter.get("Till 1"), [1, 2, 3]);
+  assert.deepEqual(printedByPrinter.get("Till 2"), [1, 2, 3]);
 });
 
 test("offline local print jobs keep draining while a timed-out server poll backs off", async () => {
