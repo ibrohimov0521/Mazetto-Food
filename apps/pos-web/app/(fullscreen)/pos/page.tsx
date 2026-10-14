@@ -1152,9 +1152,8 @@ function PosTerminal() {
                 )}
                 {!isCashPayment ? (
                   <p className={styles.note}>
-                    Naqd bo'lmagan to'lovni terminal yoki bank SMSidan
-                    tekshiring. Tizim to'lovni provayder orqali avtomatik
-                    tasdiqlamaydi.
+                    Naqd bo'lmagan to'lovni terminal ma'lumotidan tekshiring.
+                    Tizim uni provayder orqali avtomatik tasdiqlamaydi.
                   </p>
                 ) : null}
               </div>

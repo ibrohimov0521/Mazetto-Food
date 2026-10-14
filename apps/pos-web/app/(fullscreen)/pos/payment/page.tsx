@@ -719,9 +719,8 @@ function PaymentTerminal() {
 
                   {payload.some((item) => item.code !== "CASH") ? (
                     <p className={styles.note}>
-                      Naqd bo'lmagan to'lovni terminal yoki bank SMSidan
-                      tekshiring. Tizim provayder orqali avtomatik
-                      tasdiqlamaydi.
+                      Naqd bo'lmagan to'lovni terminal ma'lumotidan tekshiring.
+                      Tizim provayder orqali avtomatik tasdiqlamaydi.
                     </p>
                   ) : null}
 
@@ -883,8 +882,8 @@ function PaymentTerminal() {
           ) : null}
           {payload.some((item) => item.code !== "CASH") ? (
             <p className={styles.note}>
-              Naqd bo'lmagan to'lov provayderdan avtomatik tasdiqlanmaydi;
-              tushumni tekshirgandan keyingina qabul qiling.
+              Naqd bo'lmagan to'lov avtomatik tasdiqlanmaydi; tushumni
+              tekshirgandan keyingina qabul qiling.
             </p>
           ) : null}
           <p className={styles.note}>
