@@ -144,7 +144,11 @@ function requireStagingTarget() {
     EXPECTED_DATABASE_HOST,
     "Refusing an unknown database host.",
   );
-  assert.equal(databaseUrl.port, "5432", "Refusing an unknown staging database port.");
+  assert.equal(
+    databaseUrl.port,
+    "5432",
+    "Refusing an unknown staging database port.",
+  );
   const targetOverrideParams = new Set([
     "database",
     "dbname",
@@ -154,7 +158,9 @@ function requireStagingTarget() {
     "service",
   ]);
   assert.equal(
-    [...databaseUrl.searchParams.keys()].some((key) => targetOverrideParams.has(key.toLowerCase())),
+    [...databaseUrl.searchParams.keys()].some((key) =>
+      targetOverrideParams.has(key.toLowerCase()),
+    ),
     false,
     "Refusing a staging URL with connection-target overrides.",
   );
@@ -296,6 +302,7 @@ async function main() {
     orderIds: [],
     realtimePermissionId: null,
     orderCreatePermissionId: null,
+    orderMutationPermissionIds: [],
     tenantAOnlyRoleId: null,
     tenantAOnlyPermissionId: null,
     socketClients: [],
@@ -413,6 +420,34 @@ async function main() {
       },
     });
     fixture.branchIds.push(branchB.id);
+    const categoryA = await prisma.category.create({
+      data: {
+        branchId: branchA.id,
+        code: "QA_CATEGORY_A_" + suffix,
+        name: "Disposable staging A catalog " + suffix,
+      },
+    });
+    fixture.categoryIds.push(categoryA.id);
+    const productA = await prisma.product.create({
+      data: {
+        branchId: branchA.id,
+        categoryId: categoryA.id,
+        code: "QA_PRODUCT_A_" + suffix,
+        name: "Disposable staging A product " + suffix,
+        sellingPrice: "1000",
+      },
+    });
+    fixture.productIds.push(productA.id);
+    const variantA = await prisma.productVariant.create({
+      data: {
+        productId: productA.id,
+        code: "DEFAULT",
+        name: "Default",
+        sellingPrice: "1000",
+        isDefault: true,
+      },
+    });
+    fixture.variantIds.push(variantA.id);
     const foreignCategory = await prisma.category.create({
       data: {
         branchId: branchB.id,
@@ -446,7 +481,10 @@ async function main() {
     });
     fixture.recipeIds.push(foreignRecipe.id);
     const foreignHeroSlide = await prisma.homepageHeroSlide.create({
-      data: { title: "QA foreign slide " + suffix, productId: foreignProduct.id },
+      data: {
+        title: "QA foreign slide " + suffix,
+        productId: foreignProduct.id,
+      },
     });
     fixture.heroSlideIds.push(foreignHeroSlide.id);
     const foreignPromotion = await prisma.promotion.create({
@@ -541,8 +579,20 @@ async function main() {
       data: { code: "ORDER_CREATE", name: "Disposable order creation" },
     });
     fixture.orderCreatePermissionId = orderCreatePermission.id;
+    for (const [code, name] of [
+      ["ORDER_UPDATE", "Disposable staging order update"],
+      ["ORDER_SEND_KITCHEN", "Disposable staging kitchen handoff"],
+    ]) {
+      const permission = await prisma.permission.create({
+        data: { code, name },
+      });
+      fixture.orderMutationPermissionIds.push(permission.id);
+    }
     const tenantAOnlyPermission = await prisma.permission.create({
-      data: { code: `QA_TENANT_A_ONLY_${suffix}`, name: "Disposable tenant A role marker" },
+      data: {
+        code: `QA_TENANT_A_ONLY_${suffix}`,
+        name: "Disposable tenant A role marker",
+      },
     });
     fixture.tenantAOnlyPermissionId = tenantAOnlyPermission.id;
     const tenantAOnlyRole = await prisma.role.create({
@@ -555,7 +605,10 @@ async function main() {
     });
     fixture.tenantAOnlyRoleId = tenantAOnlyRole.id;
     await prisma.rolePermission.create({
-      data: { roleId: tenantAOnlyRole.id, permissionId: tenantAOnlyPermission.id },
+      data: {
+        roleId: tenantAOnlyRole.id,
+        permissionId: tenantAOnlyPermission.id,
+      },
     });
 
     const owner = await prisma.user.create({
@@ -597,6 +650,11 @@ async function main() {
     await prisma.rolePermission.create({
       data: { roleId: socketRole.id, permissionId: orderCreatePermission.id },
     });
+    for (const permissionId of fixture.orderMutationPermissionIds) {
+      await prisma.rolePermission.create({
+        data: { roleId: socketRole.id, permissionId },
+      });
+    }
 
     for (const staff of [
       {
@@ -699,7 +757,9 @@ async function main() {
         branchId: branchA.id,
         name: "Disposable staging POS A",
         type: "POS_TERMINAL",
-        enrollmentCodeHash: createHash("sha256").update(deviceCodeA).digest("hex"),
+        enrollmentCodeHash: createHash("sha256")
+          .update(deviceCodeA)
+          .digest("hex"),
         enrollmentExpiresAt,
       },
     });
@@ -709,7 +769,9 @@ async function main() {
         branchId: branchB.id,
         name: "Disposable staging POS B",
         type: "POS_TERMINAL",
-        enrollmentCodeHash: createHash("sha256").update(deviceCodeB).digest("hex"),
+        enrollmentCodeHash: createHash("sha256")
+          .update(deviceCodeB)
+          .digest("hex"),
         enrollmentExpiresAt,
       },
     });
@@ -729,46 +791,79 @@ async function main() {
         body: { deviceId, enrollmentCode, softwareVersion: "staging-qa" },
       });
     assert.equal(
-      (await enroll(tenantAHost, "qa-hardware-a-" + suffix, deviceCodeB)).status,
+      (await enroll(tenantAHost, "qa-hardware-a-" + suffix, deviceCodeB))
+        .status,
       400,
       "Tenant A must not claim tenant B enrollment code.",
     );
     assert.equal(
-      (await enroll(tenantBHost, "qa-hardware-b-" + suffix, deviceCodeA)).status,
+      (await enroll(tenantBHost, "qa-hardware-b-" + suffix, deviceCodeA))
+        .status,
       400,
       "Tenant B must not claim tenant A enrollment code.",
     );
     assert.equal(
-      (await enroll(pendingHost, "qa-hardware-p-" + suffix, deviceCodeB)).status,
+      (await enroll(pendingHost, "qa-hardware-p-" + suffix, deviceCodeB))
+        .status,
       403,
       "Pending domain must not enroll a device.",
     );
     assert.equal(
-      (await enroll("unknown-" + suffix + ".invalid", "qa-hardware-u-" + suffix, deviceCodeB)).status,
+      (
+        await enroll(
+          "unknown-" + suffix + ".invalid",
+          "qa-hardware-u-" + suffix,
+          deviceCodeB,
+        )
+      ).status,
       403,
       "Unknown domain must not enroll a device.",
     );
-    const enrolledA = await enroll(tenantAHost, "qa-hardware-a-" + suffix, deviceCodeA);
-    const enrolledB = await enroll(tenantBHost, "qa-hardware-b-" + suffix, deviceCodeB);
+    const enrolledA = await enroll(
+      tenantAHost,
+      "qa-hardware-a-" + suffix,
+      deviceCodeA,
+    );
+    const enrolledB = await enroll(
+      tenantBHost,
+      "qa-hardware-b-" + suffix,
+      deviceCodeB,
+    );
     assert.equal(enrolledA.status, 201);
     assert.equal(enrolledB.status, 201);
     assert.equal(
-      (await enroll(tenantAHost, "qa-hardware-a-" + suffix, deviceCodeA)).status,
+      (await enroll(tenantAHost, "qa-hardware-a-" + suffix, deviceCodeA))
+        .status,
       400,
       "Enrollment code must be consumed after one successful claim.",
     );
     const enrolledDeviceRows = await prisma.device.findMany({
       where: { id: { in: [deviceA.id, deviceB.id] } },
-      select: { id: true, branchId: true, hardwareId: true, enrolledAt: true, deviceAuthTokenHash: true, enrollmentCodeHash: true },
+      select: {
+        id: true,
+        branchId: true,
+        hardwareId: true,
+        enrolledAt: true,
+        deviceAuthTokenHash: true,
+        enrollmentCodeHash: true,
+      },
     });
-    const enrolledById = new Map(enrolledDeviceRows.map((device) => [device.id, device]));
+    const enrolledById = new Map(
+      enrolledDeviceRows.map((device) => [device.id, device]),
+    );
     assert.equal(enrolledById.get(deviceA.id)?.branchId, branchA.id);
-    assert.equal(enrolledById.get(deviceA.id)?.hardwareId, "qa-hardware-a-" + suffix);
+    assert.equal(
+      enrolledById.get(deviceA.id)?.hardwareId,
+      "qa-hardware-a-" + suffix,
+    );
     assert.ok(enrolledById.get(deviceA.id)?.enrolledAt);
     assert.ok(enrolledById.get(deviceA.id)?.deviceAuthTokenHash);
     assert.equal(enrolledById.get(deviceA.id)?.enrollmentCodeHash, null);
     assert.equal(enrolledById.get(deviceB.id)?.branchId, branchB.id);
-    assert.equal(enrolledById.get(deviceB.id)?.hardwareId, "qa-hardware-b-" + suffix);
+    assert.equal(
+      enrolledById.get(deviceB.id)?.hardwareId,
+      "qa-hardware-b-" + suffix,
+    );
     assert.ok(enrolledById.get(deviceB.id)?.enrolledAt);
     assert.ok(enrolledById.get(deviceB.id)?.deviceAuthTokenHash);
     assert.equal(enrolledById.get(deviceB.id)?.enrollmentCodeHash, null);
@@ -868,11 +963,15 @@ async function main() {
     }
     const authMeA = await request("/auth/me", {
       host: tenantAHost,
-      headers: { Authorization: "Bearer " + loginA.body.data.tokens.accessToken },
+      headers: {
+        Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+      },
     });
     const authMeB = await request("/auth/me", {
       host: tenantBHost,
-      headers: { Authorization: "Bearer " + loginB.body.data.tokens.accessToken },
+      headers: {
+        Authorization: "Bearer " + loginB.body.data.tokens.accessToken,
+      },
     });
     assert.equal(authMeA.status, 200);
     assert.equal(authMeB.status, 200);
@@ -915,12 +1014,22 @@ async function main() {
       ),
     );
     assert.equal(recipes.status, 200);
-    assert.ok(!recipes.body.data.some((recipe) => recipe.id === foreignRecipe.id));
+    assert.ok(
+      !recipes.body.data.some((recipe) => recipe.id === foreignRecipe.id),
+    );
     assert.equal(recipeDetail.status, 404);
     assert.equal(homepageSlides.status, 200);
-    assert.ok(!homepageSlides.body.data.some((slide) => slide.id === foreignHeroSlide.id));
+    assert.ok(
+      !homepageSlides.body.data.some(
+        (slide) => slide.id === foreignHeroSlide.id,
+      ),
+    );
     assert.equal(promotions.status, 200);
-    assert.ok(!promotions.body.data.some((promotion) => promotion.id === foreignPromotion.id));
+    assert.ok(
+      !promotions.body.data.some(
+        (promotion) => promotion.id === foreignPromotion.id,
+      ),
+    );
 
     const foreignWrites = await Promise.all([
       request("/homepage/hero-slides", {
@@ -933,24 +1042,33 @@ async function main() {
         host: tenantAHost,
         method: "POST",
         headers: tenantAHeaders,
-        body: { title: "QA rejected promotion", categoryId: foreignCategory.id },
+        body: {
+          title: "QA rejected promotion",
+          categoryId: foreignCategory.id,
+        },
       }),
-      request("/homepage/hero-slides/" + encodeURIComponent(foreignHeroSlide.id), {
-        host: tenantAHost,
-        method: "DELETE",
-        headers: tenantAHeaders,
-      }),
+      request(
+        "/homepage/hero-slides/" + encodeURIComponent(foreignHeroSlide.id),
+        {
+          host: tenantAHost,
+          method: "DELETE",
+          headers: tenantAHeaders,
+        },
+      ),
       request("/homepage/hero-slides/bulk", {
         host: tenantAHost,
         method: "DELETE",
         headers: tenantAHeaders,
         body: { ids: [foreignHeroSlide.id] },
       }),
-      request("/homepage/promotions/" + encodeURIComponent(foreignPromotion.id), {
-        host: tenantAHost,
-        method: "DELETE",
-        headers: tenantAHeaders,
-      }),
+      request(
+        "/homepage/promotions/" + encodeURIComponent(foreignPromotion.id),
+        {
+          host: tenantAHost,
+          method: "DELETE",
+          headers: tenantAHeaders,
+        },
+      ),
       request("/homepage/promotions/bulk", {
         host: tenantAHost,
         method: "DELETE",
@@ -1180,44 +1298,143 @@ async function main() {
     const orderA = await request("/orders", {
       host: tenantAHost,
       method: "POST",
-      headers: { Authorization: "Bearer " + socketLoginA.body.data.tokens.accessToken },
-      body: { branchId: branchA.id, type: "TAKEAWAY", customerName: orderAName },
+      headers: {
+        Authorization: "Bearer " + socketLoginA.body.data.tokens.accessToken,
+      },
+      body: {
+        branchId: branchA.id,
+        type: "TAKEAWAY",
+        customerName: orderAName,
+      },
     });
     const createdOrderA = await prisma.order.findFirst({
       where: { branchId: branchA.id, customerName: orderAName },
-      select: { id: true },
+      select: { id: true, version: true },
     });
-    const orderAId = createdOrderA?.id ?? orderA.body.data?.id ?? orderA.body.data?.order?.id;
+    const orderAId =
+      createdOrderA?.id ?? orderA.body.data?.id ?? orderA.body.data?.order?.id;
     if (typeof orderAId === "string") fixture.orderIds.push(orderAId);
     assert.equal(orderA.status, 201);
     assert.equal(typeof orderAId, "string");
+
+    const staffHeaders = {
+      Authorization: "Bearer " + socketLoginA.body.data.tokens.accessToken,
+      "X-Correlation-ID": "qa-order-guard-" + suffix,
+    };
+    const initialAdd = await request(`/orders/${orderAId}/items`, {
+      host: tenantAHost,
+      method: "POST",
+      headers: {
+        ...staffHeaders,
+        "Idempotency-Key": "qa-initial-add-" + suffix,
+      },
+      body: { productId: productA.id, variantId: variantA.id, quantity: 1 },
+    });
+    assert.equal(initialAdd.status, 201);
+    const beforeHandoff = await prisma.order.findUniqueOrThrow({
+      where: { id: orderAId },
+      select: { version: true },
+    });
+    const accepted = await request(`/orders/${orderAId}/actions/accept`, {
+      host: tenantAHost,
+      method: "POST",
+      headers: {
+        ...staffHeaders,
+        "Idempotency-Key": "qa-kitchen-accept-" + suffix,
+      },
+      body: { expectedVersion: beforeHandoff.version },
+    });
+    assert.equal(accepted.status, 201);
+    const afterHandoff = await prisma.order.findUniqueOrThrow({
+      where: { id: orderAId },
+      select: { version: true },
+    });
+    const handoffItem = await prisma.orderItem.findFirstOrThrow({
+      where: { orderId: orderAId },
+      select: { id: true, quantity: true },
+    });
+    assert.equal(
+      await prisma.kitchenTicket.count({ where: { orderId: orderAId } }),
+      1,
+    );
+    const lateAdd = await request(`/orders/${orderAId}/items`, {
+      host: tenantAHost,
+      method: "POST",
+      headers: {
+        ...staffHeaders,
+        "Idempotency-Key": "qa-late-add-" + suffix,
+      },
+      body: { productId: productA.id, variantId: variantA.id, quantity: 1 },
+    });
+    assert.equal(lateAdd.status, 400);
+    const lateEdit = await request(
+      `/orders/${orderAId}/items/${handoffItem.id}`,
+      {
+        host: tenantAHost,
+        method: "PATCH",
+        headers: {
+          ...staffHeaders,
+          "Idempotency-Key": "qa-late-edit-" + suffix,
+        },
+        body: { quantity: 2, expectedVersion: afterHandoff.version },
+      },
+    );
+    assert.equal(lateEdit.status, 400);
+    assert.equal(
+      (
+        await prisma.orderItem.findUniqueOrThrow({
+          where: { id: handoffItem.id },
+        })
+      ).quantity.toNumber(),
+      1,
+    );
+    assert.equal(
+      await prisma.kitchenTicket.count({ where: { orderId: orderAId } }),
+      1,
+    );
+
     const orderBName = "Realtime QA B " + suffix;
     const orderB = await request("/orders", {
       host: tenantBHost,
       method: "POST",
-      headers: { Authorization: "Bearer " + socketLoginB.body.data.tokens.accessToken },
-      body: { branchId: branchB.id, type: "TAKEAWAY", customerName: orderBName },
+      headers: {
+        Authorization: "Bearer " + socketLoginB.body.data.tokens.accessToken,
+      },
+      body: {
+        branchId: branchB.id,
+        type: "TAKEAWAY",
+        customerName: orderBName,
+      },
     });
     const createdOrderB = await prisma.order.findFirst({
       where: { branchId: branchB.id, customerName: orderBName },
       select: { id: true },
     });
-    const orderBId = createdOrderB?.id ?? orderB.body.data?.id ?? orderB.body.data?.order?.id;
+    const orderBId =
+      createdOrderB?.id ?? orderB.body.data?.id ?? orderB.body.data?.order?.id;
     if (typeof orderBId === "string") fixture.orderIds.push(orderBId);
     assert.equal(orderB.status, 201);
     assert.equal(typeof orderBId, "string");
     await waitUntil(
-      () => receivedA.some((event) => event.orderId === orderAId) &&
+      () =>
+        receivedA.some((event) => event.orderId === orderAId) &&
         receivedB.some((event) => event.orderId === orderBId),
       5000,
       "Each tenant staff socket must receive its own live order event.",
     );
-    assert.deepEqual(receivedA.map((event) => event.orderId), [orderAId]);
-    assert.deepEqual(receivedB.map((event) => event.orderId), [orderBId]);
+    assert.deepEqual(
+      [...new Set(receivedA.map((event) => event.orderId))],
+      [orderAId],
+    );
+    assert.deepEqual(
+      [...new Set(receivedB.map((event) => event.orderId))],
+      [orderBId],
+    );
 
     socketA.close();
     const reconnectedA = await connectStaffSocket(
-      tenantAHost, socketLoginA.body.data.tokens.accessToken,
+      tenantAHost,
+      socketLoginA.body.data.tokens.accessToken,
     );
     assert.equal(reconnectedA.connected, true);
     fixture.socketClients.push(reconnectedA.socket);
@@ -1227,7 +1444,14 @@ async function main() {
       "?cursor=" + encodeURIComponent(realtimeA.body.data.cursor) + "&limit=50",
     );
     assert.equal(replayedA.status, 200);
-    assert.deepEqual(replayedA.body.data.events.map((event) => event.aggregateId), [orderAId]);
+    assert.deepEqual(
+      [
+        ...new Set(
+          replayedA.body.data.events.map((event) => event.aggregateId),
+        ),
+      ],
+      [orderAId],
+    );
 
     const tenantATokenOnBHost = await connectStaffSocket(
       tenantBHost,
@@ -1404,10 +1628,14 @@ async function main() {
     assert.equal(refreshedB.body.data.customer.tenantId, tenantB.id);
 
     const customerSocketA = await connectStaffSocket(
-      tenantAHost, customerA.body.data.tokens.accessToken, "customer",
+      tenantAHost,
+      customerA.body.data.tokens.accessToken,
+      "customer",
     );
     const customerSocketB = await connectStaffSocket(
-      tenantBHost, customerB.body.data.tokens.accessToken, "customer",
+      tenantBHost,
+      customerB.body.data.tokens.accessToken,
+      "customer",
     );
     assert.equal(customerSocketA.connected, true);
     assert.equal(customerSocketB.connected, true);
@@ -1421,12 +1649,14 @@ async function main() {
     assert.equal(await waitForSocketDisconnect(customerSocketA.socket), true);
     assert.equal(customerSocketB.socket.connected, true);
     const revokedCustomerReconnect = await connectStaffSocket(
-      tenantAHost, customerA.body.data.tokens.accessToken, "customer",
+      tenantAHost,
+      customerA.body.data.tokens.accessToken,
+      "customer",
     );
     assert.equal(revokedCustomerReconnect.connected, false);
 
     console.log(
-      "Staging A/B proof passed: tenant membership/cache separation, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
+      "Staging A/B proof passed: tenant membership/cache separation, order mutation guard, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
     );
   } catch (error) {
     failure = error;
@@ -1481,7 +1711,9 @@ async function main() {
           });
         }
         if (fixture.userIds.length) {
-          await prisma.auditLog.deleteMany({ where: { userId: { in: fixture.userIds } } });
+          await prisma.auditLog.deleteMany({
+            where: { userId: { in: fixture.userIds } },
+          });
         }
         await prisma.customer.deleteMany({
           where: { tenantId: { in: tenantIds }, phone: SHARED_PHONE },
@@ -1491,7 +1723,10 @@ async function main() {
         });
         if (fixture.orderIds.length) {
           await prisma.outboxEvent.deleteMany({
-            where: { aggregateType: "ORDER", aggregateId: { in: fixture.orderIds } },
+            where: {
+              aggregateType: "ORDER",
+              aggregateId: { in: fixture.orderIds },
+            },
           });
           await prisma.orderEvent.deleteMany({
             where: { orderId: { in: fixture.orderIds } },
@@ -1532,20 +1767,34 @@ async function main() {
           });
         }
         if (fixture.deviceIds.length) {
-          await prisma.device.deleteMany({ where: { id: { in: fixture.deviceIds } } });
+          await prisma.device.deleteMany({
+            where: { id: { in: fixture.deviceIds } },
+          });
         }
         if (fixture.recipeIds.length)
-          await prisma.recipe.deleteMany({ where: { id: { in: fixture.recipeIds } } });
+          await prisma.recipe.deleteMany({
+            where: { id: { in: fixture.recipeIds } },
+          });
         if (fixture.heroSlideIds.length)
-          await prisma.homepageHeroSlide.deleteMany({ where: { id: { in: fixture.heroSlideIds } } });
+          await prisma.homepageHeroSlide.deleteMany({
+            where: { id: { in: fixture.heroSlideIds } },
+          });
         if (fixture.promotionIds.length)
-          await prisma.promotion.deleteMany({ where: { id: { in: fixture.promotionIds } } });
+          await prisma.promotion.deleteMany({
+            where: { id: { in: fixture.promotionIds } },
+          });
         if (fixture.variantIds.length)
-          await prisma.productVariant.deleteMany({ where: { id: { in: fixture.variantIds } } });
+          await prisma.productVariant.deleteMany({
+            where: { id: { in: fixture.variantIds } },
+          });
         if (fixture.productIds.length)
-          await prisma.product.deleteMany({ where: { id: { in: fixture.productIds } } });
+          await prisma.product.deleteMany({
+            where: { id: { in: fixture.productIds } },
+          });
         if (fixture.categoryIds.length)
-          await prisma.category.deleteMany({ where: { id: { in: fixture.categoryIds } } });
+          await prisma.category.deleteMany({
+            where: { id: { in: fixture.categoryIds } },
+          });
         if (fixture.branchIds.length) {
           await prisma.branch.deleteMany({
             where: { id: { in: fixture.branchIds } },
@@ -1556,7 +1805,9 @@ async function main() {
         if (fixture.socketRoleId)
           await prisma.role.deleteMany({ where: { id: fixture.socketRoleId } });
         if (fixture.tenantAOnlyRoleId)
-          await prisma.role.deleteMany({ where: { id: fixture.tenantAOnlyRoleId } });
+          await prisma.role.deleteMany({
+            where: { id: fixture.tenantAOnlyRoleId },
+          });
         if (fixture.permissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.permissionId },
@@ -1575,13 +1826,25 @@ async function main() {
             where: { id: fixture.realtimePermissionId },
           });
         if (fixture.auditPermissionId)
-          await prisma.permission.deleteMany({ where: { id: fixture.auditPermissionId } });
+          await prisma.permission.deleteMany({
+            where: { id: fixture.auditPermissionId },
+          });
         if (fixture.reportPermissionId)
-          await prisma.permission.deleteMany({ where: { id: fixture.reportPermissionId } });
+          await prisma.permission.deleteMany({
+            where: { id: fixture.reportPermissionId },
+          });
         if (fixture.orderCreatePermissionId)
-          await prisma.permission.deleteMany({ where: { id: fixture.orderCreatePermissionId } });
+          await prisma.permission.deleteMany({
+            where: { id: fixture.orderCreatePermissionId },
+          });
+        if (fixture.orderMutationPermissionIds.length)
+          await prisma.permission.deleteMany({
+            where: { id: { in: fixture.orderMutationPermissionIds } },
+          });
         if (fixture.tenantAOnlyPermissionId)
-          await prisma.permission.deleteMany({ where: { id: fixture.tenantAOnlyPermissionId } });
+          await prisma.permission.deleteMany({
+            where: { id: fixture.tenantAOnlyPermissionId },
+          });
         if (fixture.tenantBId) {
           await prisma.restaurantTenant.deleteMany({
             where: { id: fixture.tenantBId },
@@ -1607,7 +1870,24 @@ async function main() {
         ]);
         assert.deepEqual(
           remaining,
-          [1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, fixture.auditBaselineCount],
+          [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            fixture.auditBaselineCount,
+          ],
           "All staging fixtures must be removed.",
         );
       } catch {
