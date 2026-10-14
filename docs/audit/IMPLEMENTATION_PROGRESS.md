@@ -813,3 +813,11 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - The exact running staging image was mazetto-staging-api-crmkze:e5b201d; only the disposable harness file was copied into the container. No app image, schema, production service or production data was changed.
 - Harness completion and cleanup assertions passed: synthetic settings, roles, permissions, orders, tickets and other fixtures returned to the one-tenant, zero-fixture baseline. The temporary test script was removed from the container.
 - Commit bd5276b0df52f1a413f171484b6c11ff6f4ea623 adds this guarded staging test to PR #303. GitHub Actions CI #890 (38579945599) passed full verify and Windows Desktop packaging. No staging redeploy or production deploy is required for this QA harness/documentation-only change.
+
+## DINE_IN pay-later cashier staging acceptance (2026-10-14)
+
+- The guarded tenant A/B harness now opens a temporary cashier shift, creates a POS DINE_IN order with payLater enabled, and retries the same idempotency key. Both responses resolve to one PENDING order and one PaymentOperation.
+- Against the exact staging runtime mazetto-staging-api-crmkze:e5b201d, the order persisted only its KITCHEN ticket receipt; no customer RECEIPT, Payment, RevenueRecord, or order-linked CashTransaction appeared. The shift retained zero sales/cash totals and only its zero opening-balance row.
+- The added POS order's live socket delivery and reconnect replay were included in tenant A's expected event set; tenant B remained isolated. The cleanup now removes payment, receipt, cash, revenue, operation and shift rows and verifies their baseline counts.
+- The exact-image A/B harness passed and restored the staging database to its one-tenant, zero-fixture baseline. node --check, Prettier and git diff --check passed. This QA/docs-only update does not rebuild or redeploy the app.
+- Production remains unchanged; no production database writes, migrations, app deploy or second-restaurant activation occurred. WEB/Telegram settlement, immediate cash acceptance and the remaining ledger/history checks stay separate acceptance gates.

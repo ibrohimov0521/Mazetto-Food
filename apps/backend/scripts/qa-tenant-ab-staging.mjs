@@ -301,10 +301,13 @@ async function main() {
     uploadPermissionId: null,
     outboxEventIds: [],
     orderIds: [],
+    shiftIds: [],
     realtimePermissionId: null,
     orderCreatePermissionId: null,
     orderMutationPermissionIds: [],
     kitchenViewPermissionId: null,
+    posUsePermissionId: null,
+    shiftOpenPermissionId: null,
     tenantAOnlyRoleId: null,
     tenantAOnlyPermissionId: null,
     socketClients: [],
@@ -339,6 +342,13 @@ async function main() {
       orderCount,
       orderEventCount,
       outboxEventCount,
+      shiftCount,
+      cashTransactionCount,
+      paymentCount,
+      paymentOperationCount,
+      revenueRecordCount,
+      receiptCount,
+      printJobCount,
     ] = await Promise.all([
       prisma.restaurantTenant.count(),
       prisma.branch.count(),
@@ -355,6 +365,13 @@ async function main() {
       prisma.order.count(),
       prisma.orderEvent.count(),
       prisma.outboxEvent.count(),
+      prisma.shift.count(),
+      prisma.cashTransaction.count(),
+      prisma.payment.count(),
+      prisma.paymentOperation.count(),
+      prisma.revenueRecord.count(),
+      prisma.receipt.count(),
+      prisma.printJob.count(),
     ]);
     assert.deepEqual(
       {
@@ -373,6 +390,13 @@ async function main() {
         orderCount,
         orderEventCount,
         outboxEventCount,
+        shiftCount,
+        cashTransactionCount,
+        paymentCount,
+        paymentOperationCount,
+        revenueRecordCount,
+        receiptCount,
+        printJobCount,
       },
       {
         tenantCount: 1,
@@ -390,6 +414,13 @@ async function main() {
         orderCount: 0,
         orderEventCount: 0,
         outboxEventCount: 0,
+        shiftCount: 0,
+        cashTransactionCount: 0,
+        paymentCount: 0,
+        paymentOperationCount: 0,
+        revenueRecordCount: 0,
+        receiptCount: 0,
+        printJobCount: 0,
       },
       "Staging must be an empty baseline before the disposable A/B fixture is created.",
     );
@@ -594,6 +625,14 @@ async function main() {
       data: { code: "KITCHEN_VIEW", name: "Disposable staging kitchen view" },
     });
     fixture.kitchenViewPermissionId = kitchenViewPermission.id;
+    const posUsePermission = await prisma.permission.create({
+      data: { code: "POS_USE", name: "Disposable staging POS checkout" },
+    });
+    fixture.posUsePermissionId = posUsePermission.id;
+    const shiftOpenPermission = await prisma.permission.create({
+      data: { code: "SHIFT_OPEN", name: "Disposable staging shift open" },
+    });
+    fixture.shiftOpenPermissionId = shiftOpenPermission.id;
 
     const tenantAOnlyPermission = await prisma.permission.create({
       data: {
@@ -659,6 +698,12 @@ async function main() {
     });
     await prisma.rolePermission.create({
       data: { roleId: socketRole.id, permissionId: kitchenViewPermission.id },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: socketRole.id, permissionId: posUsePermission.id },
+    });
+    await prisma.rolePermission.create({
+      data: { roleId: socketRole.id, permissionId: shiftOpenPermission.id },
     });
     for (const permissionId of fixture.orderMutationPermissionIds) {
       await prisma.rolePermission.create({
@@ -1435,12 +1480,18 @@ async function main() {
     };
 
     assert.equal(
-      await readKitchenSetting(tenantAHost, loginA.body.data.tokens.accessToken),
+      await readKitchenSetting(
+        tenantAHost,
+        loginA.body.data.tokens.accessToken,
+      ),
       false,
       "Tenant A kitchen POS visibility must default to disabled.",
     );
     assert.equal(
-      await readKitchenSetting(tenantBHost, loginB.body.data.tokens.accessToken),
+      await readKitchenSetting(
+        tenantBHost,
+        loginB.body.data.tokens.accessToken,
+      ),
       false,
       "Tenant B kitchen POS visibility must default to disabled.",
     );
@@ -1462,12 +1513,18 @@ async function main() {
     );
     assert.equal(enableKitchenPos.status, 200);
     assert.equal(
-      await readKitchenSetting(tenantAHost, loginA.body.data.tokens.accessToken),
+      await readKitchenSetting(
+        tenantAHost,
+        loginA.body.data.tokens.accessToken,
+      ),
       true,
       "Tenant A must read back its enabled kitchen setting immediately.",
     );
     assert.equal(
-      await readKitchenSetting(tenantBHost, loginB.body.data.tokens.accessToken),
+      await readKitchenSetting(
+        tenantBHost,
+        loginB.body.data.tokens.accessToken,
+      ),
       false,
       "Changing tenant A must not enable POS tickets for tenant B.",
     );
@@ -1508,6 +1565,138 @@ async function main() {
       "The POS ticket must be hidden again after disabling the setting.",
     );
 
+    const cashierToken = socketLoginA.body.data.tokens.accessToken;
+    const cashierHeaders = { Authorization: "Bearer " + cashierToken };
+    const openShiftResponse = await request("/shifts/open", {
+      host: tenantAHost,
+      method: "POST",
+      headers: cashierHeaders,
+      body: { branchId: branchA.id, openingBalance: 0 },
+    });
+    const cashierShift = await prisma.shift.findFirst({
+      where: {
+        branchId: branchA.id,
+        employeeId: fixture.employeeIds[0],
+        status: "OPEN",
+      },
+      orderBy: { openedAt: "desc" },
+    });
+    if (cashierShift) fixture.shiftIds.push(cashierShift.id);
+    assert.equal(openShiftResponse.status, 201);
+    assert.ok(cashierShift, "The staging cashier shift must be created.");
+    assert.equal(cashierShift.openingBalance.toString(), "0");
+    const openingCashRows = await prisma.cashTransaction.findMany({
+      where: { shiftId: cashierShift.id },
+      select: { type: true, amount: true, orderId: true },
+    });
+    assert.equal(openingCashRows.length, 1);
+    assert.equal(openingCashRows[0].type, "OPENING_BALANCE");
+    assert.equal(openingCashRows[0].amount.toString(), "0");
+    assert.equal(openingCashRows[0].orderId, null);
+
+    const payLaterKey = "qa-dine-in-pay-later-" + suffix;
+    const payLaterBody = {
+      idempotencyKey: payLaterKey,
+      type: "DINE_IN",
+      payLater: true,
+      items: [{ productId: productA.id, variantId: variantA.id, quantity: 1 }],
+    };
+    const payLaterResponse = await request("/pos/orders", {
+      host: tenantAHost,
+      method: "POST",
+      headers: cashierHeaders,
+      body: payLaterBody,
+    });
+    const payLaterOperation = await prisma.paymentOperation.findUnique({
+      where: { idempotencyKey: "POS_CHECKOUT:" + payLaterKey },
+      select: { orderId: true },
+    });
+    if (payLaterOperation) fixture.orderIds.push(payLaterOperation.orderId);
+    assert.equal(payLaterResponse.status, 201);
+    assert.ok(payLaterOperation, "The POS idempotency record must be stored.");
+    const payLaterOrder = await prisma.order.findUnique({
+      where: { id: payLaterOperation.orderId },
+      select: {
+        id: true,
+        type: true,
+        source: true,
+        paymentStatus: true,
+        shiftId: true,
+      },
+    });
+    assert.ok(payLaterOrder);
+    assert.equal(payLaterOrder.type, "DINE_IN");
+    assert.equal(payLaterOrder.source, "POS");
+    assert.equal(payLaterOrder.paymentStatus, "PENDING");
+    assert.equal(payLaterOrder.shiftId, cashierShift.id);
+    assert.equal(payLaterResponse.body.data.order.id, payLaterOrder.id);
+    assert.equal(payLaterResponse.body.data.payment.method, "PENDING");
+
+    const payLaterReplay = await request("/pos/orders", {
+      host: tenantAHost,
+      method: "POST",
+      headers: cashierHeaders,
+      body: payLaterBody,
+    });
+    assert.equal(payLaterReplay.status, 201);
+    assert.equal(payLaterReplay.body.data.order.id, payLaterOrder.id);
+    assert.equal(
+      await prisma.paymentOperation.count({
+        where: { orderId: payLaterOrder.id },
+      }),
+      1,
+    );
+    assert.equal(
+      await prisma.payment.count({ where: { orderId: payLaterOrder.id } }),
+      0,
+      "An unpaid dine-in order must not create a payment.",
+    );
+    assert.equal(
+      await prisma.revenueRecord.count({
+        where: {
+          OR: [{ orderId: payLaterOrder.id }, { shiftId: cashierShift.id }],
+        },
+      }),
+      0,
+      "An unpaid dine-in order must not create a revenue record.",
+    );
+    assert.equal(
+      await prisma.cashTransaction.count({
+        where: { orderId: payLaterOrder.id },
+      }),
+      0,
+      "An unpaid dine-in order must not create a cash transaction.",
+    );
+    const payLaterReceipts = await prisma.receipt.findMany({
+      where: { orderId: payLaterOrder.id },
+      select: { documentType: true },
+    });
+    assert.deepEqual(
+      payLaterReceipts.map((receipt) => receipt.documentType).sort(),
+      ["KITCHEN"],
+      "A pending dine-in order should create only the kitchen ticket, not a customer receipt.",
+    );
+    const shiftAfterPayLater = await prisma.shift.findUnique({
+      where: { id: cashierShift.id },
+      select: { salesTotal: true, cashTotal: true },
+    });
+    assert.equal(
+      shiftAfterPayLater.salesTotal.toString(),
+      "0",
+      "Pending dine-in must not add sales revenue to the shift.",
+    );
+    assert.equal(
+      shiftAfterPayLater.cashTotal.toString(),
+      "0",
+      "Pending dine-in must not add cash to the shift.",
+    );
+    assert.equal(
+      await prisma.cashTransaction.count({
+        where: { shiftId: cashierShift.id },
+      }),
+      1,
+      "A pending dine-in sale must leave only the zero opening-balance row in the till.",
+    );
     const orderB = await request("/orders", {
       host: tenantBHost,
       method: "POST",
@@ -1537,8 +1726,8 @@ async function main() {
       "Each tenant staff socket must receive its own live order event.",
     );
     assert.deepEqual(
-      [...new Set(receivedA.map((event) => event.orderId))],
-      [orderAId],
+      [...new Set(receivedA.map((event) => event.orderId))].sort(),
+      [orderAId, payLaterOrder.id].sort(),
     );
     assert.deepEqual(
       [...new Set(receivedB.map((event) => event.orderId))],
@@ -1563,8 +1752,8 @@ async function main() {
         ...new Set(
           replayedA.body.data.events.map((event) => event.aggregateId),
         ),
-      ],
-      [orderAId],
+      ].sort(),
+      [orderAId, payLaterOrder.id].sort(),
     );
 
     const tenantATokenOnBHost = await connectStaffSocket(
@@ -1770,7 +1959,7 @@ async function main() {
     assert.equal(revokedCustomerReconnect.connected, false);
 
     console.log(
-      "Staging A/B proof passed: tenant membership/cache separation, order mutation and kitchen POS visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
+      "Staging A/B proof passed: tenant membership/cache separation, order mutation, DINE_IN pay-later with no collection, kitchen POS visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation.",
     );
   } catch (error) {
     failure = error;
@@ -1835,6 +2024,63 @@ async function main() {
         await prisma.customerVerificationChallenge.deleteMany({
           where: { tenantId: { in: tenantIds }, phone: SHARED_PHONE },
         });
+        if (fixture.branchIds.length) {
+          const operations = await prisma.paymentOperation.findMany({
+            where: { order: { branchId: { in: fixture.branchIds } } },
+            select: { orderId: true },
+          });
+          fixture.orderIds = [
+            ...new Set([
+              ...fixture.orderIds,
+              ...operations.map((row) => row.orderId),
+            ]),
+          ];
+          const shifts = await prisma.shift.findMany({
+            where: {
+              branchId: { in: fixture.branchIds },
+              employeeId: { in: fixture.employeeIds },
+            },
+            select: { id: true },
+          });
+          fixture.shiftIds = [
+            ...new Set([...fixture.shiftIds, ...shifts.map((row) => row.id)]),
+          ];
+        }
+        if (fixture.shiftIds.length) {
+          await prisma.paymentRefund.deleteMany({
+            where: { shiftId: { in: fixture.shiftIds } },
+          });
+        }
+        if (fixture.orderIds.length) {
+          await prisma.printJob.deleteMany({
+            where: { receipt: { orderId: { in: fixture.orderIds } } },
+          });
+          await prisma.receipt.deleteMany({
+            where: { orderId: { in: fixture.orderIds } },
+          });
+          await prisma.revenueRecord.deleteMany({
+            where: {
+              OR: [
+                { orderId: { in: fixture.orderIds } },
+                { shiftId: { in: fixture.shiftIds } },
+              ],
+            },
+          });
+          await prisma.cashTransaction.deleteMany({
+            where: {
+              OR: [
+                { orderId: { in: fixture.orderIds } },
+                { shiftId: { in: fixture.shiftIds } },
+              ],
+            },
+          });
+          await prisma.payment.deleteMany({
+            where: { orderId: { in: fixture.orderIds } },
+          });
+          await prisma.paymentOperation.deleteMany({
+            where: { orderId: { in: fixture.orderIds } },
+          });
+        }
         if (fixture.orderIds.length) {
           await prisma.outboxEvent.deleteMany({
             where: {
@@ -1847,6 +2093,11 @@ async function main() {
           });
           await prisma.order.deleteMany({
             where: { id: { in: fixture.orderIds } },
+          });
+        }
+        if (fixture.shiftIds.length) {
+          await prisma.shift.deleteMany({
+            where: { id: { in: fixture.shiftIds } },
           });
         }
         await prisma.setting.deleteMany({
@@ -1962,6 +2213,14 @@ async function main() {
           await prisma.permission.deleteMany({
             where: { id: fixture.kitchenViewPermissionId },
           });
+        if (fixture.posUsePermissionId)
+          await prisma.permission.deleteMany({
+            where: { id: fixture.posUsePermissionId },
+          });
+        if (fixture.shiftOpenPermissionId)
+          await prisma.permission.deleteMany({
+            where: { id: fixture.shiftOpenPermissionId },
+          });
         if (fixture.tenantAOnlyPermissionId)
           await prisma.permission.deleteMany({
             where: { id: fixture.tenantAOnlyPermissionId },
@@ -1987,12 +2246,26 @@ async function main() {
           prisma.role.count(),
           prisma.permission.count(),
           prisma.outboxEvent.count(),
+          prisma.shift.count(),
+          prisma.cashTransaction.count(),
+          prisma.payment.count(),
+          prisma.paymentOperation.count(),
+          prisma.revenueRecord.count(),
+          prisma.receipt.count(),
+          prisma.printJob.count(),
           prisma.auditLog.count(),
         ]);
         assert.deepEqual(
           remaining,
           [
             1,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
             0,
             0,
             0,
