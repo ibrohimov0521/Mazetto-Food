@@ -277,6 +277,12 @@ async function main() {
     socketRoleId: null,
     permissionId: null,
     catalogPermissionIds: [],
+    categoryIds: [],
+    productIds: [],
+    variantIds: [],
+    recipeIds: [],
+    heroSlideIds: [],
+    promotionIds: [],
     auditPermissionId: null,
     reportPermissionId: null,
     membershipIds: [],
@@ -403,6 +409,50 @@ async function main() {
       },
     });
     fixture.branchIds.push(branchB.id);
+    const foreignCategory = await prisma.category.create({
+      data: {
+        branchId: branchB.id,
+        code: "QA_CATALOG_" + suffix,
+        name: "Disposable staging catalog " + suffix,
+      },
+    });
+    fixture.categoryIds.push(foreignCategory.id);
+    const foreignProduct = await prisma.product.create({
+      data: {
+        branchId: branchB.id,
+        categoryId: foreignCategory.id,
+        code: "QA_PRODUCT_" + suffix,
+        name: "Disposable staging product " + suffix,
+        sellingPrice: "1000",
+      },
+    });
+    fixture.productIds.push(foreignProduct.id);
+    const foreignVariant = await prisma.productVariant.create({
+      data: {
+        productId: foreignProduct.id,
+        code: "DEFAULT",
+        name: "Default",
+        sellingPrice: "1000",
+        isDefault: true,
+      },
+    });
+    fixture.variantIds.push(foreignVariant.id);
+    const foreignRecipe = await prisma.recipe.create({
+      data: { variantId: foreignVariant.id },
+    });
+    fixture.recipeIds.push(foreignRecipe.id);
+    const foreignHeroSlide = await prisma.homepageHeroSlide.create({
+      data: { title: "QA foreign slide " + suffix, productId: foreignProduct.id },
+    });
+    fixture.heroSlideIds.push(foreignHeroSlide.id);
+    const foreignPromotion = await prisma.promotion.create({
+      data: {
+        title: "QA foreign promotion " + suffix,
+        productId: foreignProduct.id,
+        categoryId: foreignCategory.id,
+      },
+    });
+    fixture.promotionIds.push(foreignPromotion.id);
 
     for (const [hostname, tenantId, status] of [
       [tenantAHost, tenantA.id, "VERIFIED"],
@@ -823,6 +873,104 @@ async function main() {
     assert.equal(authMeB.status, 200);
     assert.ok(authMeA.body.data.roles.includes(tenantAOnlyRole.code));
     assert.ok(!authMeB.body.data.roles.includes(tenantAOnlyRole.code));
+
+    await prisma.restaurantTenant.update({
+      where: { id: tenantB.id },
+      data: { status: "PROVISIONING" },
+    });
+    const tenantAHeaders = {
+      Authorization: "Bearer " + loginA.body.data.tokens.accessToken,
+    };
+    const [customerHome, recipes, recipeDetail, homepageSlides, promotions] =
+      await Promise.all([
+        request("/customer/home", { host: tenantAHost }),
+        request("/recipes", { host: tenantAHost, headers: tenantAHeaders }),
+        request("/recipes/variants/" + encodeURIComponent(foreignVariant.id), {
+          host: tenantAHost,
+          headers: tenantAHeaders,
+        }),
+        request("/homepage/hero-slides", {
+          host: tenantAHost,
+          headers: tenantAHeaders,
+        }),
+        request("/homepage/promotions", {
+          host: tenantAHost,
+          headers: tenantAHeaders,
+        }),
+      ]);
+    assert.equal(customerHome.status, 200);
+    assert.ok(
+      !customerHome.body.data.heroSlides.some(
+        (slide) => slide.id === foreignHeroSlide.id,
+      ),
+    );
+    assert.ok(
+      !customerHome.body.data.promotions.some(
+        (promotion) => promotion.id === foreignPromotion.id,
+      ),
+    );
+    assert.equal(recipes.status, 200);
+    assert.ok(!recipes.body.data.some((recipe) => recipe.id === foreignRecipe.id));
+    assert.equal(recipeDetail.status, 404);
+    assert.equal(homepageSlides.status, 200);
+    assert.ok(!homepageSlides.body.data.some((slide) => slide.id === foreignHeroSlide.id));
+    assert.equal(promotions.status, 200);
+    assert.ok(!promotions.body.data.some((promotion) => promotion.id === foreignPromotion.id));
+
+    const foreignWrites = await Promise.all([
+      request("/homepage/hero-slides", {
+        host: tenantAHost,
+        method: "POST",
+        headers: tenantAHeaders,
+        body: { title: "QA rejected hero", productId: foreignProduct.id },
+      }),
+      request("/homepage/promotions", {
+        host: tenantAHost,
+        method: "POST",
+        headers: tenantAHeaders,
+        body: { title: "QA rejected promotion", categoryId: foreignCategory.id },
+      }),
+      request("/homepage/hero-slides/" + encodeURIComponent(foreignHeroSlide.id), {
+        host: tenantAHost,
+        method: "DELETE",
+        headers: tenantAHeaders,
+      }),
+      request("/homepage/hero-slides/bulk", {
+        host: tenantAHost,
+        method: "DELETE",
+        headers: tenantAHeaders,
+        body: { ids: [foreignHeroSlide.id] },
+      }),
+      request("/homepage/promotions/" + encodeURIComponent(foreignPromotion.id), {
+        host: tenantAHost,
+        method: "DELETE",
+        headers: tenantAHeaders,
+      }),
+      request("/homepage/promotions/bulk", {
+        host: tenantAHost,
+        method: "DELETE",
+        headers: tenantAHeaders,
+        body: { ids: [foreignPromotion.id] },
+      }),
+      request("/recipes", {
+        host: tenantAHost,
+        method: "PUT",
+        headers: tenantAHeaders,
+        body: { variantId: foreignVariant.id, items: [] },
+      }),
+    ]);
+    assert.ok(foreignWrites.every((response) => response.status === 404));
+    const retainedCatalogFixtures = await Promise.all([
+      prisma.homepageHeroSlide.count({ where: { id: foreignHeroSlide.id } }),
+      prisma.promotion.count({ where: { id: foreignPromotion.id } }),
+      prisma.recipe.count({ where: { id: foreignRecipe.id } }),
+    ]);
+    assert.deepEqual(retainedCatalogFixtures, [1, 1, 1]);
+    await prisma.restaurantTenant.update({
+      where: { id: tenantB.id },
+      data: { status: "ACTIVE" },
+    });
+
     const auditMarkerA = "QA_AUDIT_A_" + suffix;
     const auditMarkerB = "QA_AUDIT_B_" + suffix;
     const auditFixtureA = await prisma.auditLog.create({
@@ -1373,6 +1521,18 @@ async function main() {
         if (fixture.deviceIds.length) {
           await prisma.device.deleteMany({ where: { id: { in: fixture.deviceIds } } });
         }
+        if (fixture.recipeIds.length)
+          await prisma.recipe.deleteMany({ where: { id: { in: fixture.recipeIds } } });
+        if (fixture.heroSlideIds.length)
+          await prisma.homepageHeroSlide.deleteMany({ where: { id: { in: fixture.heroSlideIds } } });
+        if (fixture.promotionIds.length)
+          await prisma.promotion.deleteMany({ where: { id: { in: fixture.promotionIds } } });
+        if (fixture.variantIds.length)
+          await prisma.productVariant.deleteMany({ where: { id: { in: fixture.variantIds } } });
+        if (fixture.productIds.length)
+          await prisma.product.deleteMany({ where: { id: { in: fixture.productIds } } });
+        if (fixture.categoryIds.length)
+          await prisma.category.deleteMany({ where: { id: { in: fixture.categoryIds } } });
         if (fixture.branchIds.length) {
           await prisma.branch.deleteMany({
             where: { id: { in: fixture.branchIds } },
