@@ -584,7 +584,7 @@ async function main() {
           },
           worker,
         ),
-      /to'lov usuli tizim sozlamalarida o'chirilgan/,
+      /CARD payment provider is not enabled/,
     );
     assert.equal(
       await prisma.payment.count({ where: { orderId: card.order.id } }),
