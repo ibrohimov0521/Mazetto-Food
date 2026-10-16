@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import {
   categoryAssets,
+  catalogV2ProductAssets,
   mediaRoot,
   productAssets,
   releaseAssets,
@@ -26,6 +27,7 @@ function main() {
 
   assert(categoryAssets.length === 11, "Expected 11 category media assets");
   assert(productAssets.length === 74, "Expected 74 available product media assets");
+  assert(catalogV2ProductAssets.length === 65, "Expected 65 imported catalog product media assets");
   assert(unresolvedProductAssets.length === 0, "Expected 0 unresolved product assets");
 
   const seenPaths = new Set();
@@ -53,7 +55,7 @@ function main() {
   console.log("Mazetto media asset validation passed");
   console.log(`nginx_root=${mediaRoot}`);
   console.log(`category_assets=${categoryAssets.length}`);
-  console.log(`available_product_assets=${productAssets.length}`);
+  console.log("available_product_assets=" + (productAssets.length + catalogV2ProductAssets.length));
   console.log(`unresolved_product_assets=${unresolvedProductAssets.length}`);
   console.log(`release_files=${releaseAssets.length}`);
   console.log(`release_size_bytes=${totalBytes}`);

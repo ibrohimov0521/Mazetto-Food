@@ -14,6 +14,7 @@ test("desktop store persists scoped API snapshots without storing bearer tokens"
   const authScope = DesktopStore.authScope(authorization);
   const requestUrl = "https://api.example.test/api/v1/branches";
   const cacheKey = DesktopStore.cacheKey(requestUrl, authScope);
+  const cachedAt = new Date().toISOString();
   const store = new DesktopStore(path);
 
   try {
@@ -24,7 +25,7 @@ test("desktop store persists scoped API snapshots without storing bearer tokens"
       status: 200,
       contentType: "application/json",
       body: '{"success":true,"data":[]}',
-      cachedAt: "2026-09-15T00:00:00.000Z",
+      cachedAt,
     });
 
     assert.deepEqual(store.getCachedResponse(cacheKey), {
@@ -34,7 +35,7 @@ test("desktop store persists scoped API snapshots without storing bearer tokens"
       status: 200,
       contentType: "application/json",
       body: '{"success":true,"data":[]}',
-      cachedAt: "2026-09-15T00:00:00.000Z",
+      cachedAt,
     });
     assert.equal(store.summary().cachedResponses, 1);
     assert.notEqual(authScope, authorization);

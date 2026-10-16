@@ -106,4 +106,88 @@ export const productAssets = [
 
 export const unresolvedProductAssets = [];
 
-export const releaseAssets = [...categoryAssets, ...productAssets];
+const catalogV2ProductIds = [
+  33,
+  35,
+  36,
+  40,
+  41,
+  42,
+  43,
+  44,
+  45,
+  46,
+  47,
+  48,
+  49,
+  50,
+  51,
+  52,
+  53,
+  54,
+  55,
+  56,
+  57,
+  58,
+  59,
+  60,
+  61,
+  62,
+  63,
+  64,
+  65,
+  66,
+  69,
+  76,
+  84,
+  85,
+  87,
+  89,
+  94,
+  95,
+  96,
+  97,
+  98,
+  99,
+  100,
+  101,
+  102,
+  146,
+  147,
+  148,
+  149,
+  150,
+  151,
+  152,
+  153,
+  154,
+  156,
+  158,
+  159,
+  160,
+  161,
+  162,
+  163,
+  165,
+  172,
+  174,
+  175,
+];
+
+export const catalogV2ProductAssets = catalogV2ProductIds.map((productId) => {
+  const filename = `alipos-20261009-${productId}.webp`;
+  const source = `apps/customer-web/public/menu-media/source/products/${filename}`;
+
+  return {
+    kind: "product",
+    urlPath: `/products/${filename}`,
+    nginxPath: `${mediaRoot}/products/${filename}`,
+    source,
+  };
+});
+
+export const releaseAssets = [
+  ...categoryAssets,
+  ...productAssets,
+  ...catalogV2ProductAssets,
+];
