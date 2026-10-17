@@ -11,7 +11,9 @@ export type ReportRange = {
 const TASHKENT_UTC_OFFSET_MINUTES = 5 * 60;
 
 export function resolveReportRange(query: ReportQueryDto): ReportRange {
-  const preset = query.preset ?? (query.from || query.to ? ReportPreset.CUSTOM : ReportPreset.TODAY);
+  const preset =
+    query.preset ??
+    (query.from || query.to ? ReportPreset.CUSTOM : ReportPreset.TODAY);
   const today = getTashkentDateParts(new Date());
 
   if (preset === ReportPreset.CUSTOM) {
@@ -26,7 +28,7 @@ export function resolveReportRange(query: ReportQueryDto): ReportRange {
       );
     }
 
-    const days = Math.ceil((to.getTime() - from.getTime()) / 86_400_000);
+    const days = Math.floor((to.getTime() - from.getTime()) / 86_400_000) + 1;
     if (days > 366) {
       throw new BadRequestException(
         "Maxsus hisobot oralig'i 366 kundan oshmasligi kerak",
@@ -71,7 +73,10 @@ export function resolveReportRange(query: ReportQueryDto): ReportRange {
   }
 
   if (preset === ReportPreset.YESTERDAY) {
-    const yesterdayStart = addTashkentDays(startOfTashkentDay(formatLocalDate(today)), -1);
+    const yesterdayStart = addTashkentDays(
+      startOfTashkentDay(formatLocalDate(today)),
+      -1,
+    );
 
     return {
       from: yesterdayStart,
@@ -124,15 +129,31 @@ function tashkentLocalToUtc(
   second: number,
   millisecond: number,
 ): Date {
-  return new Date(Date.UTC(year, month - 1, day, hour, minute - TASHKENT_UTC_OFFSET_MINUTES, second, millisecond));
+  return new Date(
+    Date.UTC(
+      year,
+      month - 1,
+      day,
+      hour,
+      minute - TASHKENT_UTC_OFFSET_MINUTES,
+      second,
+      millisecond,
+    ),
+  );
 }
 
 function addTashkentDays(date: Date, days: number): Date {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
-function getTashkentDateParts(date: Date): { year: number; month: number; day: number } {
-  const shifted = new Date(date.getTime() + TASHKENT_UTC_OFFSET_MINUTES * 60 * 1000);
+function getTashkentDateParts(date: Date): {
+  year: number;
+  month: number;
+  day: number;
+} {
+  const shifted = new Date(
+    date.getTime() + TASHKENT_UTC_OFFSET_MINUTES * 60 * 1000,
+  );
 
   return {
     year: shifted.getUTCFullYear(),
@@ -141,7 +162,11 @@ function getTashkentDateParts(date: Date): { year: number; month: number; day: n
   };
 }
 
-function parseLocalDate(value: string): { year: number; month: number; day: number } {
+function parseLocalDate(value: string): {
+  year: number;
+  month: number;
+  day: number;
+} {
   const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
 
   if (!match) {
@@ -156,7 +181,11 @@ function parseLocalDate(value: string): { year: number; month: number; day: numb
   };
 }
 
-function formatLocalDate(parts: { year: number; month: number; day: number }): string {
+function formatLocalDate(parts: {
+  year: number;
+  month: number;
+  day: number;
+}): string {
   return `${parts.year}-${parts.month.toString().padStart(2, "0")}-${parts.day.toString().padStart(2, "0")}`;
 }
 

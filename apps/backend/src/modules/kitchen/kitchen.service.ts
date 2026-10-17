@@ -22,6 +22,7 @@ import {
   resolveSoleActiveTenantId,
 } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { normalizePaginationOffset } from "../../common/utils/pagination-offset";
 import { PrismaService } from "../../prisma/prisma.service";
 import { kitchenRoutedItems } from "../menu/product-printer-routing";
 import { SettingsService } from "../settings/settings.service";
@@ -1190,8 +1191,7 @@ export class KitchenService {
   }
 
   private parseOffset(value?: string): number {
-    const parsed = Number(value ?? 0);
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+    return normalizePaginationOffset(value);
   }
 
   private createTicketNumber(tx: TransactionClient): Promise<string> {

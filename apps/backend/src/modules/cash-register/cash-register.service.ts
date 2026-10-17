@@ -14,6 +14,7 @@ import { hasPermission } from "../../common/auth/authorization";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { resolveRestaurantTenantId } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { normalizePaginationOffset } from "../../common/utils/pagination-offset";
 import { PrismaService } from "../../prisma/prisma.service";
 import type {
   CloseShiftDto,
@@ -681,7 +682,6 @@ export class CashRegisterService {
   }
 
   private parseOffset(value?: string): number {
-    const parsed = Number(value ?? 0);
-    return Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+    return normalizePaginationOffset(value);
   }
 }

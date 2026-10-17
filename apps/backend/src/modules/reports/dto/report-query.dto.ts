@@ -1,4 +1,12 @@
-import { IsDateString, IsEnum, IsInt, IsOptional, IsString, Max, Min } from "class-validator";
+import {
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsOptional,
+  IsString,
+  Max,
+  Min,
+} from "class-validator";
 import { Type } from "class-transformer";
 import { OrderSource } from "@prisma/client";
 
@@ -17,11 +25,11 @@ export class ReportQueryDto {
   preset?: ReportPreset;
 
   @IsOptional()
-  @IsDateString()
+  @IsDateString({ strict: true })
   from?: string;
 
   @IsOptional()
-  @IsDateString()
+  @IsDateString({ strict: true })
   to?: string;
 
   @IsOptional()
