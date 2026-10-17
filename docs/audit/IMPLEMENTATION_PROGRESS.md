@@ -947,3 +947,10 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - No Prisma migration was introduced or run. Production remains at the verified 62/62 migration state; second restaurant remains inactive.
 - Current tracked-file inventory is 1,389 files, including 62 Prisma migration files. The 130 untracked `.orig`/editor backup files remain untouched; uncertain files were not deleted.
 - Code, automated, exact-candidate staging and production-release evidence are now recorded for the inventory/report and pagination fixes. Physical multi-printer/device checks and real stocked-inventory reconciliation remain separate acceptance boundaries; the production DB has no inventory stock ledger to reconcile.
+
+## Production media-volume backup and restore (2026-10-18)
+
+- Read-only inspection found production media service `mazetto-food-media-btinws` backed by Docker volume `mazetto-media` mounted at `/media`; it contained 171 files and occupied 63.4 MB.
+- Captured `/home/javohir/backups/mazetto-prod-media/mazetto-media-20261017T204149Z.tar.gz` (65,808,605 bytes; SHA-256 `7f0e14365c04f907cb7f49fd1f392becc7d1fac828b5507b39d22ec85ab1194b`). The containing directory is mode 700; archive and SHA manifests are mode 600.
+- File SHA-256 manifests taken immediately before and after capture matched. Restored the archive to `/home/javohir/backups/mazetto-prod-media/restore-check-20261017T204149Z`; all 171 restored file hashes matched the live post-capture manifest, and archive paths passed traversal checks.
+- This verifies a local file-level backup/restore without stopping the service or writing to production. The backup remains on the same server; offsite replication and automated retention are not verified.
