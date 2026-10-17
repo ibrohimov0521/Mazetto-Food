@@ -1,6 +1,6 @@
 # Mazetto Food acceptance matrix
 
-Updated: 2026-10-15. This is the current status record; earlier dated runbooks and implementation logs preserve their historical observations. A failed new test or a confirmed new defect may reopen a stage, but a pending physical test does not erase a passed code or automated stage.
+Updated: 2026-10-18. This is the current status record; earlier dated runbooks and implementation logs preserve their historical observations. A failed new test or a confirmed new defect may reopen a stage, but a pending physical test does not erase a passed code or automated stage.
 
 ## Release identity
 
@@ -11,6 +11,7 @@ Updated: 2026-10-15. This is the current status record; earlier dated runbooks a
 - Exact-head candidate `fc12251` passed CI #851 and a staging tenant A/B run with 62/62 migrations. Main CI #38455045761 passed. Production backend, customer web, POS web, platform web, customer bot and staff bot were released from the merged commit by successful manual release runs #34-39. The first staff-bot polling attempt timed out; its rerun succeeded.
 - Production backend migration status was verified at 62/62 after the three pending migrations. Restricted backup and isolated restore/rollback rehearsal passed before migration. Post-release read-only production smoke passed 27/27 on 2026-10-13 and again 27/27 on 2026-10-14. This is route/health evidence, not a paid order or physical print test.
 - Desktop 0.1.118 is the latest published Windows release; Desktop Release #179 succeeded. Workstation installation and second-restaurant activation remain separate.
+- PR #305 catalog-image release is production commit `e62321c782240d4f2e4472cf560bc0144d44ed35`; main verify run #38971837294 passed and the remote `production` tag matches `origin/main`. The production database remains at 62/62 migrations. Read-only production smoke passed 27/27 on 2026-10-18.
 
 Legend: **K** = code inspected, **A** = automated test, **S** = exact-candidate staging flow, **R** = real employee/device acceptance, **P** = released to production. `PASS` applies only to the named scope. `PARTIAL` and `OPEN` identify the missing proof or implementation; P=PASS means code is deployed, not that R passed.
 
@@ -37,6 +38,7 @@ Legend: **K** = code inspected, **A** = automated test, **S** = exact-candidate 
 | Tenant-scoped recipe and homepage management | PASS | PASS | PASS | OPEN | PASS | PR #303 exact head `379f3c0` passed CI #874 and staging A/B on image `mazetto-staging-api-crmkze:379f3c0`. Health 200, PostgreSQL/Redis healthy, 62/62 migrations; tenant-bound catalog and homepage checks passed. Staging backup: `/home/javohir/backups/mazetto-staging/mazetto-staging-before-pr303-379f3c0-20261014T101942Z.dump`, SHA-256 `80a2a101ca6ab6e3056946bfc0e9242c6fba37f9f9dcea2d6519c1059311d8c7`; fixture cleanup restored the baseline. Real employee acceptance remains open; production release completed in 76faae8.
 | POS cash completion vs kitchen POS visibility | PASS | PASS | PARTIAL | OPEN | PASS | CI #874 unified-cash DB integration passed: hidden-by-default POS ticket completes on cash payment; with kitchen visibility enabled, payment leaves the active ticket for kitchen handoff and handoff does not add cash twice. Candidate is in production commit 76faae8; this exact write path still needs staging and real-employee acceptance. |
 | Release controls: backup, migration, rollback rehearsal, CI, smoke | PASS | PASS | PASS | PARTIAL | PASS | Backup restored to isolated PostgreSQL; migration and rollback restore counts matched after repeated apply. Staging A/B and CI passed; production 62/62 and read-only smoke passed. Current object-store restore and real paid-order/physical-printer post-release acceptance remain open. |
+| Supplemental catalog images: 65 WebP files for 66 shared products | PASS | PASS | OPEN | PARTIAL | PASS | Manifest validation passed (11 categories, 139 product assets, 0 unresolved); production smoke verified all 65 imported image URLs. The guarded SQL maps 66 exact shared product codes, including Tepitok to the generic unbranded water visual. Exact staging application and owner visual acceptance are not recorded here. |
 
 ## Evidence boundary and next action
 
@@ -56,3 +58,5 @@ Legend: **K** = code inspected, **A** = automated test, **S** = exact-candidate 
 - Inventory source-movement replay race passed exact-candidate staging on `d4ddb38`. The order-mutation guard passed authenticated staging routes on `e5b201d`; see its acceptance section above. Production currently has no inventory data to reconcile; real stocked-inventory acceptance is deferred until ingredients are configured.
 
 - For the new parallel printer scheduler, additionally capture a real two-printer run: confirm both devices print at once, each device preserves its own order, and one printer failure does not duplicate output on the other. The existing Godex G500 single-printer confirmation does not certify this new behavior.
+- On 2026-10-18 the owner reported that their tests passed, without naming the exact release, device, or flows; this is recorded as general acceptance and does not replace the specific evidence boundaries above.
+- 2026-10-18 inventory/report code follow-up: movement-history limits now require integers from 1 to 500; report and inventory date filters reject impossible ISO dates; custom reports allow at most 366 inclusive calendar days. Focused and full backend automated tests pass. These code changes are not staged or released yet.

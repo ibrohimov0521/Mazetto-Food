@@ -1,6 +1,16 @@
 import { IngredientUnit, StockMovementType } from "@prisma/client";
 import { Type } from "class-transformer";
-import { IsDateString, IsEnum, IsNumber, IsOptional, IsString, MaxLength, Min } from "class-validator";
+import {
+  IsDateString,
+  IsEnum,
+  IsInt,
+  IsNumber,
+  IsOptional,
+  IsString,
+  Max,
+  MaxLength,
+  Min,
+} from "class-validator";
 
 export class CreateIngredientDto {
   @IsString()
@@ -85,16 +95,17 @@ export class InventoryQueryDto {
   type?: StockMovementType;
 
   @IsOptional()
-  @IsDateString()
+  @IsDateString({ strict: true })
   from?: string;
 
   @IsOptional()
-  @IsDateString()
+  @IsDateString({ strict: true })
   to?: string;
 
   @IsOptional()
   @Type(() => Number)
-  @IsNumber()
+  @IsInt()
   @Min(1)
+  @Max(500)
   limit = 100;
 }
