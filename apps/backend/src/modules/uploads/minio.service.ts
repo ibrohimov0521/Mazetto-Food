@@ -106,11 +106,14 @@ export class MinioService implements OnModuleInit {
     if (this.mediaUploadUrls.length === 0) return "unconfigured";
     for (const url of this.mediaUploadUrls) {
       try {
-        const response = await fetch(url, {
-          method: "OPTIONS",
+        const healthUrl = new URL(url);
+        healthUrl.pathname = "/healthz";
+        healthUrl.search = "";
+        healthUrl.hash = "";
+        const response = await fetch(healthUrl, {
           signal: AbortSignal.timeout(3_000),
         });
-        if (response.status < 500) return "ready";
+        if (response.status === 204) return "ready";
       } catch {
         // Try the next configured media endpoint.
       }
