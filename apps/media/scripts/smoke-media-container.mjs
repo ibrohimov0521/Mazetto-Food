@@ -12,6 +12,7 @@ const tinyPng = Buffer.from(
   "base64",
 );
 let containerId = "";
+let baseUrl = "";
 
 function run(command, args, options = {}) {
   return execFileSync(command, args, {
@@ -36,11 +37,15 @@ try {
     "run",
     "-d",
     "-p",
-    "18080:80",
+    "127.0.0.1::80",
     "-v",
     tempRoot + ":/media",
     imageTag,
   ]).trim();
+  const portBinding = run("docker", ["port", containerId, "80/tcp"]).trim();
+  const hostPort = portBinding.match(/^127\.0\.0\.1:(\d+)$/)?.[1];
+  if (!hostPort) throw new Error("Docker host port could not be resolved: " + portBinding);
+  baseUrl = "http://127.0.0.1:" + hostPort;
 
   await new Promise((resolve) => setTimeout(resolve, 2000));
   const running = run("docker", [
@@ -69,7 +74,7 @@ try {
   }
 
   const uploadUrl =
-    "http://127.0.0.1:18080/__upload/products/" + uploadName;
+    baseUrl + "/__upload/products/" + uploadName;
   const uploadStatus = await status(uploadUrl, {
     method: "PUT",
     headers: { "Content-Type": "image/png" },
@@ -81,8 +86,25 @@ try {
     throw new Error("private upload expected 201 or 204, got " + uploadStatus);
   }
 
+  const tenantUploadName = "00000000-0000-4000-8000-000000000002.png";
+  const tenantUploadUrl =
+    baseUrl + "/__upload/tenants/audit_tenant/products/" +
+    tenantUploadName;
+  const tenantUploadStatus = await status(tenantUploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": "image/png" },
+    body: tinyPng,
+  });
+
+  console.log("tenant_private_upload=" + tenantUploadStatus);
+  if (tenantUploadStatus !== 201 && tenantUploadStatus !== 204) {
+    throw new Error(
+      "tenant upload expected 201 or 204, got " + tenantUploadStatus,
+    );
+  }
+
   const blockedStatus = await status(
-    "http://127.0.0.1:18080/__upload/products/00000000-0000-4000-8000-000000000002.png",
+    baseUrl + "/__upload/tenants/audit_tenant/products/00000000-0000-4000-8000-000000000003.png",
     {
       method: "PUT",
       headers: {
@@ -99,11 +121,12 @@ try {
   }
 
   const checks = [
-    ["health", "http://127.0.0.1:18080/healthz", 204],
-    ["uploaded_product", "http://127.0.0.1:18080/products/" + uploadName, 200],
-    ["category_lavash", "http://127.0.0.1:18080/categories/lavash.webp", 200],
-    ["product_big_lavash", "http://127.0.0.1:18080/products/big-lavash.webp", 200],
-    ["missing_file", "http://127.0.0.1:18080/products/not-found.webp", 404],
+    ["health", baseUrl + "/healthz", 204],
+    ["uploaded_product", baseUrl + "/products/" + uploadName, 200],
+    ["uploaded_tenant_product", baseUrl + "/tenants/audit_tenant/products/" + tenantUploadName, 200],
+    ["category_lavash", baseUrl + "/categories/lavash.webp", 200],
+    ["product_big_lavash", baseUrl + "/products/big-lavash.webp", 200],
+    ["missing_file", baseUrl + "/products/not-found.webp", 404],
   ];
 
   for (const [name, url, expected] of checks) {

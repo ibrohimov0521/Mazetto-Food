@@ -15,6 +15,7 @@ const repoRoot = findRepoRoot(dirname(fileURLToPath(import.meta.url)));
 const minio = readSource("apps/backend/src/modules/uploads/minio.service.ts");
 const controller = readSource("apps/backend/src/modules/uploads/uploads.controller.ts");
 const compose = readSource("docker-compose.yml");
+const mediaNginx = readSource("apps/media/nginx.conf");
 
 // --- Kirish tekshiruvi ---------------------------------------------------
 
@@ -47,6 +48,7 @@ assert.match(controller, /PERMISSIONS\.MENU_EDIT/);
  */
 assert.match(minio, /randomUUID\(\)/);
 assert.doesNotMatch(minio, /file\.originalname/);
+assert.match(minio, /"tenants\/" \+ tenantId \+ "\/" \+ folder/);
 
 // Kengaytma TEKSHIRILGAN MIME dan olinadi, fayl nomidan emas.
 assert.match(minio, /EXTENSION_BY_MIME\[file\.mimetype\]/);
@@ -74,6 +76,12 @@ assert.match(minio, /max-age=31536000, immutable/);
 // Sozlanmagan bo'lsa ilova ISHLAYVERADI, faqat yuklash o'chiq bo'ladi.
 assert.match(minio, /MinIO sozlanmagan/);
 assert.match(minio, /this\.client = null/);
+assert.match(minio, /healthUrl\.pathname = "\/healthz"/);
+assert.match(minio, /response\.status === 204/);
+
+// Fallback route matches the backend's tenant-scoped object key and stays private.
+assert.match(mediaNginx, /__upload\/tenants\/\(\[A-Za-z0-9_-\]\{1,80\}\)/);
+assert.match(mediaNginx, /alias \/media\/tenants\/\$1\/\$2\/\$3;/);
 
 // --- Infratuzilma --------------------------------------------------------
 
