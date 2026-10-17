@@ -33,6 +33,19 @@ Expected paths:
 /media/categories/lavash.webp
 ```
 
+
+## Backend uploads
+
+Authenticated uploads use tenant-scoped keys:
+`tenants/<tenantId>/<folder>/<uuid>.<ext>`, where `<folder>` is `products`,
+`categories`, or `homepage`. The public URL keeps that same key under the media
+origin.
+
+When MinIO is unavailable, the backend sends PUT requests to its private
+`MEDIA_UPLOAD_URL` base ending in `/__upload`. Nginx maps tenant-scoped keys
+to `/media/tenants/...`; the route permits internal-network PUT requests,
+valid folders, UUID filenames, and the configured 5 MB size limit. `/healthz`
+returns 204 and is the fallback availability probe.
 ## Dokploy
 
 Create a Dockerfile application:
