@@ -59,7 +59,7 @@ export const orderTypeLabels: Record<OrderType, string> = {
 
 export const paymentStatusLabels: Record<PaymentStatus, string> = {
   PENDING: "Kutilmoqda",
-  SUCCESS: "To'langan",
+  SUCCESS: "Muvaffaqiyatli",
   PAID: "To'langan",
   FAILED: "Muvaffaqiyatsiz",
   REFUNDED: "Qaytarilgan",
