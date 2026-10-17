@@ -939,3 +939,18 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Offset regression coverage includes finite/non-negative/integer normalization and the max boundary across the affected DTOs. Node 24 focused tests and full backend tests passed (759 total including retry tests); backend typecheck and targeted ESLint passed.
 - Exact follow-up commit `3e2921ce7a9ba0560395f0db91617729f6255343` passed CI run #913, including Windows packaging and all full `verify` integrations.
 - Built/deployed staging image `mazetto-staging-api-crmkze:pr306-3e2921c`; rollback image retained as `rollback-pr306-3e2921c`. Fresh staging backup: `/home/javohir/backups/mazetto-staging/mazetto-staging-before-offset-3e2921c-20261017T200219Z.dump`, SHA-256 `b9bc67283c152c15b06a1d5665eeb9c1883563f868c6ac70db3900eeb8cb1774`; `pg_restore --list` returned 722 entries.
+
+## Audit continuation: PR #306 production release (2026-10-18)
+
+- PR #306 merged as `1a1bf8fea10e74dbee25eb907b6e4dac8ae17076`. Main CI #39066228634 passed Windows packaging and full `verify`, including migration replay, `pnpm run ci`, media, employee-cash, customer-checkout/Telegram-outbox and backend production-mode smoke.
+- Deploy workflow #39066743457 passed its release gate and deployed only the backend. Production smoke passed 27/27; the remote `production` tag now exactly matches `main` at `1a1bf8f`.
+- No Prisma migration was introduced or run. Production remains at the verified 62/62 migration state; second restaurant remains inactive.
+- Current tracked-file inventory is 1,389 files, including 62 Prisma migration files. The 130 untracked `.orig`/editor backup files remain untouched; uncertain files were not deleted.
+- Code, automated, exact-candidate staging and production-release evidence are now recorded for the inventory/report and pagination fixes. Physical multi-printer/device checks and real stocked-inventory reconciliation remain separate acceptance boundaries; the production DB has no inventory stock ledger to reconcile.
+
+## Production media-volume backup and restore (2026-10-18)
+
+- Read-only inspection found production media service `mazetto-food-media-btinws` backed by Docker volume `mazetto-media` mounted at `/media`; it contained 171 files and occupied 63.4 MB.
+- Captured `/home/javohir/backups/mazetto-prod-media/mazetto-media-20261017T204149Z.tar.gz` (65,808,605 bytes; SHA-256 `7f0e14365c04f907cb7f49fd1f392becc7d1fac828b5507b39d22ec85ab1194b`). The containing directory is mode 700; archive and SHA manifests are mode 600.
+- File SHA-256 manifests taken immediately before and after capture matched. Restored the archive to `/home/javohir/backups/mazetto-prod-media/restore-check-20261017T204149Z`; all 171 restored file hashes matched the live post-capture manifest, and archive paths passed traversal checks.
+- This verifies a local file-level backup/restore without stopping the service or writing to production. The backup remains on the same server; offsite replication and automated retention are not verified.

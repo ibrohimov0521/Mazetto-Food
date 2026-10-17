@@ -225,3 +225,17 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - Deployed only to staging service `mazetto-staging-api-crmkze` using stop-first, a 60-second stability monitor and rollback-on-failure. There was no migration; staging remained at 62/62.
 - Exact candidate health returned HTTP 200 with PostgreSQL `ok` and Redis `connected`. The guarded tenant A/B harness passed its fixture cleanup/baseline assertions and order/cash/refund/shift, kitchen, realtime, host/auth, reports/audit, OTP and media checks.
 - Production remains on `e62321c`; PR #306 is not yet merged. This staging proof does not imply physical-printer or employee-device acceptance.
+
+## PR #306 production release (2026-10-18)
+
+- PR #306 merged to `main` as `1a1bf8fea10e74dbee25eb907b6e4dac8ae17076`. Main CI #39066228634 passed Windows Desktop packaging and full `verify`.
+- Deploy workflow #39066743457 passed the release gate, deployed only the backend, and passed production smoke 27/27. The remote `production` tag was advanced from `e62321c` to `1a1bf8f` and verified equal to `main`.
+- The PR adds no migration; production remains at 62/62 migrations. No production database write was part of this release. The second restaurant remains inactive.
+- Staging evidence for exact image `mazetto-staging-api-crmkze:pr306-3e2921c`, its backup and rollback image is recorded in the pagination offset follow-up above. Physical printer and employee-device acceptance is not implied by CI or smoke.
+
+## Production media-volume recovery check (2026-10-18)
+
+- Production media service `mazetto-food-media-btinws` uses Docker volume `mazetto-media` mounted at `/media`. Read-only size check: 63.4 MB and 171 files.
+- Backup: `/home/javohir/backups/mazetto-prod-media/mazetto-media-20261017T204149Z.tar.gz`; SHA-256 `7f0e14365c04f907cb7f49fd1f392becc7d1fac828b5507b39d22ec85ab1194b`; archive size 65,808,605 bytes.
+- SHA manifests before/after snapshot were identical. Restored to isolated `/home/javohir/backups/mazetto-prod-media/restore-check-20261017T204149Z`; all 171 files matched the live manifest. No production write or service interruption occurred.
+- Backup directory and restore directory are mode 700; backup/manifests mode 600. This is same-host recovery evidence only; offsite copy and automated retention remain unverified.
