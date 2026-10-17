@@ -35,5 +35,6 @@ export class ListShiftsDto {
   @Type(() => Number)
   @IsInt()
   @Min(0)
+  @Max(1_000_000)
   offset = 0;
 }
