@@ -94,13 +94,6 @@ export function resolveReportRange(query: ReportQueryDto): ReportRange {
   };
 }
 
-export function startOfDay(date: Date): Date {
-  const value = new Date(date);
-  value.setHours(0, 0, 0, 0);
-
-  return value;
-}
-
 export function toTashkentDateKey(date: Date): string {
   return formatLocalDate(getTashkentDateParts(date));
 }
@@ -187,11 +180,4 @@ function formatLocalDate(parts: {
   day: number;
 }): string {
   return `${parts.year}-${parts.month.toString().padStart(2, "0")}-${parts.day.toString().padStart(2, "0")}`;
-}
-
-export function endOfDay(date: Date): Date {
-  const value = new Date(date);
-  value.setHours(23, 59, 59, 999);
-
-  return value;
 }

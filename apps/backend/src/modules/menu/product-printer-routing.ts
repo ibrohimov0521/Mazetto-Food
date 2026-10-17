@@ -1,6 +1,4 @@
-export type ProductPrinterRouting = "KITCHEN" | "BAR" | "RECEIPT" | "NONE";
-
-export function isKitchenPrinterRouting(
+function isKitchenPrinterRouting(
   routing: string | null | undefined,
 ): boolean {
   // BAR is a legacy route and currently shares the kitchen ticket/receipt path.

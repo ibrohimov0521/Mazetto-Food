@@ -587,7 +587,7 @@ Historical production incident (2026-09-23 10:32 Asia/Tashkent): `pnpm release:s
 - Regression checks passed for the TypeScript and Node URL guards; backend application/scripts typechecks, targeted ESLint, the full backend and transient-HTTP test run, Node syntax checks, and git diff --check passed.
 - Full release acceptance initially lacked a PostgreSQL service at its default 5432 endpoint. It was rerun successfully using the verified dev-container loopback mapping `127.0.0.1:5433`; the E2E created and dropped one unique disposable database after applying 61 migrations. Existing databases, staging, and production data were not changed.
 - No push, merge, production migration, or deployment was made.
-- ensure-print-queue.mjs is unreferenced and duplicates an existing Prisma migration; it is intentionally retained pending confirmation that it has no manual recovery use.
+- `ensure-print-queue.mjs` is an active backend startup step: the Dockerfile runs it before `dist/main.js`, and a regression test checks that contract. It idempotently bootstraps print queue tables/indexes for restored or legacy databases; parts overlap migrations `20260919123000_durable_print_jobs` and `20261002180000_print_driver_submission_status`. Retain it for restore compatibility for now; removing the startup DDL needs an explicit restore test and migration-state guard.
 - This closes the test-target guard finding on the audit branch only. The broader business-flow, UI, offline, payment, Telegram, and physical-printer audit remains open; this change is not a production release.
 
 ## Local UI acceptance continuation (2026-10-13)

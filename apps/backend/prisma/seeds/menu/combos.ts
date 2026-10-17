@@ -1,7 +1,7 @@
 import type { MenuProductSeed } from "./products";
 import type { MenuVariantSeed } from "./variants";
 
-export type ComboBundleItemSeed = {
+type ComboBundleItemSeed = {
   componentCode: string;
   componentName: string;
   productCode?: string;

@@ -12,7 +12,7 @@ type LegacyReceiptPayment = {
   method?: { code: string; name: string } | null;
 };
 
-export type ReceiptDisplayItem = {
+type ReceiptDisplayItem = {
   key: string;
   name: string;
   variant: string | null;
@@ -22,7 +22,7 @@ export type ReceiptDisplayItem = {
   modifiers: string[];
 };
 
-export type ReceiptDisplayPayment = {
+type ReceiptDisplayPayment = {
   key: string;
   method: string;
   amount: string;
@@ -66,7 +66,7 @@ function snapshotModifiers(value: unknown): string[] {
     .filter((modifier): modifier is string => modifier !== null);
 }
 
-export function receiptPaymentLabel(method: string): string {
+function receiptPaymentLabel(method: string): string {
   const normalized = method.trim();
   return paymentMethodLabels[normalized.toUpperCase()] ?? (normalized || "To'lov");
 }
