@@ -207,3 +207,12 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - Before rollout, backed up only database mazetto_staging to /home/javohir/backups/mazetto-staging/mazetto-20261014-115612441.dump (299,114 bytes; SHA-256 59fd35d5bb26455e562277249a5a610fe1f3d57d5c558f6710c40b30dd240fa5). pg_restore --list passed with 707 entries.
 - Deployed only to the staging Swarm service with stop-first and rollback-on-failure; the service converged after its 60-second stability monitor. No schema migration was needed.
 - Exact image health returned HTTP 200, PostgreSQL ok, Redis connected. Prisma reported 62 migrations found and schema up to date.
+
+## PR #306 inventory/report validation rollout (2026-10-18)
+
+- Exact PR head `e887ac81b463074ff468d956201e7ab2a72caf70` passed CI run #911: Windows package and full `verify` succeeded. The change adds bounded integer movement-history limits, strict inventory/report dates, and inclusive custom report range validation; it adds no migration.
+- Before rollout, backed up only staging database `mazetto_staging` to `/home/javohir/backups/mazetto-staging/mazetto-staging-before-pr306-20261017T194127Z.dump`; SHA-256 `8f0634f83213f50ca4c29d464437bd82e32e901119cde721e34bb3ded8e6fe72`. `pg_restore --list` returned 722 entries.
+- Built image `mazetto-staging-api-crmkze:pr306-e887ac8` from the exact committed archive, excluding untracked editor backups. Previous image `sha256:fc75dbeda8327395d4f7ce66169f352ca7ab87eca7cc69191d3cffdcf07a2d20` is retained as `rollback-pr306-e887ac8`.
+- Deployed only to staging service `mazetto-staging-api-crmkze` with stop-first update, a 60-second stability monitor and rollback-on-failure. No migration was run; staging stayed at 62/62.
+- Exact image health returned HTTP 200, PostgreSQL `ok`, Redis `connected`. The guarded tenant A/B harness passed its order/cash/refund/shift, kitchen, realtime, host/auth, reports/audit, OTP and tenant-media checks; its cleanup/baseline assertions passed.
+- Production is unchanged at `e62321c`; PR #306 remains open. This staging proof does not claim physical-printer or employee-device acceptance.
