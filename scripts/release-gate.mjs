@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
+import { hasSharedBuildChange } from "./release-targets.mjs";
 
 /*
  * Reliz darvozasi: production'ga faqat CI'dan YASHIL o'tgan `main` commit'i
@@ -92,17 +93,10 @@ function describeChanges(base, sha, label) {
     .split("\n")
     .filter(Boolean);
 
-  // Bular o'zgarsa har bir Node ilovasi qayta yig'ilishi kerak.
-  const SHARED = [
-    "package.json",
-    "pnpm-lock.yaml",
-    "pnpm-workspace.yaml",
-    "tsconfig.base.json",
-    "turbo.json",
-  ];
-  const shared = changed.some(
-    (file) => SHARED.includes(file) || file.startsWith("packages/"),
-  );
+  const shared = hasSharedBuildChange(changed, {
+    basePackageJson: git("show", \`\${base}:package.json\`),
+    targetPackageJson: git("show", \`\${sha}:package.json\`),
+  });
 
   const apps = [
     "backend",
