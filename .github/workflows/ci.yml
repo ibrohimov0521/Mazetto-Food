@@ -158,6 +158,9 @@ jobs:
       - name: pnpm run ci (generate, typecheck, lint, test, build, validate)
         run: pnpm run ci
 
+      - name: Load-test target safety
+        run: node --test scripts/load-test-target.test.mjs scripts/release-targets.test.mjs
+
       - name: "Smoke: media upload container"
         run: pnpm media:smoke
 
