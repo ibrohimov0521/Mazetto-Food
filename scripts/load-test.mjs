@@ -1,11 +1,14 @@
 import { performance } from "node:perf_hooks";
 
-const baseUrl = stripTrailingSlash(
-  process.env.LOAD_TEST_BASE_URL ?? "http://127.0.0.1:3000",
-);
-const apiUrl = stripTrailingSlash(
-  process.env.LOAD_TEST_API_URL ?? "http://127.0.0.1:4000/api/v1",
-);
+const configuredBaseUrl = process.env.LOAD_TEST_BASE_URL?.trim();
+const configuredApiUrl = process.env.LOAD_TEST_API_URL?.trim();
+if (!configuredBaseUrl || !configuredApiUrl) {
+  throw new Error(
+    "Set both LOAD_TEST_BASE_URL and LOAD_TEST_API_URL to the intended localhost services; implicit defaults are disabled to avoid targeting the wrong app.",
+  );
+}
+const baseUrl = stripTrailingSlash(configuredBaseUrl);
+const apiUrl = stripTrailingSlash(configuredApiUrl);
 const levels = (process.env.LOAD_TEST_LEVELS ?? "10,25,50,100")
   .split(",")
   .map((value) => Number(value.trim()))
