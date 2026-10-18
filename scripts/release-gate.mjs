@@ -94,8 +94,8 @@ function describeChanges(base, sha, label) {
     .filter(Boolean);
 
   const shared = hasSharedBuildChange(changed, {
-    basePackageJson: git("show", \`\${base}:package.json\`),
-    targetPackageJson: git("show", \`\${sha}:package.json\`),
+    basePackageJson: git("show", `${base}:package.json`),
+    targetPackageJson: git("show", `${sha}:package.json`),
   });
 
   const apps = [
