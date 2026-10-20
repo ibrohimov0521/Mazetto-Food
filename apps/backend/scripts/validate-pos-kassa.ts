@@ -25,6 +25,7 @@ const schema = readSource("apps/backend/prisma/schema.prisma");
  */
 const posPage = readSource("apps/pos-web/app/(fullscreen)/pos/page.tsx");
 const posMedia = readSource("apps/pos-web/lib/media.ts");
+const posImage = readSource("apps/pos-web/components/catalog-product-image.tsx");
 const posGlobals = readSource("apps/pos-web/app/globals.css");
 const authProvider = readSource("apps/pos-web/components/auth/auth-provider.tsx");
 const posAuth = readSource("apps/pos-web/lib/auth.ts");
@@ -79,7 +80,8 @@ assert.match(posPage, /const \[checkoutAttempt, setCheckoutAttempt\] = useState/
 assert.match(posPage, /parsePosCheckoutDraft\(raw\)/);
 assert.match(posPage, /checkoutAttempt: \{\s*key: checkoutAttempt\.key/);
 assert.match(posPage, /checkoutAttempt: \{\s*key: attempt\.key/);
-assert.match(posPage, /handleProductImageError\(event\.currentTarget\)/);
+assert.match(posPage, /<CatalogProductImage/);
+assert.match(posImage, /handleProductImageError\(event\.currentTarget\)/);
 assert.match(posMedia, /const defaultMediaUrl = "https:\/\/media\.mazettofood\.uz"/);
 assert.match(posMedia, /export const fallbackImage =/);
 assert.match(posMedia, /return `\$\{getMediaUrl\(\)\}\$\{imageUrl\}`/);
