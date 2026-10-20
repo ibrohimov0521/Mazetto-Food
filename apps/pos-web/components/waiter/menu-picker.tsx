@@ -3,7 +3,7 @@
 import { Plus, Search, X } from "lucide-react";
 import { StaffEmpty } from "../staff/staff-shell";
 import styles from "../staff/staff.module.css";
-import { handleProductImageError, productImage } from "../../lib/media";
+import { CatalogProductImage } from "../catalog-product-image";
 import { formatMoney } from "../../lib/order-display";
 import {
   productBasePrice,
@@ -79,7 +79,7 @@ export function MenuPicker({
 
       {products.length ? (
         <div className={styles.productGrid}>
-          {products.map((product) => (
+          {products.map((product, index) => (
             <button
               className={styles.product}
               key={product.id}
@@ -89,15 +89,7 @@ export function MenuPicker({
               type="button"
             >
               <span className={styles.productImage}>
-                <img
-                  src={productImage(product.imageUrl)}
-                  alt=""
-                  loading="lazy"
-                  decoding="async"
-                  onError={(event) =>
-                    handleProductImageError(event.currentTarget)
-                  }
-                />
+                <CatalogProductImage src={product.imageUrl} eager={index < 4} />
                 <span className={styles.productAdd}>
                   <Plus size={20} aria-hidden="true" />
                 </span>
