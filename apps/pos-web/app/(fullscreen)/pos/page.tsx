@@ -45,7 +45,7 @@ import {
   serializePosCheckoutDraft,
 } from "../../../lib/pos-checkout-draft.mjs";
 import { useStaffRealtime } from "../../../lib/use-staff-realtime";
-import { handleProductImageError, productImage } from "../../../lib/media";
+import { CatalogProductImage } from "../../../components/catalog-product-image";
 import { paymentMethodLabel } from "../../../components/payment/payment-methods";
 import { CashierWorkspaceNavigation } from "../../../components/staff/staff-panel-navigation";
 
@@ -904,7 +904,7 @@ function PosTerminal() {
             </nav>
             {filteredProducts.length ? (
               <div className={styles.productGrid}>
-                {filteredProducts.map((product) => (
+                {filteredProducts.map((product, index) => (
                   <button
                     className={styles.product}
                     key={product.id}
@@ -914,14 +914,9 @@ function PosTerminal() {
                     type="button"
                   >
                     <div className={styles.productImage}>
-                      <img
-                        src={productImage(product.imageUrl)}
-                        alt=""
-                        loading="lazy"
-                        decoding="async"
-                        onError={(event) =>
-                          handleProductImageError(event.currentTarget)
-                        }
+                      <CatalogProductImage
+                        src={product.imageUrl}
+                        eager={index < 4}
                       />
                       <span className={styles.productAdd}>
                         <Plus size={20} />

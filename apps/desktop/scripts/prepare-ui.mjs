@@ -44,6 +44,9 @@ const result = spawnSync(
       ...process.env,
       API_INTERNAL_URL: "http://127.0.0.1:7359",
       NEXT_PUBLIC_API_BASE_URL: "http://127.0.0.1:7359/api/v1",
+      MAZETTO_DESKTOP_IMAGE_OPTIMIZER_ORIGIN:
+        process.env.MAZETTO_DESKTOP_IMAGE_OPTIMIZER_ORIGIN?.trim() ||
+        "https://pos.mazettofood.uz",
     },
     shell: process.platform === "win32" && /\.(?:cmd|bat)$/i.test(pnpmCli),
     stdio: "inherit",
