@@ -1,9 +1,11 @@
 import { Body, Controller, Get, Param, Put } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { Permissions } from "../../common/decorators/permissions.decorator";
+import { RequiresTenantFeature } from "../../common/decorators/tenant-feature.decorator";
 import { UpsertRecipeDto } from "./dto/recipe.dto";
 import { RecipesService } from "./recipes.service";
 
+@RequiresTenantFeature("INVENTORY")
 @Controller("recipes")
 export class RecipesController {
   constructor(private readonly recipesService: RecipesService) {}

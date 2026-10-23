@@ -10,11 +10,13 @@ import {
 } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { RequiresTenantFeature } from "../../common/decorators/tenant-feature.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import { CreateSupplierDto, UpdateSupplierDto } from "./dto/supplier.dto";
 import { SuppliersService } from "./suppliers.service";
 
+@RequiresTenantFeature("INVENTORY")
 @Controller("suppliers")
 export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}

@@ -9,6 +9,7 @@ function makeService(
   tenantStatus: string,
   branchCreate: (args: { data: Record<string, unknown> }) => Promise<unknown>,
   auditCreate: (args: { data: Record<string, unknown> }) => Promise<unknown> = async () => ({}),
+  multiBranchEnabled = true,
 ) {
   const calls: string[] = [];
   const captured: { branchData?: Record<string, unknown>; auditData?: Record<string, unknown> } = {};
@@ -19,6 +20,12 @@ function makeService(
           findUnique: async () => {
             calls.push("tenant");
             return tenantStatus === "MISSING" ? null : { id: "tenant-a", status: tenantStatus };
+          },
+        },
+        tenantFeature: {
+          findUnique: async () => {
+            calls.push("feature");
+            return { isEnabled: multiBranchEnabled };
           },
         },
         branch: {
@@ -58,7 +65,7 @@ test("first branch is explicitly linked to its provisioning tenant and audited",
     { id: "owner-1" } as never,
   );
 
-  assert.deepEqual(calls, ["tenant", "branch", "audit"]);
+  assert.deepEqual(calls, ["tenant", "feature", "branch", "audit"]);
   assert.deepEqual(captured.branchData, {
     tenantId: "tenant-a",
     code: "NORTH_MAIN",
@@ -91,6 +98,18 @@ test("branch creation is blocked for active tenants before any write", async () 
     ConflictException,
   );
   assert.deepEqual(calls, ["tenant"]);
+});
+
+test("additional branch creation requires the multi-branch feature", async () => {
+  const { calls, service } = makeService("PROVISIONING", async () => {
+    assert.fail("Disabled multi-branch feature must stop before writing.");
+  }, undefined, false);
+
+  await assert.rejects(
+    () => service.create("tenant-a", { code: "NORTH_MAIN", name: "North main" } as never, { id: "owner-1" } as never),
+    ConflictException,
+  );
+  assert.deepEqual(calls, ["tenant", "feature"]);
 });
 
 test("missing tenant is not found and duplicate branch codes conflict", async () => {

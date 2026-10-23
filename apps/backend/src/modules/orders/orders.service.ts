@@ -26,6 +26,7 @@ import {
   resolveRequiredBranchScope,
 } from "../../common/auth/access-scope";
 import { hasPermission } from "../../common/auth/authorization";
+import type { TenantFeatureCode } from "../../common/tenant/tenant-feature-catalog";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import {
   assertBranchBelongsToActor,
@@ -142,6 +143,20 @@ type PosCheckoutOperation = {
   requestHash: string;
   status: string;
 };
+
+async function assertTenantFeatureEnabled(
+  tx: Prisma.TransactionClient,
+  tenantId: string,
+  code: TenantFeatureCode,
+): Promise<void> {
+  const feature = await tx.tenantFeature.findUnique({
+    where: { tenantId_code: { tenantId, code } },
+    select: { isEnabled: true },
+  });
+  if (!feature?.isEnabled) {
+    throw new ForbiddenException("Bu restoran uchun tanlangan buyurtma turi o‘chirilgan.");
+  }
+}
 
 @Injectable()
 export class OrdersService {
@@ -401,6 +416,12 @@ export class OrdersService {
                 existingOperation,
                 requestHash,
               );
+            }
+
+            if (orderType === OrderType.DINE_IN) {
+              await assertTenantFeatureEnabled(tx, tenantId, "TABLE_SERVICE");
+            } else if (orderType === OrderType.DELIVERY) {
+              await assertTenantFeatureEnabled(tx, tenantId, "DELIVERY");
             }
 
             const offlineDisplayDate = dto.offlineDisplayOrderDate
@@ -828,6 +849,11 @@ export class OrdersService {
       this.prisma.$transaction(async (tx) => {
         const tenantId = await assertBranchBelongsToActor(tx, user, branchId);
         await assertEmployeeInBranch(tx, employeeId, branchId);
+        if (dto.type === OrderType.DINE_IN) {
+          await assertTenantFeatureEnabled(tx, tenantId, "TABLE_SERVICE");
+        } else if (dto.type === OrderType.DELIVERY) {
+          await assertTenantFeatureEnabled(tx, tenantId, "DELIVERY");
+        }
         const orderDisplayNumberStart = this.settings
           ? await this.settings.getInt("order_display_number_start", tenantId)
           : 101;

@@ -11,6 +11,7 @@ import {
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { Public } from "../../common/decorators/public.decorator";
+import { RequiresTenantFeature } from "../../common/decorators/tenant-feature.decorator";
 import {
   HomepageHeroSlideDto,
   PromotionDto,
@@ -19,6 +20,7 @@ import {
 } from "./dto/homepage.dto";
 import { HomepageService } from "./homepage.service";
 
+@RequiresTenantFeature("CUSTOMER_WEB")
 @Controller("customer/home")
 export class CustomerHomepageController {
   constructor(private readonly homepageService: HomepageService) {}

@@ -29,6 +29,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { CorrelationId } from "../../common/decorators/correlation-id.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { Public } from "../../common/decorators/public.decorator";
+import { RequiresTenantFeature } from "../../common/decorators/tenant-feature.decorator";
 import type { AuthenticatedCustomer, CustomerAuthenticatedRequest } from "../../common/types/authenticated-customer";
 import { requireTrustedTenantId } from "../../common/tenant/require-trusted-tenant";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
@@ -50,6 +51,7 @@ import { clearRefreshCookie, CUSTOMER_REFRESH_COOKIE, readRefreshToken, setRefre
 const CUSTOMER_COOKIE_PATH = "/api/v1/customer/auth";
 
 @Controller("customer")
+@RequiresTenantFeature("CUSTOMER_WEB")
 export class CustomerPublicController {
   constructor(
     private readonly customersService: CustomersService,
@@ -198,6 +200,7 @@ export class CustomerPublicController {
   }
 
   @CustomerAuth()
+  @RequiresTenantFeature("WEB_ORDERS")
   @Post("checkout/quote")
   quoteCheckout(
     @CurrentCustomer() customer: AuthenticatedCustomer,
@@ -207,6 +210,7 @@ export class CustomerPublicController {
   }
 
   @CustomerAuth()
+  @RequiresTenantFeature("WEB_ORDERS")
   @Post("orders")
   createOnlineOrder(
     @CurrentCustomer() customer: AuthenticatedCustomer,
@@ -287,6 +291,7 @@ export class CustomersAdminController {
   }
 
   @Get("online-orders")
+  @RequiresTenantFeature("WEB_ORDERS")
   @Permissions(PERMISSIONS.ONLINE_ORDER_VIEW)
   listOnlineOrders(
     @Query() query: ListOnlineOrdersDto,
@@ -296,6 +301,7 @@ export class CustomersAdminController {
   }
 
   @Get("courier/orders")
+  @RequiresTenantFeature("DELIVERY")
   @Permissions(PERMISSIONS.COURIER_DELIVERY_VIEW)
   listCourierOrders(
     @Query() query: ListOnlineOrdersDto,
@@ -305,6 +311,7 @@ export class CustomersAdminController {
   }
 
   @Get("courier/orders/history")
+  @RequiresTenantFeature("DELIVERY")
   @Permissions(PERMISSIONS.COURIER_DELIVERY_VIEW)
   listCourierOrderHistory(
     @Query() query: ListOnlineOrdersDto,
@@ -318,18 +325,21 @@ export class CustomersAdminController {
    * kuryer o'z buyurtmasini oladi, lekin boshqasinikini tortib ololmaydi.
    */
   @Get("couriers")
+  @RequiresTenantFeature("DELIVERY")
   @Permissions(PERMISSIONS.COURIER_MANAGE)
   listCouriers(@CurrentUser() user: AuthenticatedUser) {
     return this.courierService.listCouriers(user);
   }
 
   @Get("couriers/deliveries")
+  @RequiresTenantFeature("DELIVERY")
   @Permissions(PERMISSIONS.COURIER_MANAGE)
   listActiveDeliveries(@CurrentUser() user: AuthenticatedUser) {
     return this.courierService.listActiveDeliveries(user);
   }
 
   @Patch("courier/orders/:id/assign")
+  @RequiresTenantFeature("DELIVERY")
   @Permissions(PERMISSIONS.COURIER_MANAGE)
   assignCourier(
     @Param("id") id: string,
@@ -340,6 +350,7 @@ export class CustomersAdminController {
   }
 
   @Patch("courier/orders/:id/status")
+  @RequiresTenantFeature("DELIVERY")
   @Permissions(PERMISSIONS.COURIER_DELIVERY_UPDATE)
   updateCourierOrderStatus(
     @Param("id") id: string,

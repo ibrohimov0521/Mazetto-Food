@@ -1,4 +1,5 @@
 const rootDomain = "mazettofood.uz";
+const platformRootDomain = "mazetto.uz";
 const tenantApiHosts = new Set([
   "mazettofood.uz",
   "www.mazettofood.uz",
@@ -16,6 +17,8 @@ export function isMazettoFoodHost(hostname) {
   const normalizedHostname = hostname.toLowerCase().replace(/\.$/, "");
   return (
     normalizedHostname === rootDomain ||
-    normalizedHostname.endsWith(`.${rootDomain}`)
+    normalizedHostname.endsWith("." + rootDomain) ||
+    normalizedHostname === platformRootDomain ||
+    normalizedHostname.endsWith("." + platformRootDomain)
   );
 }

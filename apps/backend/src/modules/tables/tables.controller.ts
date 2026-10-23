@@ -13,6 +13,7 @@ import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { CorrelationId } from "../../common/decorators/correlation-id.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
+import { RequiresTenantFeature } from "../../common/decorators/tenant-feature.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
   CreateHallDto,
@@ -24,6 +25,7 @@ import {
 } from "./dto/tables.dto";
 import { TablesService } from "./tables.service";
 
+@RequiresTenantFeature("TABLE_SERVICE")
 @Controller()
 export class TablesController {
   constructor(private readonly tablesService: TablesService) {}

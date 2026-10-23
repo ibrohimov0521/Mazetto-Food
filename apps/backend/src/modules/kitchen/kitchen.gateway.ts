@@ -73,6 +73,7 @@ export class KitchenGateway implements OnGatewayConnection {
       client.data.mazettoAuth = auth;
       this.disconnectAtAccessTokenExpiry(client, auth.expiresAt);
       await client.join(this.customerRoom(auth.customerId));
+      await client.join(this.tenantFeatureRoom(auth.tenantId, "CUSTOMER_WEB"));
       return;
     }
 
@@ -100,6 +101,9 @@ export class KitchenGateway implements OnGatewayConnection {
       auth = revalidated;
       client.data.mazettoAuth = auth;
     }
+    if (auth.kind === "staff" && auth.kitchenFeatureEnabled) {
+      await client.join(this.tenantFeatureRoom(auth.tenantId, "KITCHEN_DISPLAY"));
+    }
 
     this.disconnectAtAccessTokenExpiry(client, auth.expiresAt);
 
@@ -125,6 +129,13 @@ export class KitchenGateway implements OnGatewayConnection {
   disconnectCustomerSession(sessionId: string): void {
     if (!this.server) return;
     this.server.in(this.customerSessionRoom(sessionId)).disconnectSockets(true);
+  }
+
+  disconnectTenantFeature(tenantId: string, featureCode: string): void {
+    if (!this.server) return;
+    this.server
+      .in(this.tenantFeatureRoom(tenantId, featureCode))
+      .disconnectSockets(true);
   }
 
   private disconnectAtAccessTokenExpiry(
@@ -227,6 +238,11 @@ export class KitchenGateway implements OnGatewayConnection {
         .resolve(rawHost, forwardedHost)
         .catch(() => null);
       if (!tenantContext || tenantContext.kind !== "TRUSTED") return null;
+      const customerWeb = await this.prisma.tenantFeature.findUnique({
+        where: { tenantId_code: { tenantId: tenantContext.tenantId, code: "CUSTOMER_WEB" } },
+        select: { isEnabled: true },
+      });
+      if (!customerWeb?.isEnabled) return null;
 
       const payload = await this.jwtService.verifyAsync<
         Omit<AuthenticatedCustomer, "tenantId"> & {
@@ -260,6 +276,7 @@ export class KitchenGateway implements OnGatewayConnection {
 
       return {
         kind: "customer",
+        tenantId: tenantContext.tenantId,
         customerId: payload.id,
         sessionId: payload.sessionId,
         expiresAt: payload.exp * 1000,
@@ -316,6 +333,17 @@ export class KitchenGateway implements OnGatewayConnection {
       return null;
     }
 
+    const kitchenFeatureEnabled =
+      user.permissions.includes(PERMISSIONS.ALL) ||
+      user.permissions.includes(PERMISSIONS.KITCHEN_VIEW);
+    if (kitchenFeatureEnabled) {
+      const kitchen = await this.prisma.tenantFeature.findUnique({
+        where: { tenantId_code: { tenantId: tenantContext.tenantId, code: "KITCHEN_DISPLAY" } },
+        select: { isEnabled: true },
+      });
+      if (!kitchen?.isEnabled) return null;
+    }
+
     const global = Boolean(user.isGlobalScope);
 
     if (global) {
@@ -330,9 +358,11 @@ export class KitchenGateway implements OnGatewayConnection {
       kind: "staff",
       userId: user.id,
       membershipId: payload.membershipId,
+      kitchenFeatureEnabled,
       global,
       expiresAt: payload.exp * 1000,
       ...(user.branchId ? { branchId: user.branchId } : {}),
+      tenantId: tenantContext.tenantId,
     };
   }
 
@@ -507,11 +537,16 @@ export class KitchenGateway implements OnGatewayConnection {
   private globalStaffRoom(): string {
     return "staff:global";
   }
+
+  private tenantFeatureRoom(tenantId: string, featureCode: string): string {
+    return "tenant-feature:" + tenantId + ":" + featureCode;
+  }
 }
 
 type RealtimeAuth =
   | {
       kind: "customer";
+      tenantId: string;
       customerId: string;
       sessionId: string;
       expiresAt: number;
@@ -519,8 +554,10 @@ type RealtimeAuth =
   | {
       kind: "staff";
       userId: string;
+      tenantId: string;
       membershipId: string;
       branchId?: string;
+      kitchenFeatureEnabled: boolean;
       global: boolean;
       expiresAt: number;
     };

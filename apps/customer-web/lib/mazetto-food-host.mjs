@@ -1,4 +1,5 @@
 const restaurantRootDomain = "mazettofood.uz";
+const platformRootDomain = "mazetto.uz";
 const customerWebHosts = new Set(["mazettofood.uz", "www.mazettofood.uz"]);
 
 export function getMazettoFoodCustomerApiBaseUrl(hostname) {
@@ -12,6 +13,8 @@ export function isMazettoFoodHost(hostname) {
   const normalizedHostname = hostname.trim().toLowerCase().replace(/\.$/, "");
   return (
     normalizedHostname === restaurantRootDomain ||
-    normalizedHostname.endsWith(`.${restaurantRootDomain}`)
+    normalizedHostname.endsWith("." + restaurantRootDomain) ||
+    normalizedHostname === platformRootDomain ||
+    normalizedHostname.endsWith("." + platformRootDomain)
   );
 }

@@ -90,3 +90,14 @@ test("CSV qiymatlari vergul, qo'shtirnoq va yangi qatordan himoyalanadi", () => 
     '"Nomi","Izoh"\r\n"Lavash, katta","U ""maxsus""\nissiq"',
   );
 });
+
+test("o‘chirilgan restoran modullari sidebar'dan yashiriladi", () => {
+  const user: AuthUser = {
+    ...customUser(["ADMIN_ACCESS", "ONLINE_ORDER_VIEW", "KITCHEN_VIEW", "INVENTORY_VIEW"]),
+    tenantFeatures: ["INVENTORY"],
+  };
+  const nav = resolveAdminNav(user).flatMap((group) => group.items);
+  assert.equal(nav.some((item) => item.href === "/admin/online-orders"), false);
+  assert.equal(nav.some((item) => item.href === "/admin/kitchen-monitor"), false);
+  assert.equal(nav.some((item) => item.href === "/admin/inventory"), true);
+});

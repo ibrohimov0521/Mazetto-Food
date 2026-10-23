@@ -23,7 +23,12 @@ export class TenantMembershipAuthService {
         id: true,
         tenantId: true,
         branchId: true,
-        tenant: { select: { status: true } },
+        tenant: {
+          select: {
+            status: true,
+            features: { where: { isEnabled: true }, select: { code: true } },
+          },
+        },
         branch: { select: { tenantId: true } },
         user: {
           select: {
@@ -94,6 +99,7 @@ export class TenantMembershipAuthService {
       credentialVersion: membership.user.credentialVersion,
       tenantId: membership.tenantId,
       membershipId: membership.id,
+      tenantFeatures: membership.tenant.features.map(({ code }) => code),
       ...(membership.branchId ? { branchId: membership.branchId } : {}),
       ...(employee ? { employeeId: employee.id } : {}),
       isGlobalScope: hasRestaurantGlobalScope(roles.map(({ role }) => role)),

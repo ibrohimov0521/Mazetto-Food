@@ -17,6 +17,7 @@ function makeGateway(
   activeTenantIds = ["tenant-a"],
   tenantContext?: TestTenantContext,
   membershipAuth?: TestMembershipAuth,
+  kitchenFeatureEnabled = true,
 ) {
   const versions = Array.isArray(credentialVersion)
     ? credentialVersion
@@ -34,6 +35,7 @@ function makeGateway(
     restaurantTenant: {
       findMany: async () => activeTenantIds.map((id) => ({ id })),
     },
+    tenantFeature: { findUnique: async () => ({ isEnabled: kitchenFeatureEnabled }) },
   } as unknown as PrismaService;
   const resolvedMembershipAuth: TestMembershipAuth = membershipAuth ?? {
     resolve: async (userId, tenantId, id) => ({
@@ -46,7 +48,10 @@ function makeGateway(
       branchId: "branch-1",
       isGlobalScope: role === "SUPER_ADMIN",
       roles: [role],
-      permissions: [PERMISSIONS.KITCHEN_VIEW],
+      permissions:
+        role === "SUPER_ADMIN"
+          ? [PERMISSIONS.ALL]
+          : [PERMISSIONS.KITCHEN_VIEW],
     }),
   };
   return createKitchenGatewayForTest(
@@ -103,6 +108,17 @@ test("tenant-bound version-zero staff tokens are accepted on their verified host
 
   assert.equal(socket.wasDisconnected(), false);
   assert.ok(socket.joined.includes("branch:branch-1"));
+  assert.ok(socket.joined.includes("tenant-feature:tenant-a:KITCHEN_DISPLAY"));
+});
+
+test("disabled kitchen feature rejects kitchen realtime sockets", async () => {
+  const gateway = makeGateway({ id: "user-1" }, 0, "KITCHEN", ["tenant-a"], undefined, undefined, false);
+  const socket = makeSocket();
+
+  await gateway.handleConnection(socket.client);
+
+  assert.equal(socket.wasDisconnected(), true);
+  assert.deepEqual(socket.joined, []);
 });
 
 test("unregistered hosts reject legacy unbound staff tokens", async () => {
@@ -229,4 +245,30 @@ test("tenant membership invalidation disconnects only sockets for that membershi
   gateway.disconnectTenantMembership("membership-a");
 
   assert.deepEqual(calls, [{ room: "staff-membership:membership-a", close: true }]);
+});
+
+test("disabling kitchen feature rejects SUPER_ADMIN realtime connections", async () => {
+  const gateway = makeGateway({ id: "owner-1" }, 0, "SUPER_ADMIN", ["tenant-a"], undefined, undefined, false);
+  const socket = makeSocket();
+
+  await gateway.handleConnection(socket.client);
+
+  assert.equal(socket.wasDisconnected(), true);
+  assert.deepEqual(socket.joined, []);
+});
+
+test("feature invalidation disconnects only sockets subscribed to that tenant feature", () => {
+  const gateway = makeGateway({ id: "user-1" }, 0);
+  const calls: Array<{ room: string; close: boolean }> = [];
+  Object.defineProperty(gateway, "server", {
+    value: {
+      in: (room: string) => ({
+        disconnectSockets: (close: boolean) => calls.push({ room, close }),
+      }),
+    },
+  });
+
+  gateway.disconnectTenantFeature("tenant-a", "KITCHEN_DISPLAY");
+
+  assert.deepEqual(calls, [{ room: "tenant-feature:tenant-a:KITCHEN_DISPLAY", close: true }]);
 });

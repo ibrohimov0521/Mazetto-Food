@@ -29,3 +29,11 @@ test("restaurant host checks reject suffix lookalikes", () => {
     null,
   );
 });
+
+test("Mazetto restaurant subdomains use same-origin tenant API proxy", () => {
+  assert.equal(isMazettoFoodHost("www.oqtepa.mazetto.uz"), true);
+  assert.equal(
+    getMazettoFoodCustomerApiBaseUrl("www.oqtepa.mazetto.uz"),
+    null,
+  );
+});

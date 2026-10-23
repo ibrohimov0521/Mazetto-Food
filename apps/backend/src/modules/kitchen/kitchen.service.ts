@@ -119,6 +119,16 @@ export class KitchenService {
     @Optional() private readonly settings?: SettingsService,
   ) {}
 
+  async tvDisplayAvailability(user: AuthenticatedUser): Promise<{ enabled: boolean }> {
+    this.requireEmployee(user);
+    const scope = await resolveRestaurantScope(this.prisma, user);
+    const feature = await this.prisma.tenantFeature.findUnique({
+      where: { tenantId_code: { tenantId: scope.tenantId, code: "TV_DISPLAY" } },
+      select: { isEnabled: true },
+    });
+    return { enabled: feature?.isEnabled === true };
+  }
+
   async listOrders(user: AuthenticatedUser) {
     return (await this.listOrdersWithOverflow(user)).items;
   }
