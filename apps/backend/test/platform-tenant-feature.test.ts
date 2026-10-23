@@ -177,7 +177,7 @@ test("synthetic test restaurant provisions TV display and can switch it off inde
   assert.equal(created.tenant.status, "PROVISIONING");
   assert.equal(featureRows.get(`${tenantId}:TV_DISPLAY`), true);
   const disconnected: string[] = [];
-  const featureService = new PlatformTenantFeatureService(database as never, { disconnectTenantFeature: (_id, code) => disconnected.push(code) } as never);
+  const featureService = new PlatformTenantFeatureService(database as never, { disconnectTenantFeature: (_id: string, code: string) => disconnected.push(code) } as never);
   const updated = await featureService.replace(tenantId, TENANT_FEATURES.filter(({ code }) => code !== "TV_DISPLAY").map(({ code }) => code), actor);
   assert.equal(updated.find(({ code }) => code === "TV_DISPLAY")?.isEnabled, false);
   assert.equal(updated.find(({ code }) => code === "KITCHEN_DISPLAY")?.isEnabled, true);
