@@ -2,6 +2,7 @@ import { Body, Controller, ForbiddenException, Param, Post, UnauthorizedExceptio
 import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
 import { PrismaService } from "../../prisma/prisma.service";
 import { Public } from "../../common/decorators/public.decorator";
+import { RequiresTenantFeature } from "../../common/decorators/tenant-feature.decorator";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
 import { TelegramStaffService } from "./telegram-staff.service";
@@ -21,6 +22,7 @@ type TelegramDiagnosticUpdate = {
   message?: TelegramDiagnosticMessage;
 };
 
+@RequiresTenantFeature("TELEGRAM_ORDERS")
 @Controller("telegram")
 export class TelegramController {
   constructor(

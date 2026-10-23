@@ -1,5 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
+import { RequiresTenantFeature } from "../../common/decorators/tenant-feature.decorator";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
@@ -28,6 +29,7 @@ export class BranchesController {
   }
 
   @Post()
+  @RequiresTenantFeature("MULTI_BRANCH")
   @Permissions(PERMISSIONS.BRANCH_CREATE)
   createBranch(
     @Body() dto: CreateBranchDto,

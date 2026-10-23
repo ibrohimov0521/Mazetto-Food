@@ -34,6 +34,7 @@ test("customer websocket disconnects when its access JWT expiry is reached", asy
   } as unknown as JwtService;
   const prisma = {
     restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+    tenantFeature: { findUnique: async () => ({ isEnabled: true }) },
     customerSession: { findFirst: async () => ({ id: "session-1" }) },
   } as unknown as PrismaService;
   const gateway = createKitchenGatewayForTest(jwt, prisma);
@@ -72,6 +73,7 @@ test("staff websocket disconnects when its access JWT expiry is reached", async 
         ],
       }),
     },
+    tenantFeature: { findUnique: async () => ({ isEnabled: true }) },
   } as unknown as PrismaService;
   const gateway = createKitchenGatewayForTest(
     jwt,

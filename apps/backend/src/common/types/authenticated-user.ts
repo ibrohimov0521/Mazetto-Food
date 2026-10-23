@@ -8,6 +8,7 @@ export type AuthenticatedUser = {
   credentialVersion?: number;
   tenantId?: string;
   membershipId?: string;
+  tenantFeatures?: string[];
   employeeId?: string;
   branchId?: string;
   isGlobalScope?: boolean;

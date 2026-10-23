@@ -7,7 +7,7 @@ function activeMembership(overrides: Record<string, unknown> = {}) {
     id: "membership-a",
     tenantId: "tenant-a",
     branchId: "branch-a",
-    tenant: { status: "ACTIVE" },
+    tenant: { status: "ACTIVE", features: [{ code: "INVENTORY" }] },
     branch: { tenantId: "tenant-a" },
     user: {
       id: "user-a",
@@ -51,6 +51,7 @@ test("active restaurant staff membership resolves its branch, role and permissio
   assert.ok(user);
   assert.equal(user.tenantId, "tenant-a");
   assert.equal(user.membershipId, "membership-a");
+  assert.deepEqual(user.tenantFeatures, ["INVENTORY"]);
   assert.equal(user.branchId, "branch-a");
   assert.equal(user.employeeId, "employee-a");
   assert.deepEqual(user.roles, ["CASHIER"]);

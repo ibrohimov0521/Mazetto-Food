@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { BellRing, History, Search, Volume2, VolumeX, X } from "lucide-react";
+import { BellRing, History, Maximize2, Minimize2, Search, Volume2, VolumeX, X } from "lucide-react";
 import { PermissionGuard } from "../../../components/auth/permission-guard";
 import { useAuth } from "../../../components/auth/auth-provider";
 import { hasPermission } from "../../../lib/auth";
@@ -29,7 +29,7 @@ import {
   StaffSync,
 } from "../../../components/staff/staff-shell";
 import styles from "../../../components/staff/staff.module.css";
-import { apiFetch } from "../../../lib/api";
+import { ApiRequestError, apiFetch } from "../../../lib/api";
 import { readOfflineKitchenSnapshot } from "../../../lib/offline-kitchen-bootstrap.mjs";
 import { useStaffRealtime } from "../../../lib/use-staff-realtime";
 
@@ -50,6 +50,8 @@ function KitchenDisplay() {
   const [queueLimit, setQueueLimit] = useState(250);
   const [now, setNow] = useState(() => Date.now());
   const [isSoundEnabled, setIsSoundEnabled] = useState(true);
+  const [tvDisplayAvailable, setTvDisplayAvailable] = useState(false);
+  const [tvMode, setTvMode] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionErrors, setActionErrors] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState(true);
@@ -144,6 +146,44 @@ function KitchenDisplay() {
 
   useEffect(() => {
     setIsSoundEnabled(readKitchenSoundPreference());
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const refreshAvailability = async () => {
+      try {
+        const result = await apiFetch<{ enabled: boolean }>("/kitchen/tv-display", {
+          cache: "no-store",
+          signal: AbortSignal.timeout(8000),
+        });
+        if (active) setTvDisplayAvailable(result.enabled);
+      } catch (caught) {
+        if (active && caught instanceof ApiRequestError && caught.status === 403) {
+          setTvDisplayAvailable(false);
+        }
+        // Keep the last confirmed setting while the terminal is offline.
+      }
+    };
+    void refreshAvailability();
+    const timer = window.setInterval(() => void refreshAvailability(), 30000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (tvDisplayAvailable) return;
+    setTvMode(false);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+  }, [tvDisplayAvailable]);
+
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) setTvMode(false);
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
   }, []);
 
   useEffect(() => {
@@ -329,6 +369,21 @@ function KitchenDisplay() {
     if (next) chime.unlock();
   }
 
+  async function toggleTvMode() {
+    if (!tvDisplayAvailable) return;
+    if (tvMode) {
+      setTvMode(false);
+      if (document.fullscreenElement) await document.exitFullscreen().catch(() => {});
+      return;
+    }
+    setTvMode(true);
+    try {
+      await document.documentElement.requestFullscreen();
+    } catch {
+      // The enlarged TV layout still works when fullscreen is blocked by the browser.
+    }
+  }
+
   function acknowledgeNew() {
     const ids = newTickets.map((ticket) => ticket.id);
     setAcknowledgedIds(new Set(ids));
@@ -345,7 +400,7 @@ function KitchenDisplay() {
 
   return (
     <StaffShell title="Oshxona" actions={<KitchenWorkspaceNavigation />}>
-      <div className={`${styles.content} ${styles.kitchenContent}`}>
+      <div className={`${styles.content} ${styles.kitchenContent} ${tvMode ? styles.tvMode : ""}`}>
         <div className={styles.overview}>
           <h2 className={styles.pageHeading}>
             Buyurtmalar navbati · {isLoading ? "..." : tickets.length}
@@ -362,6 +417,19 @@ function KitchenDisplay() {
             />
           </label>
           <div className={styles.toolbarGroup}>
+            {tvDisplayAvailable && (
+              <button
+                className={styles.button}
+                aria-label={tvMode ? "Oddiy ko‘rinishga qaytish" : "Televizor rejimini yoqish"}
+                aria-pressed={tvMode}
+                title={tvMode ? "Oddiy ko‘rinishga qaytish" : "Televizor rejimini yoqish"}
+                onClick={() => void toggleTvMode()}
+                type="button"
+              >
+                {tvMode ? <Minimize2 size={18} aria-hidden="true" /> : <Maximize2 size={18} aria-hidden="true" />}
+                <span className={styles.kitchenToolLabel}>{tvMode ? "Oddiy ko‘rinish" : "TV rejimi"}</span>
+              </button>
+            )}
             <StaffSync
               updatedAt={lastUpdatedAt}
               connectionState={realtimeState}

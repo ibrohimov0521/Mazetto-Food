@@ -7,6 +7,7 @@ import { JwtAuthGuard } from "./common/guards/jwt-auth.guard";
 import { MazettoThrottlerGuard } from "./common/guards/mazetto-throttler.guard";
 import { RedisThrottlerStorage } from "./common/throttler/redis-throttler.storage";
 import { PermissionsGuard } from "./common/guards/permissions.guard";
+import { TenantFeatureGuard } from "./common/guards/tenant-feature.guard";
 import { RolesGuard } from "./common/guards/roles.guard";
 import { CacheModule } from "./cache/cache.module";
 import { HealthController } from "./health.controller";
@@ -137,6 +138,10 @@ import { RedisService } from "./redis/redis.service";
     {
       provide: APP_GUARD,
       useClass: PermissionsGuard,
+    },
+    {
+      provide: APP_GUARD,
+      useClass: TenantFeatureGuard,
     },
   ],
 })

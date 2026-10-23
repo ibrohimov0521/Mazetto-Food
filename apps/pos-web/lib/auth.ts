@@ -24,6 +24,7 @@ export type AuthUser = {
   membershipId?: string;
   credentialVersion?: number;
   isGlobalScope?: boolean;
+  tenantFeatures?: string[];
   roles: string[];
   permissions: string[];
 };

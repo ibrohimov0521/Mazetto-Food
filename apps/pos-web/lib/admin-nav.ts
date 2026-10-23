@@ -39,6 +39,7 @@ export type AdminNavItem = {
   anyPermissions?: string[];
   /** Faol holatni aniqlashda shu prefiksdagi barcha yo'llar hisobga olinadi. */
   matchPrefix?: string;
+  featureCode?: string;
 };
 
 export type AdminNavGroup = {
@@ -105,6 +106,7 @@ export const adminNavGroups: AdminNavGroup[] = [
         href: "/admin/online-orders",
         permission: "ONLINE_ORDER_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
+        featureCode: "WEB_ORDERS",
       },
       {
         label: "Oshxona monitoringi",
@@ -112,6 +114,7 @@ export const adminNavGroups: AdminNavGroup[] = [
         href: "/admin/kitchen-monitor",
         permission: "KITCHEN_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
+        featureCode: "KITCHEN_DISPLAY",
       },
       {
         label: "Kuryerlar",
@@ -119,6 +122,7 @@ export const adminNavGroups: AdminNavGroup[] = [
         href: "/admin/couriers",
         permission: "COURIER_MANAGE",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
+        featureCode: "DELIVERY",
       },
       {
         label: "Mijozlar",
@@ -126,6 +130,7 @@ export const adminNavGroups: AdminNavGroup[] = [
         href: "/admin/customers",
         permission: "CUSTOMER_VIEW",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
+        featureCode: "CUSTOMER_WEB",
       },
     ],
   },
@@ -215,6 +220,7 @@ export const adminNavGroups: AdminNavGroup[] = [
         href: "/admin/homepage",
         permission: "HOMEPAGE_MANAGE",
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER"],
+        featureCode: "CUSTOMER_WEB",
       },
     ],
   },
@@ -228,6 +234,7 @@ export const adminNavGroups: AdminNavGroup[] = [
         href: "/admin/inventory",
         permission: "INVENTORY_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
+        featureCode: "INVENTORY",
       },
       {
         label: "Retseptlar",
@@ -235,6 +242,7 @@ export const adminNavGroups: AdminNavGroup[] = [
         href: "/admin/recipes",
         permission: "RECIPE_MANAGE",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
+        featureCode: "INVENTORY",
       },
       {
         label: "Yetkazib beruvchilar",
@@ -242,6 +250,7 @@ export const adminNavGroups: AdminNavGroup[] = [
         href: "/admin/suppliers",
         permission: "INVENTORY_VIEW",
         roles: ["SUPER_ADMIN", "BRANCH_MANAGER"],
+        featureCode: "INVENTORY",
       },
     ],
   },
@@ -364,6 +373,11 @@ export function resolveAdminNav(user: AuthUser | null): AdminNavGroup[] {
             hasPermission(user, permission),
           )
         ) {
+          return false;
+        }
+
+        if (item.featureCode && user.tenantFeatures &&
+            !user.tenantFeatures.includes(item.featureCode)) {
           return false;
         }
 

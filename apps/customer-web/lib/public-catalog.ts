@@ -1,4 +1,5 @@
 import { cache } from "react";
+import { headers } from "next/headers";
 import type { Category, CustomerHome, Product } from "./types";
 import {
   fetchPublicDataWithRetry,
@@ -8,10 +9,11 @@ import {
 async function readPublic<T>(path: string): Promise<T | null> {
   const origin = process.env.CUSTOMER_SEO_API_URL ?? "https://api.mazettofood.uz/api/v1";
   const startedAt = Date.now();
+  const requestHost = (await headers()).get("host") ?? "mazettofood.uz";
   const result = await fetchPublicDataWithRetry(
     origin.replace(/\/$/, "") + path,
     {
-      headers: { "x-forwarded-host": "mazettofood.uz" },
+      headers: { "x-forwarded-host": requestHost },
       next: { revalidate: 300 },
     },
     { maxAttempts: 3, retryDelayMs: 200, timeoutMs: 3000 },

@@ -3576,3 +3576,56 @@
     padding: 16px 16px calc(18px + env(safe-area-inset-bottom));
   }
 }
+
+.tvMode {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  overflow: auto;
+  padding: 18px;
+  background: #f2f7f5;
+  color: #123438;
+}
+.tvMode .board {
+  --kds-number: 28px;
+  --kds-item: 19px;
+  --kds-small: 16px;
+  --kds-qty: 18px;
+  --kds-qty-box: 32px;
+  --kds-timer: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+.tvMode .columnHeading {
+  min-height: 54px;
+  padding: 10px 12px;
+  font-size: 18px;
+}
+.tvMode .column[data-hidden="true"] {
+  display: flex;
+}
+.tvMode .segments,
+.tvMode .search,
+.tvMode .toolbarGroup a {
+  display: none;
+}
+.tvMode .toolbar {
+  justify-content: flex-end;
+  margin-bottom: 12px;
+}
+.tvMode .toolbarGroup {
+  gap: 10px;
+}
+@media (max-width: 1100px) {
+  .tvMode .board {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 650px) {
+  .tvMode {
+    padding: 10px;
+  }
+  .tvMode .board {
+    grid-template-columns: 1fr;
+  }
+}

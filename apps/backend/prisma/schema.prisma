@@ -274,12 +274,18 @@ model RestaurantTenant {
   id        String                 @id @default(cuid())
   code      String                 @unique
   name      String
+  phone     String?
+  email     String?
+  address   String?
+  legalName String?
+  taxId     String?
   status    RestaurantTenantStatus @default(PROVISIONING)
   createdAt DateTime               @default(now())
   updatedAt DateTime               @updatedAt
 
   branches                       Branch[]
   domains                        TenantDomain[]
+  features                       TenantFeature[]
   platformSites                  PlatformSite[]
   memberships                    TenantMembership[]
   notificationDeadLetters        NotificationDeadLetter[]
@@ -292,6 +298,21 @@ model RestaurantTenant {
 
   @@index([status, createdAt])
   @@map("restaurant_tenants")
+}
+
+model TenantFeature {
+  id        String   @id @default(cuid())
+  tenantId  String
+  code      String
+  isEnabled Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  tenant RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, code])
+  @@index([tenantId, isEnabled])
+  @@map("tenant_features")
 }
 
 model TenantDomain {

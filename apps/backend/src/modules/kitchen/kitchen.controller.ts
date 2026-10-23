@@ -3,6 +3,7 @@ import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { CorrelationId } from "../../common/decorators/correlation-id.decorator";
 import { IdempotencyKey } from "../../common/decorators/idempotency-key.decorator";
+import { RequiresTenantFeature } from "../../common/decorators/tenant-feature.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
@@ -13,6 +14,7 @@ import {
 import { KitchenActionService } from "./kitchen-action.service";
 import { KitchenService } from "./kitchen.service";
 
+@RequiresTenantFeature("KITCHEN_DISPLAY")
 @Controller("kitchen")
 export class KitchenController {
   constructor(
@@ -24,6 +26,12 @@ export class KitchenController {
   @Permissions(PERMISSIONS.KITCHEN_VIEW)
   listOrders(@CurrentUser() user: AuthenticatedUser) {
     return this.kitchenService.listOrdersWithOverflow(user);
+  }
+
+  @Get("tv-display")
+  @Permissions(PERMISSIONS.KITCHEN_VIEW)
+  tvDisplayAvailability(@CurrentUser() user: AuthenticatedUser) {
+    return this.kitchenService.tvDisplayAvailability(user);
   }
 
   @Get("orders/history")

@@ -10,6 +10,7 @@ import {
 } from "@nestjs/common";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import { CurrentUser } from "../../common/decorators/current-user.decorator";
+import { RequiresTenantFeature } from "../../common/decorators/tenant-feature.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {
@@ -22,6 +23,7 @@ import {
 } from "./dto/inventory.dto";
 import { InventoryService } from "./inventory.service";
 
+@RequiresTenantFeature("INVENTORY")
 @Controller("inventory")
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}

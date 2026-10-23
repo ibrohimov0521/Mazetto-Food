@@ -40,6 +40,7 @@ test("customer websocket revalidates its session after joining the revoke room",
   const joined: string[] = [];
   const prisma = {
     restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+    tenantFeature: { findUnique: async () => ({ isEnabled: true }) },
     customerSession: {
       findFirst: async () => (++reads === 1 ? { id: "session-1" } : null),
     },

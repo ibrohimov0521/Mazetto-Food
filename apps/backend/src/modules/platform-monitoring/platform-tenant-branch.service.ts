@@ -54,6 +54,16 @@ export class PlatformTenantBranchService {
           );
         }
 
+        const multiBranch = await tx.tenantFeature.findUnique({
+          where: { tenantId_code: { tenantId: tenant.id, code: "MULTI_BRANCH" } },
+          select: { isEnabled: true },
+        });
+        if (!multiBranch?.isEnabled) {
+          throw new ConflictException(
+            "Qo‘shimcha filial yaratish uchun avval “Bir nechta filial” funksiyasini yoqing.",
+          );
+        }
+
         const branch = await tx.branch.create({
           data: {
             tenantId: tenant.id,

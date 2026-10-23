@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { apiRequest, logout, restoreSession, saveSession } from "../lib/api";
 import type { AuthSession, GlobalSiteEvent, PlatformAuditEntry, PlatformAuditPage, PlatformDiagnostic, PlatformHealth, PlatformReports, Probe, ProvisionedAgent, Site, SiteEvent, TenantMembership, TenantRegistryEntry, TenantRoleOption } from "../lib/types";
+import { TenantFeatureEditor, TenantOnboardingModal } from "./tenant-management";
 
 type View = "overview" | "restaurants" | "tenants" | "activity" | "diagnostics" | "audit" | "reports" | "detail";
 type Modal = "create" | "edit" | "rotate" | "toggle" | null;
@@ -129,10 +130,6 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
   const [tenantsLoading, setTenantsLoading] = useState(false);
   const [tenantsError, setTenantsError] = useState("");
   const [tenantCreateOpen, setTenantCreateOpen] = useState(false);
-  const [tenantCreateCode, setTenantCreateCode] = useState("");
-  const [tenantCreateName, setTenantCreateName] = useState("");
-  const [tenantCreateBusy, setTenantCreateBusy] = useState(false);
-  const [tenantCreateError, setTenantCreateError] = useState("");
   const [membershipTenantId, setMembershipTenantId] = useState("");
   const [tenantMemberships, setTenantMemberships] = useState<TenantMembership[]>([]);
   const [tenantRoleOptions, setTenantRoleOptions] = useState<TenantRoleOption[]>([]);
@@ -596,30 +593,6 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
     finally { setBusy(false); }
   }
 
-  async function submitTenantCreation(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setTenantCreateBusy(true);
-    setTenantCreateError("");
-    setNotice("");
-    try {
-      await apiRequest("/platform/tenants", {
-        method: "POST",
-        body: JSON.stringify({
-          code: tenantCreateCode.trim(),
-          name: tenantCreateName.trim(),
-        }),
-      });
-      setTenantCreateOpen(false);
-      setTenantCreateCode("");
-      setTenantCreateName("");
-      setNotice("Restoran tayyorlash holatida yaratildi. Uni ACTIVE qilish hali mavjud emas.");
-      await loadTenants();
-    } catch (caught) {
-      setTenantCreateError(caught instanceof Error ? caught.message : "Restoran yaratilmadi.");
-    } finally {
-      setTenantCreateBusy(false);
-    }
-  }
 
   async function submitTenantBranchCreation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -786,7 +759,7 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
           </>}
         </>}
         {view === "tenants" && <>
-          <div className="page-heading"><div><p className="eyebrow">ASOSIY MA’LUMOTLAR BAZASI</p><h1>Restoran tenantlari</h1><p className="muted">Haqiqiy tenantlar, filiallar, domenlar va kuzatuvga ulangan saytlar.</p></div><div className="heading-actions"><button className="button primary" onClick={() => { setTenantCreateError(""); setTenantCreateOpen(true); }}><Plus size={16} />Yangi restoran</button><button className="button subtle" onClick={() => void loadTenants()} disabled={tenantsLoading}><RefreshCw size={16} />Yangilash</button></div></div>
+          <div className="page-heading"><div><p className="eyebrow">ASOSIY MA’LUMOTLAR BAZASI</p><h1>Restoran tenantlari</h1><p className="muted">Haqiqiy tenantlar, filiallar, domenlar va kuzatuvga ulangan saytlar.</p></div><div className="heading-actions"><button className="button primary" onClick={() => setTenantCreateOpen(true)}><Plus size={16} />Yangi restoran</button><button className="button subtle" onClick={() => void loadTenants()} disabled={tenantsLoading}><RefreshCw size={16} />Yangilash</button></div></div>
           <div className="alert" role="status"><ShieldCheck size={18} />Yangi restoran faqat tayyorlash holatida ochiladi. Ikkinchi restoran ishga tushirilmaydi, tenant izolyatsiyasi va ulanishlari tekshiruvdan o‘tmaguncha.</div>
           {tenantsError && <div className="alert" role="alert"><AlertTriangle size={18} />{tenantsError}<button className="button subtle" onClick={() => void loadTenants()}>Qayta urinish</button></div>}
           <div className="metrics">
@@ -817,6 +790,7 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
               <div className="tenant-setup-row"><span className="tenant-setup-icon blocked"><ShieldCheck size={16} /></span><div><strong>Tenant xavfsizlik darvozasi</strong><p>{setupTenant.status === "ACTIVE" ? "Mavjud aktiv restoran ishlashda davom etadi; yangi tenantlarni faollashtirish A/B izolyatsiya testi o'tmaguncha yopiq." : "A/B tenant izolyatsiyasi va trusted-domain routing yakunlanmagan. Faollashtirish mavjud emas."}</p></div><Status status="WAITING" label="Faollashtirish yopiq" /></div>
             </div>
           </section>}
+          {setupTenant && <TenantFeatureEditor tenantId={setupTenant.id} />}
           {membershipTenant && <section className="section tenant-membership-panel">
             <div className="section-head"><div><h2>{membershipTenant.name} · xodimlar va a'zoliklar</h2><p className="muted">Restoran bo'yicha alohida kirish, rol va a'zolik holati.</p></div><button type="button" className="icon-button" aria-label="A'zolik boshqaruvini yopish" onClick={() => toggleTenantMemberships(membershipTenant.id)}><X size={18} /></button></div>
             <p className="muted">Faqat mavjud faol foydalanuvchi hisobini login, email yoki telefon orqali biriktiradi. Bu yerda yangi hisob yoki parol yaratilmaydi; filial roli uchun foydalanuvchi tanlangan filialning faol xodimi bo'lishi kerak.</p>
@@ -885,7 +859,7 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
       </div>
     </main>
         {branchCreateTenantId && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !branchCreateBusy) setBranchCreateTenantId(""); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="branch-create-title"><div className="modal-head"><div><p className="eyebrow">RESTORAN ONBOARDING</p><h2 id="branch-create-title">Birinchi filial</h2></div><button type="button" className="icon-button" aria-label="Yopish" onClick={() => setBranchCreateTenantId("")} disabled={branchCreateBusy}><X size={20} /></button></div>{branchCreateError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{branchCreateError}</div>}<form className="modal-body form-stack" onSubmit={submitTenantBranchCreation}><label>Filial nomi<input autoFocus value={branchCreateName} onChange={event => setBranchCreateName(event.target.value)} required minLength={2} maxLength={120} /></label><label>Filial kodi<input value={branchCreateCode} onChange={event => setBranchCreateCode(event.target.value)} required minLength={2} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]" placeholder="NORTH_MAIN" autoCapitalize="characters" autoCorrect="off" /></label><label>Manzil<input value={branchCreateAddress} onChange={event => setBranchCreateAddress(event.target.value)} maxLength={240} /></label><label>Telefon<input type="tel" value={branchCreatePhone} onChange={event => setBranchCreatePhone(event.target.value)} maxLength={40} /></label><p className="muted">Filial hozircha faolsiz yaratiladi. Tenant, domen, printer va integratsiyalar tekshirilmaguncha buyurtmalar qabul qilinmaydi.</p><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setBranchCreateTenantId("")} disabled={branchCreateBusy}>Bekor qilish</button><button className="button primary" type="submit" disabled={branchCreateBusy || !branchCreateCode.trim() || !branchCreateName.trim()}><Plus size={16} />{branchCreateBusy ? "Yaratilmoqda..." : "Filial yaratish"}</button></div></form></div></div>}
-        {tenantCreateOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !tenantCreateBusy) setTenantCreateOpen(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="tenant-create-title"><div className="modal-head"><div><p className="eyebrow">BESTTEAM CONTROL</p><h2 id="tenant-create-title">Yangi restoran</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => setTenantCreateOpen(false)} disabled={tenantCreateBusy}><X size={20} /></button></div>{tenantCreateError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{tenantCreateError}</div>}<form className="modal-body form-stack" onSubmit={submitTenantCreation}><label>Restoran nomi<input autoFocus value={tenantCreateName} onChange={event => setTenantCreateName(event.target.value)} required minLength={2} maxLength={120} /></label><label>Restoran kodi<input value={tenantCreateCode} onChange={event => setTenantCreateCode(event.target.value)} required minLength={2} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]" placeholder="MAZETTO_NORTH" autoCapitalize="characters" autoCorrect="off" /></label><p className="muted">Yaratilgach restoran “Tayyorlanmoqda” holatida qoladi. Domen, filial va integratsiyalar tekshirilmaguncha buyurtmalar yoqilmaydi.</p><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setTenantCreateOpen(false)} disabled={tenantCreateBusy}>Bekor qilish</button><button className="button primary" type="submit" disabled={tenantCreateBusy || !tenantCreateCode.trim() || !tenantCreateName.trim()}><Plus size={16} />{tenantCreateBusy ? "Yaratilmoqda..." : "Restoran yaratish"}</button></div></form></div></div>}
+        {tenantCreateOpen && <TenantOnboardingModal onClose={() => setTenantCreateOpen(false)} onCreated={() => { setNotice("Restoran va owner tayyorlandi; DNS va routing sozlangach kirish ochiladi."); void loadTenants(); }} />}
     {modal && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) { setModal(null); setProvisioned(null); } }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-head"><div><p className="eyebrow">BESTTEAM CONTROL</p><h2 id="modal-title">{modal === "create" ? "Monitoring obyektini qo'shish" : modal === "edit" ? "Monitoring obyektini tahrirlash" : modal === "rotate" ? "Agent tokenini yangilash" : "Kuzatuv holati"}</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => { setModal(null); setProvisioned(null); }}><X size={20} /></button></div>{modalError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{modalError}</div>}{provisioned ? <div className="modal-body"><p className="muted">Token faqat shu oynada ko'rinadi. Uni loyiha serveridagi agent sozlamasiga kiriting.</p><label className="token-field">Agent tokeni<code>{provisioned.agentToken}</code></label><button className="button primary full" onClick={async () => { await navigator.clipboard.writeText(provisioned.agentToken); setNotice("Token nusxalandi."); }}><Clipboard size={16} />Nusxalash</button><button className="button subtle full" onClick={() => { setModal(null); setProvisioned(null); }}>Tayyor</button></div> : modal === "create" || modal === "edit" ? <form className="modal-body form-stack" onSubmit={submitSite}><label>Loyiha nomi<input value={name} onChange={event => setName(event.target.value)} required minLength={2} /></label><label>Loyiha kodi<input value={productCode} onChange={event => setProductCode(event.target.value)} required placeholder="MAZETTO_FOOD" /></label><label>Restoran tenanti<select value={tenantId} onChange={event => setTenantId(event.target.value)} disabled={tenantsLoading}><option value="">Tenantga bog‘lanmagan</option>{tenants.map(tenant => <option key={tenant.id} value={tenant.id}>{tenant.name} ({tenant.code})</option>)}</select><small className="report-product">Faqat mavjud tenantga bog‘lanadi; restoran statusi va ilovalari o‘zgarmaydi.</small></label><label>Sayt manzili<input type="url" value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} required placeholder="https://restaurant.uz" /></label><label>API holat manzili<input type="url" value={apiHealthUrl} onChange={event => setApiHealthUrl(event.target.value)} required placeholder="https://api.restaurant.uz/health" /></label><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" type="submit" disabled={busy}><Check size={16} />{busy ? "Saqlanmoqda..." : "Saqlash"}</button></div></form> : <div className="modal-body"><p>{modal === "rotate" ? "Eski agent tokeni darhol ishlamay qoladi. Davom etasizmi?" : selected?.isActive ? "Bu monitoring obyekti uchun kuzatuvni to'xtatasizmi?" : "Bu monitoring obyekti uchun kuzatuvni yoqasizmi?"}</p><div className="modal-actions"><button className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" onClick={() => void confirmAction()} disabled={busy}>{busy ? "Bajarilmoqda..." : "Tasdiqlash"}</button></div></div>}</div></div>}
     {passwordModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !passwordBusy) setPasswordModalOpen(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title"><div className="modal-head"><div><p className="eyebrow">HISOB XAVFSIZLIGI</p><h2 id="password-modal-title">Parolni almashtirish</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => setPasswordModalOpen(false)}><X size={20} /></button></div><form className="modal-body form-stack" onSubmit={changeOwnPassword}><label>Joriy parol<input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required /></label><label>Yangi parol<input type="password" autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)} required minLength={12} /></label><label>Yangi parolni takrorlang<input type="password" autoComplete="new-password" value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} required minLength={12} /></label>{passwordError && <p className="form-error" role="alert">{passwordError}</p>}<p className="muted">Kamida 12 ta belgi ishlating. Saqlangandan so'ng sessiyalar tugaydi.</p><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setPasswordModalOpen(false)}>Bekor qilish</button><button className="button primary" type="submit" disabled={passwordBusy}><KeyRound size={16} />{passwordBusy ? "Saqlanmoqda..." : "Parolni saqlash"}</button></div></form></div></div>}
   </div>;

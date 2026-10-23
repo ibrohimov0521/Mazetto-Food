@@ -39,3 +39,8 @@ test("uses the verified restaurant API host on production app domains", () => {
   assert.equal(getMazettoFoodApiBaseUrl("kitchen.mazettofood.uz"), null);
   assert.equal(getMazettoFoodApiBaseUrl("pos.example.test"), null);
 });
+
+test("Mazetto subdomains use same-origin API proxy so tenant Host is preserved", () => {
+  assert.equal(isMazettoFoodHost("oqtepa.mazetto.uz"), true);
+  assert.equal(getMazettoFoodApiBaseUrl("oqtepa.mazetto.uz"), null);
+});

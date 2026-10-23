@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from "@nestjs/common";
@@ -102,6 +103,15 @@ export class CustomerOrderEngineService {
 
     if (!customer) {
       throw new NotFoundException("Customer not found");
+    }
+    if (dto.type === OnlineOrderTypeDto.DELIVERY) {
+      const deliveryFeature = await this.prisma.tenantFeature.findUnique({
+        where: { tenantId_code: { tenantId: customer.tenantId, code: "DELIVERY" } },
+        select: { isEnabled: true },
+      });
+      if (!deliveryFeature?.isEnabled) {
+        throw new ForbiddenException("Bu restoranda yetkazib berish o‘chirilgan.");
+      }
     }
 
     await this.branchesService.assertCustomerBranchAcceptsOrder(
