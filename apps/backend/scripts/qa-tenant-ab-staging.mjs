@@ -452,6 +452,17 @@ async function main() {
       },
     });
     fixture.tenantBId = tenantB.id;
+    const featureDefaults = await prisma.tenantFeature.findMany({
+      where: { tenantId: tenantA.id },
+      select: { code: true, isEnabled: true },
+    });
+    await prisma.tenantFeature.createMany({
+      data: featureDefaults.map(({ code, isEnabled }) => ({
+        tenantId: tenantB.id,
+        code,
+        isEnabled,
+      })),
+    });
     const branchA = await prisma.branch.create({
       data: {
         code: `QA_A_${suffix}`,
