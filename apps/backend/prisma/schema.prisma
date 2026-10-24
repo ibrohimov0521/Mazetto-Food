@@ -292,6 +292,8 @@ model RestaurantTenant {
   notificationOutbox              NotificationOutbox[]
   auditLogs                      AuditLog[]
   customers                      Customer[]
+  telegramCustomerContexts       TelegramCustomerContext[]
+  telegramConfiguration          TenantTelegramConfiguration?
   customerVerificationChallenges CustomerVerificationChallenge[]
   settings                       Setting[]
   orders                         Order[]
@@ -441,6 +443,31 @@ model Customer {
   @@index([createdAt])
   @@index([tenantId, createdAt])
   @@map("customers")
+}
+
+model TelegramCustomerContext {
+  chatId        String
+  telegramUserId String
+  tenantId      String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  tenant RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@id([chatId, telegramUserId])
+  @@index([tenantId, updatedAt])
+  @@map("telegram_customer_contexts")
+}
+
+model TenantTelegramConfiguration {
+  tenantId   String   @id
+  staffChatId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@map("tenant_telegram_configurations")
 }
 
 model CustomerAddress {

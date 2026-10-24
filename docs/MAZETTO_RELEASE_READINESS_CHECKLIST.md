@@ -1,8 +1,15 @@
 # MAZETTO FOOD Release Readiness Checklist
 
-Last updated: 2026-10-12
+Last updated: 2026-10-24
 
 This checklist is for the next controlled production release. It is documentation only; it does not authorize deployment by itself.
+
+
+## Baseline checked 2026-10-24
+
+GitHub `main` and the remote `production` tag are at `e8ae781356fdab6878c28694bad93c556eb11a33`. Production Deploy workflow #352 (`40091743808`) completed successfully for that baseline. The resulting desktop release is `0.1.120`. This records the existing release only; changes on `audit/business-readiness-20261024` are not in production.
+
+The current branch adds tenant activation checks, safe domain lifecycle guards, custom-domain customer API routing, and per-tenant Telegram routing/configuration. It includes an additive database migration. It must pass PR CI and the staging/real acceptance matrix before a release. Its migration requires the production backup and migration order below; this checklist does not authorize production deployment.
 
 ## Safety Rules
 
@@ -124,6 +131,9 @@ curl -I https://media.mazettofood.uz/products/lavash-big.webp
 ```
 
 ## Current Known Gaps
+
+- The 2026-10-24 tenant activation, customer-domain routing, and Telegram multi-tenant work is still on an unmerged audit branch. Staging and real browser/Telegram/POS acceptance are pending; none of it is represented by the production baseline above.
+- The new tenant Telegram panel checks server credential presence and tenant chat configuration. It does not call Telegram `getWebhookInfo`; use the read-only `pnpm telegram:smoke` acceptance before claiming the webhook is live.
 
 - Production read-only smoke passed 27/27 on 2026-10-12 against the deployed baseline. Its media check verifies image URLs returned by the public category and product APIs; all API-referenced images returned HTTP 200. Local and PR-only source changes are not included in this production check.
 - The local media manifest validates 11 category assets, 74 product assets, and 0 unresolved product assets. A direct production check of all 85 manifest URLs found one 404: `/categories/blyudalar.webp`. The current public category API points `Blyudalar` to `/categories/doner.webp`, so the missing manifest file is not currently referenced. Keep it documented until confirmed removable or deliberately copied.

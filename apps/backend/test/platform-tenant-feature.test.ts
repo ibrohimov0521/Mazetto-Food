@@ -6,11 +6,12 @@ import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { PlatformTenantFeatureService } from "../src/modules/platform-monitoring/platform-tenant-feature.service";
 import { PlatformTenantProvisioningService } from "../src/modules/platform-monitoring/platform-tenant-provisioning.service";
 
-function makeService(initialEnabledCodes: string[] = []) {
+function makeService(initialEnabledCodes: string[] = [], telegramConfigured = true) {
   const enabled = new Set<string>(initialEnabledCodes);
   const disconnected: string[] = [];
   const transactionClient = {
     restaurantTenant: { findUnique: async () => ({ id: "tenant-a" }) },
+    tenantTelegramConfiguration: { findUnique: async () => telegramConfigured ? { staffChatId: "-1001234567890" } : null },
     tenantFeature: {
       upsert: async (args: {
         where: { tenantId_code: { code: string } };
@@ -51,6 +52,14 @@ test("disabling customer web and kitchen persists flags then disconnects their t
   assert.equal(result.find(({ code }) => code === "CUSTOMER_WEB")?.isEnabled, false);
   assert.equal(result.find(({ code }) => code === "KITCHEN_DISPLAY")?.isEnabled, false);
   assert.equal(result.find(({ code }) => code === "INVENTORY")?.isEnabled, true);
+});
+
+test("Telegram orders cannot be enabled without a tenant staff group", async () => {
+  const { service } = makeService([], false);
+  await assert.rejects(
+    () => service.replace("tenant-a", ["TELEGRAM_ORDERS"], { id: "platform-owner" } as AuthenticatedUser),
+    BadRequestException,
+  );
 });
 
 test("web orders cannot be enabled without customer website", async () => {
@@ -151,6 +160,7 @@ test("synthetic test restaurant provisions TV display and can switch it off inde
       },
     },
     tenantDomain: { create: async ({ data }: { data: { hostname: string } }) => ({ id: "domain-test", hostname: data.hostname, status: "PENDING", verifiedAt: null }) },
+    tenantTelegramConfiguration: { findUnique: async () => ({ staffChatId: "-1001234567890" }) },
     auditLog: { create: async () => ({ id: "audit-test" }) },
   };
   const database = {

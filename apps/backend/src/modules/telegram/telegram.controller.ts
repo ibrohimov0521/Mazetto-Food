@@ -1,11 +1,10 @@
-import { Body, Controller, ForbiddenException, Param, Post, UnauthorizedException } from "@nestjs/common";
-import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
-import { PrismaService } from "../../prisma/prisma.service";
+import { Body, Controller, Param, Post, UnauthorizedException } from "@nestjs/common";
+import { runWithTenantScope } from "../../common/auth/tenant-scope";
 import { Public } from "../../common/decorators/public.decorator";
-import { RequiresTenantFeature } from "../../common/decorators/tenant-feature.decorator";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
 import { TelegramOrderNotificationService } from "./telegram-order-notification.service";
 import { TelegramStaffService } from "./telegram-staff.service";
+import { TelegramTenantContextService } from "./telegram-tenant-context.service";
 
 type TelegramDiagnosticMessage = {
   chat?: {
@@ -22,14 +21,13 @@ type TelegramDiagnosticUpdate = {
   message?: TelegramDiagnosticMessage;
 };
 
-@RequiresTenantFeature("TELEGRAM_ORDERS")
 @Controller("telegram")
 export class TelegramController {
   constructor(
     private readonly telegramCustomerAuthService: TelegramCustomerAuthService,
     private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
-    private readonly prisma: PrismaService,
-    private readonly telegramStaffService?: TelegramStaffService,
+    private readonly telegramStaffService: TelegramStaffService | undefined,
+    private readonly tenantContext: TelegramTenantContextService,
   ) {}
 
   @Public()
@@ -46,18 +44,15 @@ export class TelegramController {
       return { ok: true, handled: true };
     }
 
-    if (!(await this.hasTenantContext())) {
-      return { ok: true, handled: false };
-    }
+    const tenantId = await this.tenantContext.resolveCustomerTenantId(update);
+    if (!tenantId) return { ok: true, handled: false };
 
-    const customerResult =
-      await this.telegramCustomerAuthService.handleWebhookUpdate(update);
-
-    if (customerResult.handled) {
-      return customerResult;
-    }
-
-    return this.telegramOrderNotificationService.handleWebhook(secret, update);
+    return runWithTenantScope(tenantId, async () => {
+      const customerResult =
+        await this.telegramCustomerAuthService.handleWebhookUpdate(update);
+      if (customerResult.handled) return customerResult;
+      return this.telegramOrderNotificationService.handleWebhook(secret, update);
+    });
   }
 
   @Public()
@@ -69,13 +64,12 @@ export class TelegramController {
     })) {
       return { ok: true, handled: true };
     }
-    if (!(await this.hasTenantContext())) {
-      return { ok: true, handled: false };
-    }
-    return (
+    const tenantId = await this.tenantContext.resolveStaffTenantId(update);
+    if (!tenantId) return { ok: true, handled: false };
+    return runWithTenantScope(tenantId, async () => (
       (await this.telegramStaffService?.handleWebhookUpdate(update)) ??
       { ok: true, handled: false }
-    );
+    ));
   }
 
   private assertWebhookSecret(secret: string, expectedSecret: string | undefined): void {
@@ -85,15 +79,6 @@ export class TelegramController {
     }
   }
 
-  private async hasTenantContext(): Promise<boolean> {
-    try {
-      await resolveSoleActiveTenantId(this.prisma);
-      return true;
-    } catch (error) {
-      if (error instanceof ForbiddenException) return false;
-      throw error;
-    }
-  }
 
   private async handleStaffChatIdDiagnostic(
     update: unknown,

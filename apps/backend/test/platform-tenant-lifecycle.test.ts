@@ -20,7 +20,10 @@ const baseRecords = {
   orders: 1,
   payments: 1,
   openOrders: 0,
+  openShifts: 0,
+  pendingCashTransfers: 0,
   platformSites: 1,
+  activeOwners: 1,
 };
 
 function lifecycleFixture(options: {
@@ -28,8 +31,13 @@ function lifecycleFixture(options: {
   status?: string;
   domains?: string[];
   openOrders?: number;
+  openShifts?: number;
+  pendingCashTransfers?: number;
   archiveMetadata?: unknown;
   transactionConflict?: boolean;
+  branches?: number;
+  verifiedDomains?: number;
+  activeOwners?: number;
 } = {}) {
   const tenant = {
     id: "tenant-1",
@@ -38,7 +46,15 @@ function lifecycleFixture(options: {
     status: options.status ?? "ACTIVE",
     domains: (options.domains ?? ["north.example.uz"]).map((hostname) => ({ hostname })),
   };
-  const records = { ...baseRecords, openOrders: options.openOrders ?? 0 };
+  const records = {
+    ...baseRecords,
+    openOrders: options.openOrders ?? 0,
+    openShifts: options.openShifts ?? 0,
+    pendingCashTransfers: options.pendingCashTransfers ?? 0,
+    branches: options.branches ?? baseRecords.branches,
+    verifiedDomains: options.verifiedDomains ?? baseRecords.verifiedDomains,
+    activeOwners: options.activeOwners ?? baseRecords.activeOwners,
+  };
   const auditRows: Array<Record<string, unknown>> = [];
   let openOrderStatuses: string[] = [];
   let transactionOptions: unknown;
@@ -63,7 +79,10 @@ function lifecycleFixture(options: {
     branch: { count: async () => records.branches },
     tenantDomain: { count: async ({ where }: { where: { status?: string } }) =>
       where.status === "VERIFIED" ? records.verifiedDomains : records.domains },
-    tenantMembership: { count: async () => records.memberships },
+    tenantMembership: { count: async ({ where }: { where?: { roles?: unknown } } = {}) =>
+      where?.roles ? records.activeOwners : records.memberships },
+    tenantFeature: { findUnique: async () => ({ isEnabled: false }) },
+    tenantTelegramConfiguration: { findUnique: async () => null },
     customer: { count: async () => records.customers },
     order: {
       count: async ({ where }: { where: { status?: { in?: string[] } } }) => {
@@ -72,6 +91,8 @@ function lifecycleFixture(options: {
       },
     },
     payment: { count: async () => records.payments },
+    shift: { count: async () => records.openShifts },
+    cashTransfer: { count: async () => records.pendingCashTransfers },
     platformSite: { count: async () => records.platformSites },
     auditLog: {
       findFirst: async () => archiveMetadata,
@@ -83,6 +104,12 @@ function lifecycleFixture(options: {
   };
   const lifecycleOptions = options;
   const prisma = {
+    restaurantTenant: tx.restaurantTenant,
+    branch: tx.branch,
+    tenantDomain: tx.tenantDomain,
+    tenantMembership: tx.tenantMembership,
+    tenantFeature: tx.tenantFeature,
+    tenantTelegramConfiguration: tx.tenantTelegramConfiguration,
     $transaction: async (
       callback: (value: unknown) => Promise<unknown>,
       options?: unknown,
@@ -110,12 +137,70 @@ test("tenant lifecycle routes remain restricted to platform owners", () => {
   assert.deepEqual(Reflect.getMetadata(PERMISSIONS_KEY, PlatformTenantLifecycleController), [PERMISSIONS.SYSTEM_HEALTH_VIEW]);
 });
 
+test("activation preview lists all prerequisites and stays read-only", async () => {
+  const fixture = lifecycleFixture({ status: "PROVISIONING", branches: 0, verifiedDomains: 0, activeOwners: 0 });
+  const service = new PlatformTenantLifecycleService(fixture.prisma);
+  const preview = await service.activationPreview("tenant-1");
+
+  assert.equal(preview.canActivate, false);
+  assert.deepEqual(preview.readiness, { branches: 0, verifiedDomains: 0, activeOwners: 0, telegramReady: true });
+  assert.equal(preview.blockers.length, 3);
+  assert.equal(fixture.tenant.status, "PROVISIONING");
+  assert.equal(fixture.auditRows.length, 0);
+});
+
+test("activation requires readiness and exact confirmation, then atomically audits without enabling orders", async () => {
+  const fixture = lifecycleFixture({ status: "PROVISIONING" });
+  const service = new PlatformTenantLifecycleService(fixture.prisma);
+
+  await assert.rejects(
+    () => service.activate("tenant-1", { ...confirmation, confirmationCode: "OTHER_CAFE" }, { id: "owner-1" } as never),
+    BadRequestException,
+  );
+  assert.equal(fixture.updates.length, 0);
+  assert.equal(fixture.auditRows.length, 0);
+
+  const result = await service.activate("tenant-1", confirmation, { id: "owner-1" } as never);
+  assert.equal(result.status, "ACTIVE");
+  assert.equal(fixture.tenant.status, "ACTIVE");
+  assert.deepEqual(fixture.transactionOptions, { isolationLevel: "Serializable" });
+  assert.deepEqual(fixture.updates, [{
+    where: { id: "tenant-1", status: "PROVISIONING" },
+    data: { status: "ACTIVE" },
+  }]);
+  assert.equal(fixture.auditRows[0]?.action, "PLATFORM_TENANT_ACTIVATED");
+  assert.equal(fixture.auditRows[0]?.userId, "owner-1");
+  assert.equal((fixture.auditRows[0]?.metadata as Record<string, unknown>)?.branchesRemainOrderDisabled, true);
+});
+
+test("activation refuses to make the protected Mazetto Food tenant mutable", async () => {
+  const fixture = lifecycleFixture({ status: "PROVISIONING", code: "MAZETTO_FOOD" });
+  const service = new PlatformTenantLifecycleService(fixture.prisma);
+  await assert.rejects(
+    () => service.activate("tenant-1", { ...confirmation, confirmationCode: "MAZETTO_FOOD" }, { id: "owner-1" } as never),
+    ConflictException,
+  );
+  assert.equal(fixture.updates.length, 0);
+});
+
 test("archive preview reports retained branches, orders, payments, users, and customers", async () => {
   const fixture = lifecycleFixture();
   const service = new PlatformTenantLifecycleService(fixture.prisma);
   const preview = await service.archivePreview("tenant-1");
 
-  assert.deepEqual(preview.records, baseRecords);
+  assert.deepEqual(preview.records, {
+    branches: baseRecords.branches,
+    domains: baseRecords.domains,
+    verifiedDomains: baseRecords.verifiedDomains,
+    memberships: baseRecords.memberships,
+    customers: baseRecords.customers,
+    orders: baseRecords.orders,
+    payments: baseRecords.payments,
+    openOrders: baseRecords.openOrders,
+    openShifts: baseRecords.openShifts,
+    pendingCashTransfers: baseRecords.pendingCashTransfers,
+    platformSites: baseRecords.platformSites,
+  });
   assert.equal(preview.canArchive, true);
   assert.equal(fixture.deleteCalls, 0);
 });
@@ -151,6 +236,34 @@ test("the existing Mazetto Food tenant is protected from archive", async () => {
     ConflictException,
   );
   assert.equal(fixture.updates.length, 0);
+});
+
+test("archive refuses to interrupt an open cashier shift", async () => {
+  const fixture = lifecycleFixture({ openShifts: 1 });
+  const service = new PlatformTenantLifecycleService(fixture.prisma);
+  const preview = await service.archivePreview("tenant-1");
+
+  assert.equal(preview.canArchive, false);
+  assert.equal(preview.records.openShifts, 1);
+  assert.match(preview.blockReason ?? "", /smenalarini yoping/i);
+  await assert.rejects(
+    () => service.archive("tenant-1", confirmation, { id: "owner-1" } as never),
+    /smenalarini yoping/i,
+  );
+});
+
+test("archive refuses unresolved pending or disputed cash transfers", async () => {
+  const fixture = lifecycleFixture({ pendingCashTransfers: 2 });
+  const service = new PlatformTenantLifecycleService(fixture.prisma);
+  const preview = await service.archivePreview("tenant-1");
+
+  assert.equal(preview.canArchive, false);
+  assert.equal(preview.records.pendingCashTransfers, 2);
+  assert.match(preview.blockReason ?? "", /pul o'tkazmalarini hal qiling/i);
+  await assert.rejects(
+    () => service.archive("tenant-1", confirmation, { id: "owner-1" } as never),
+    /pul o'tkazmalarini hal qiling/i,
+  );
 });
 
 test("archive refuses to interrupt open orders", async () => {
