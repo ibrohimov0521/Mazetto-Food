@@ -456,7 +456,7 @@ export class PlatformMonitoringService {
     const pageSize = Math.min(Math.max(limit, 1), 100);
     const where: Prisma.AuditLogWhereInput = {
       action: { startsWith: "PLATFORM_" },
-      entity: { in: ["PLATFORM_SITE", "PLATFORM_SITE_EVENT", "TENANT_DOMAIN"] },
+      entity: { in: ["PLATFORM_SITE", "PLATFORM_SITE_EVENT", "RESTAURANT_TENANT", "TENANT_DOMAIN"] },
       ...(normalizedQuery
         ? {
             OR: [
