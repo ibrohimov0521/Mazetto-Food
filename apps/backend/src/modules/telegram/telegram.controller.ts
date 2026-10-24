@@ -1,4 +1,4 @@
-import { Body, Controller, Param, Post, UnauthorizedException } from "@nestjs/common";
+import { Body, Controller, Inject, Param, Post, UnauthorizedException } from "@nestjs/common";
 import { runWithTenantScope } from "../../common/auth/tenant-scope";
 import { Public } from "../../common/decorators/public.decorator";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
@@ -26,6 +26,7 @@ export class TelegramController {
   constructor(
     private readonly telegramCustomerAuthService: TelegramCustomerAuthService,
     private readonly telegramOrderNotificationService: TelegramOrderNotificationService,
+    @Inject(TelegramStaffService)
     private readonly telegramStaffService: TelegramStaffService | undefined,
     private readonly tenantContext: TelegramTenantContextService,
   ) {}
