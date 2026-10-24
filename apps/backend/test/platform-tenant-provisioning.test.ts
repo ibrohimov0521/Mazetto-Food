@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { ConflictException, BadRequestException } from "@nestjs/common";
 import { Prisma } from "@prisma/client";
+import { validate } from "class-validator";
+import { CreatePlatformTenantOnboardingDto } from "../src/modules/platform-monitoring/dto/create-platform-tenant-onboarding.dto";
 import { PlatformTenantLifecycleService } from "../src/modules/platform-monitoring/platform-tenant-lifecycle.service";
 
 test("new restaurant is created only as PROVISIONING and audited atomically", async () => {
@@ -91,4 +93,27 @@ test("duplicate restaurant codes become a conflict and do not write an audit row
     ConflictException,
   );
   assert.equal(auditCalls, 0);
+});
+
+
+test("restaurant onboarding reports a helpful branch code validation error", async () => {
+  const dto = Object.assign(new CreatePlatformTenantOnboardingDto(), {
+    code: "BEST",
+    name: "Best Foods",
+    ownerName: "QA Owner",
+    ownerLogin: "qa-owner@example.invalid",
+    ownerPassword: "qa-owner-password-123",
+    branchCode: "BEST FOODS",
+    branchName: "Best Foods",
+    subdomain: "best-foods",
+    enabledFeatureCodes: [],
+  });
+
+  const errors = await validate(dto);
+  const branchCodeError = errors.find((error) => error.property === "branchCode");
+
+  assert.equal(
+    branchCodeError?.constraints?.matches,
+    "Filial kodi 2-32 belgidan iborat bo‘lsin: harf yoki raqam bilan boshlanib tugasin; bo‘shliq o‘rniga _ ishlating.",
+  );
 });

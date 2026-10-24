@@ -3,6 +3,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Check, Clipboard, LoaderCircle, Plus, Save, X } from "lucide-react";
 import { apiRequest } from "../lib/api";
+import {
+  createTenantBranchCodeFromName,
+  normalizeTenantBranchCodeInput,
+  tenantCodePattern,
+  tenantSubdomainPattern,
+} from "../lib/tenant-branch-code.mjs";
 
 type Feature = { code: string; name: string; description: string; group: string; isEnabled: boolean };
 
@@ -31,6 +37,7 @@ export function TenantOnboardingModal({ onClose, onCreated }: { onClose: () => v
     name: "", code: "", phone: "", email: "", address: "", legalName: "", taxId: "",
     ownerName: "", ownerLogin: "", ownerPassword: "", branchName: "", branchCode: "", subdomain: "",
   });
+  const [branchCodeManuallyEdited, setBranchCodeManuallyEdited] = useState(false);
   const [enabled, setEnabled] = useState<string[]>([...defaultFeatures]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -38,6 +45,27 @@ export function TenantOnboardingModal({ onClose, onCreated }: { onClose: () => v
   const [copied, setCopied] = useState("");
 
   function update(field: keyof typeof values, value: string) {
+    if (field === "branchName") {
+      setValues((current) => ({
+        ...current,
+        branchName: value,
+        ...(branchCodeManuallyEdited ? {} : { branchCode: createTenantBranchCodeFromName(value) }),
+      }));
+      return;
+    }
+    if (field === "code") {
+      setValues((current) => ({
+        ...current,
+        code: normalizeTenantBranchCodeInput(value),
+      }));
+      return;
+    }
+    if (field === "branchCode") {
+      const branchCode = normalizeTenantBranchCodeInput(value);
+      setBranchCodeManuallyEdited(Boolean(branchCode));
+      setValues((current) => ({ ...current, branchCode }));
+      return;
+    }
     setValues((current) => ({ ...current, [field]: value }));
   }
 
@@ -107,7 +135,7 @@ export function TenantOnboardingModal({ onClose, onCreated }: { onClose: () => v
         <p className="muted">POS/kassa va smena hisobi asosiy qism bo‘lib qoladi. Tekshiruvlar tugaguncha restoran tayyorlanmoqda holatida yaratiladi.</p>
         <div className="tenant-provision-grid">
           <label>Restoran nomi<input autoFocus value={values.name} onChange={(event) => update("name", event.target.value)} required minLength={2} maxLength={120} /></label>
-          <label>Restoran kodi<input value={values.code} onChange={(event) => update("code", event.target.value.toUpperCase())} required minLength={2} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]" placeholder="OQTEPA" /></label>
+          <label>Restoran kodi<input value={values.code} onChange={(event) => update("code", event.target.value.toUpperCase())} required minLength={2} maxLength={32} pattern={tenantCodePattern} placeholder="OQTEPA" /></label>
           <label>Restoran telefoni<input type="tel" value={values.phone} onChange={(event) => update("phone", event.target.value)} maxLength={40} /></label>
           <label>Restoran emaili<input type="email" value={values.email} onChange={(event) => update("email", event.target.value)} maxLength={254} /></label>
           <label className="tenant-field-wide">Manzil<input value={values.address} onChange={(event) => update("address", event.target.value)} maxLength={240} /></label>
@@ -123,8 +151,8 @@ export function TenantOnboardingModal({ onClose, onCreated }: { onClose: () => v
         <div className="tenant-form-divider"><strong>Birinchi filial va domen</strong><span>Domen: slug.mazetto.uz</span></div>
         <div className="tenant-provision-grid">
           <label>Filial nomi<input value={values.branchName} onChange={(event) => update("branchName", event.target.value)} required minLength={2} maxLength={120} /></label>
-          <label>Filial kodi<input value={values.branchCode} onChange={(event) => update("branchCode", event.target.value.toUpperCase())} required minLength={2} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]" placeholder="MAIN" /></label>
-          <label>Subdomen<input value={values.subdomain} onChange={(event) => update("subdomain", event.target.value.toLowerCase())} required minLength={2} maxLength={63} pattern="[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?" placeholder="oqtepa" autoCapitalize="none" autoCorrect="off" /></label>
+          <label>Filial kodi<input value={values.branchCode} onChange={(event) => update("branchCode", event.target.value)} required minLength={2} maxLength={32} pattern={tenantCodePattern} placeholder="MAIN" aria-describedby="tenant-branch-code-hint" /><small className="muted" id="tenant-branch-code-hint">Kod avtomatik taklif qilinadi; bo‘shliq _ ga almashtiriladi. Masalan: BEST FOODS → BEST_FOODS.</small></label>
+          <label>Subdomen<input value={values.subdomain} onChange={(event) => update("subdomain", event.target.value.toLowerCase())} required minLength={2} maxLength={63} pattern={tenantSubdomainPattern} placeholder="oqtepa" autoCapitalize="none" autoCorrect="off" /></label>
           <div className="tenant-domain-preview"><small>Admin panel manzili</small><strong>https://{values.subdomain || "restoran"}.mazetto.uz</strong></div>
         </div>
         <div className="tenant-form-divider"><strong>Funksiyalar</strong><span>Keyin ham istalgan vaqtda yoqib/o‘chirish mumkin.</span></div>

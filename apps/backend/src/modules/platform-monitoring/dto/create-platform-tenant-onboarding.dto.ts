@@ -5,7 +5,9 @@ export class CreatePlatformTenantOnboardingDto {
   @IsString()
   @MinLength(2)
   @MaxLength(32)
-  @Matches(/^[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]$/)
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]$/, {
+    message: "Restoran kodi 2-32 belgidan iborat bo‘lsin; bo‘shliq o‘rniga _ ishlating.",
+  })
   code!: string;
 
   @IsString()
@@ -55,7 +57,9 @@ export class CreatePlatformTenantOnboardingDto {
   @IsString()
   @MinLength(2)
   @MaxLength(32)
-  @Matches(/^[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]$/)
+  @Matches(/^[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]$/, {
+    message: "Filial kodi 2-32 belgidan iborat bo‘lsin: harf yoki raqam bilan boshlanib tugasin; bo‘shliq o‘rniga _ ishlating.",
+  })
   branchCode!: string;
 
   @IsString()
@@ -75,7 +79,9 @@ export class CreatePlatformTenantOnboardingDto {
 
   @IsString()
   @MinLength(2)
-  @Matches(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])$/)
+  @Matches(/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])$/, {
+    message: "Subdomen kichik lotin harfi yoki raqam bilan boshlanib tugasin; orada harf, raqam yoki tire ishlatish mumkin.",
+  })
   subdomain!: string;
 
   @IsArray()
