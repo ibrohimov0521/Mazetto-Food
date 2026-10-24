@@ -1,6 +1,6 @@
 "use client";
 
-import { Activity, AlertTriangle, ArrowLeft, ArrowRight, Check, ChevronDown, CircleHelp, Clipboard, Download, ExternalLink, Globe2, KeyRound, LayoutDashboard, LogOut, Menu, Plus, RefreshCw, Search, Server, Settings2, ShieldCheck, SlidersHorizontal, UtensilsCrossed, X } from "lucide-react";
+import { Activity, AlertTriangle, Archive, ArrowLeft, ArrowRight, Check, ChevronDown, CircleHelp, Clipboard, Download, ExternalLink, Globe2, KeyRound, LayoutDashboard, LogOut, Menu, Plus, RefreshCw, RotateCcw, Search, Server, Settings2, ShieldCheck, SlidersHorizontal, UtensilsCrossed, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
@@ -10,6 +10,24 @@ import { TenantFeatureEditor, TenantOnboardingModal } from "./tenant-management"
 
 type View = "overview" | "restaurants" | "tenants" | "activity" | "diagnostics" | "audit" | "reports" | "detail";
 type Modal = "create" | "edit" | "rotate" | "toggle" | null;
+type TenantLifecycleAction = "archive" | "restore";
+type TenantLifecyclePreview = {
+  tenant: Pick<TenantRegistryEntry, "id" | "code" | "name" | "status">;
+  records: {
+    branches: number;
+    domains: number;
+    verifiedDomains: number;
+    memberships: number;
+    customers: number;
+    orders: number;
+    payments: number;
+    openOrders: number;
+    platformSites: number;
+  };
+  canArchive: boolean;
+  blockReason: string | null;
+  restoreStatus: Exclude<TenantRegistryEntry["status"], "ARCHIVED"> | null;
+};
 
 const eventLabels: Record<string, string> = {
   ORDER_STATUS_CHANGED: "Buyurtma holati o'zgardi", KITCHEN_TICKET_CHANGED: "Oshxona buyurtmani yangiladi",
@@ -27,6 +45,8 @@ const auditLabels: Record<string, string> = {
   PLATFORM_TENANT_DOMAIN_VERIFIED: "Restoran domeni tasdiqlandi",
   PLATFORM_TENANT_DOMAIN_CHALLENGE_ROTATED: "Domen DNS kodi yangilandi",
   PLATFORM_TENANT_DOMAIN_DISABLED: "Restoran domeni o'chirildi",
+  PLATFORM_TENANT_ARCHIVED: "Restoran arxivlandi",
+  PLATFORM_TENANT_RESTORED: "Restoran tiklandi",
 };
 
 function auditSummary(entry: PlatformAuditEntry) {
@@ -40,6 +60,11 @@ function auditSummary(entry: PlatformAuditEntry) {
   if (entry.action === "PLATFORM_SITE_TOKEN_ROTATED") return `${String(metadata.siteName || "Restoran")} · agent tokeni almashtirildi`;
   if (entry.action === "PLATFORM_EVENT_ACKNOWLEDGED") return `${String(metadata.siteName || "Restoran")} · hodisa kodi: ${String(metadata.code || "—")}`;
   if (entry.entity === "TENANT_DOMAIN") return `${String(metadata.hostname || "Domen")} · tenant: ${String(metadata.tenantId || "—")}`;
+  if (entry.entity === "RESTAURANT_TENANT") {
+    const tenant = String(metadata.name || "Restoran");
+    const code = String(metadata.code || "");
+    return code ? `${tenant} · ${code}` : tenant;
+  }
   return entry.entityId || entry.entity;
 }
 
@@ -158,6 +183,13 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
   const [domainChallenge, setDomainChallenge] = useState<{ tenantId: string; domainId: string; hostname: string; name: string; value: string } | null>(null);
   const [tenantQuery, setTenantQuery] = useState("");
   const [tenantStatus, setTenantStatus] = useState<"all" | TenantRegistryEntry["status"]>("all");
+  const [tenantLifecycleTarget, setTenantLifecycleTarget] = useState<{ tenant: TenantRegistryEntry; action: TenantLifecycleAction } | null>(null);
+  const [tenantLifecyclePreview, setTenantLifecyclePreview] = useState<TenantLifecyclePreview | null>(null);
+  const [tenantLifecycleConfirmation, setTenantLifecycleConfirmation] = useState("");
+  const [tenantLifecycleReason, setTenantLifecycleReason] = useState("");
+  const [tenantLifecycleLoading, setTenantLifecycleLoading] = useState(false);
+  const [tenantLifecycleBusy, setTenantLifecycleBusy] = useState(false);
+  const [tenantLifecycleError, setTenantLifecycleError] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -467,10 +499,13 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
   const filteredTenants = tenants.filter(tenant => {
     const text = `${tenant.name} ${tenant.code} ${tenant.domains.map(domain => domain.hostname).join(" ")}`.toLocaleLowerCase();
     return (!normalizedTenantQuery || text.includes(normalizedTenantQuery))
-      && (tenantStatus === "all" || tenant.status === tenantStatus);
+      && (tenantStatus === "all" ? tenant.status !== "ARCHIVED" : tenant.status === tenantStatus);
   });
+  const visibleTenantCount = tenants.filter(tenant => tenant.status !== "ARCHIVED").length;
+  const archivedTenantCount = tenants.filter(tenant => tenant.status === "ARCHIVED").length;
   const activeTenantCount = tenants.filter(tenant => tenant.status === "ACTIVE").length;
-  const pendingDomainCount = tenants.reduce((count, tenant) => count + tenant.domains.filter(domain => domain.status === "PENDING").length, 0);
+  const pendingDomainCount = tenants.filter(tenant => tenant.status !== "ARCHIVED")
+    .reduce((count, tenant) => count + tenant.domains.filter(domain => domain.status === "PENDING").length, 0);
   const orderReadyBranchCount = tenants.reduce((count, tenant) => count + (tenant.status === "ACTIVE"
     ? tenant.branches.filter(branch => branch.isActive && !branch.isTemporarilyClosed && branch.acceptsOrders).length
     : 0), 0);
@@ -593,6 +628,79 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
     finally { setBusy(false); }
   }
 
+
+  function closeTenantLifecycle() {
+    if (tenantLifecycleBusy) return;
+    setTenantLifecycleTarget(null);
+    setTenantLifecyclePreview(null);
+    setTenantLifecycleConfirmation("");
+    setTenantLifecycleReason("");
+    setTenantLifecycleError("");
+  }
+
+  async function prepareTenantLifecycle(tenant: TenantRegistryEntry, action: TenantLifecycleAction) {
+    setTenantLifecycleTarget({ tenant, action });
+    setTenantLifecyclePreview(null);
+    setTenantLifecycleConfirmation("");
+    setTenantLifecycleReason("");
+    setTenantLifecycleError("");
+    setTenantLifecycleLoading(true);
+    try {
+      const preview = await apiRequest<TenantLifecyclePreview>(
+        `/platform/tenants/${encodeURIComponent(tenant.id)}/archive-preview`,
+      );
+      setTenantLifecyclePreview(preview);
+    } catch (caught) {
+      setTenantLifecycleError(caught instanceof Error ? caught.message : "Restoran holatini yuklab bo'lmadi.");
+    } finally {
+      setTenantLifecycleLoading(false);
+    }
+  }
+
+  async function submitTenantLifecycle(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const target = tenantLifecycleTarget;
+    const preview = tenantLifecyclePreview;
+    if (!target || !preview) return;
+    setTenantLifecycleBusy(true);
+    setTenantLifecycleError("");
+    try {
+      const response = await apiRequest<{ status: TenantRegistryEntry["status"] }>(
+        `/platform/tenants/${encodeURIComponent(target.tenant.id)}/${target.action}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            confirmationCode: tenantLifecycleConfirmation.trim(),
+            reason: tenantLifecycleReason.trim(),
+          }),
+        },
+      );
+      if (target.action === "archive") {
+        setNotice(`${target.tenant.name} arxivlandi. Ma'lumotlar saqlandi va tiklash mumkin.`);
+        if (setupTenantId === target.tenant.id) setSetupTenantId("");
+        if (domainTenantId === target.tenant.id) {
+          setDomainTenantId("");
+          setDomainChallenge(null);
+        }
+        if (membershipTenantId === target.tenant.id) {
+          setMembershipTenantId("");
+          setTenantMemberships([]);
+          setTenantRoleOptions([]);
+        }
+      } else {
+        setNotice(`${target.tenant.name} ${response.status} holatida tiklandi.`);
+      }
+      setTenantLifecycleTarget(null);
+      setTenantLifecyclePreview(null);
+      setTenantLifecycleConfirmation("");
+      setTenantLifecycleReason("");
+      await Promise.all([loadTenants(), loadSites()]);
+    } catch (caught) {
+      setTenantLifecycleError(caught instanceof Error ? caught.message : "Restoran holatini o'zgartirib bo'lmadi.");
+    } finally {
+      setTenantLifecycleBusy(false);
+    }
+  }
 
   async function submitTenantBranchCreation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -763,22 +871,22 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
           <div className="alert" role="status"><ShieldCheck size={18} />Yangi restoran faqat tayyorlash holatida ochiladi. Ikkinchi restoran ishga tushirilmaydi, tenant izolyatsiyasi va ulanishlari tekshiruvdan o‘tmaguncha.</div>
           {tenantsError && <div className="alert" role="alert"><AlertTriangle size={18} />{tenantsError}<button className="button subtle" onClick={() => void loadTenants()}>Qayta urinish</button></div>}
           <div className="metrics">
-            <Metric icon={<Globe2 size={20} />} label="Restoranlar" value={tenants.length} caption="Haqiqiy tenantlar" href="#tenant-list" />
+            <Metric icon={<Globe2 size={20} />} label="Reyestrdagi restoranlar" value={visibleTenantCount} caption={`${archivedTenantCount} ta arxivlangan`} href="#tenant-list" />
             <Metric icon={<ShieldCheck size={20} />} label="Faol" value={activeTenantCount} caption="Faol tenantlar" tone="healthy" href="#tenant-list" />
             <Metric icon={<AlertTriangle size={20} />} label="Domen tekshiruvi" value={pendingDomainCount} caption="DNS tasdig‘i kutilmoqda" tone="warning" href="#tenant-list" />
             <Metric icon={<UtensilsCrossed size={20} />} label="Ochiq filiallar" value={orderReadyBranchCount} caption="Faol va buyurtma qabul qilmoqda" href="#tenant-list" />
           </div>
           <span id="tenant-list" />
-          <div className="toolbar"><label className="search"><Search size={18} /><input placeholder="Nomi, kodi yoki domeni bo‘yicha qidirish" value={tenantQuery} onChange={event => setTenantQuery(event.target.value)} /></label><label className="filter-label"><SlidersHorizontal size={17} /><select value={tenantStatus} onChange={event => setTenantStatus(event.target.value as typeof tenantStatus)} aria-label="Tenant holati bo‘yicha filtr"><option value="all">Barcha holatlar</option><option value="ACTIVE">Faol</option><option value="PROVISIONING">Tayyorlanmoqda</option><option value="SUSPENDED">To‘xtatilgan</option><option value="ARCHIVED">Arxivlangan</option></select><ChevronDown size={15} /></label><span className="result-count">{filteredTenants.length} / {tenants.length} ta tenant</span></div>
-          {tenantsLoading && !tenants.length ? <Skeleton /> : tenants.length ? <div className="table-wrap"><table><thead><tr><th>Restoran</th><th>Holat</th><th>Filiallar</th><th>Faollik</th><th>Sayt / API</th><th>Domenlar</th><th>Qo‘shilgan</th><th>Onboarding</th></tr></thead><tbody>{filteredTenants.length ? filteredTenants.map(tenant => <tr key={tenant.id}>
+          <div className="toolbar"><label className="search"><Search size={18} /><input placeholder="Nomi, kodi yoki domeni bo‘yicha qidirish" value={tenantQuery} onChange={event => setTenantQuery(event.target.value)} /></label><label className="filter-label"><SlidersHorizontal size={17} /><select value={tenantStatus} onChange={event => setTenantStatus(event.target.value as typeof tenantStatus)} aria-label="Tenant holati bo‘yicha filtr"><option value="all">Faol, tayyorlanayotgan va to'xtatilgan</option><option value="ACTIVE">Faol</option><option value="PROVISIONING">Tayyorlanmoqda</option><option value="SUSPENDED">To'xtatilgan</option><option value="ARCHIVED">Arxivlangan</option></select><ChevronDown size={15} /></label><span className="result-count">{filteredTenants.length} / {tenants.length} ta tenant</span></div>
+          {tenantsLoading && !tenants.length ? <Skeleton /> : tenants.length ? <div className="table-wrap"><table><thead><tr><th>Restoran</th><th>Holat</th><th>Filiallar</th><th>Faollik</th><th>Sayt / API</th><th>Domenlar</th><th>Qo‘shilgan</th><th>Onboarding</th><th>Amal</th></tr></thead><tbody>{filteredTenants.length ? filteredTenants.map(tenant => <tr key={tenant.id}>
             <td className="strong-cell">{tenant.name}<small className="report-product">{tenant.code}</small></td>
             <td><Status status={tenant.status === "ACTIVE" ? "ONLINE" : tenant.status === "PROVISIONING" ? "WAITING" : "OFFLINE"} label={{ ACTIVE: "Faol", PROVISIONING: "Tayyorlanmoqda", SUSPENDED: "To‘xtatilgan", ARCHIVED: "Arxivlangan" }[tenant.status]} /></td>
             <td>{tenant.branches.length}<small className="report-product">{tenant.branches.map(branch => `${branch.name}${branch.isActive ? "" : " (faol emas)"}`).join(", ") || "Filial mavjud emas"}</small>{tenant.status === "PROVISIONING" && <button type="button" className="button subtle tenant-domain-open" onClick={() => { setBranchCreateTenantId(tenant.id); setBranchCreateCode(""); setBranchCreateName(""); setBranchCreateAddress(""); setBranchCreatePhone(""); setBranchCreateError(""); }}>Filial qo'shish</button>}</td>
             <td>{tenant.activity ? <><strong>{tenant.activity.openOrders} ochiq buyurtma</strong><small className="report-product">{tenant.activity.onlineDevices} onlayn / {tenant.activity.offlineDevices} oflayn qurilma</small><small className="report-product">{tenant.activity.acceptingOrdersBranches} filial buyurtma qabul qilmoqda</small></> : <span className="muted">Faollik yuborilmagan</span>}</td>
             <td>{tenant.platformSites.length ? tenant.platformSites.map(site => <div key={site.id} className="tenant-monitor-site"><Link className="text-link" href={`/restaurants/${site.id}`}>{site.name}<ArrowRight size={14} /></Link><small className="report-product">{site.productCode}</small><div className="tenant-monitor-service"><span>Sayt</span><Status status={site.isActive ? site.website.status : "DISABLED"} label={site.isActive ? monitoringProbeText(site.website.status) : "Kuzatuv o‘chiq"} /></div><div className="tenant-monitor-service"><span>API</span><Status status={site.isActive ? site.api.status : "DISABLED"} label={site.isActive ? monitoringProbeText(site.api.status) : "Kuzatuv o‘chiq"} /></div><div className="tenant-monitor-service"><span>Agent</span><Status status={site.agentStatus} label={{ ONLINE: "Ulangan", DEGRADED: "Muammo bor", OFFLINE: "Ulanmagan", WAITING: "Kutilmoqda", DISABLED: "Kuzatuv o‘chiq" }[site.agentStatus]} /></div></div>) : <span className="muted">Monitoring ulanmagan</span>}</td>
             <td>{tenant.domains.length ? tenant.domains.map(domain => <div key={domain.id} className="service-line"><span>{domain.hostname}</span><Status status={domain.status === "VERIFIED" ? "ONLINE" : domain.status === "PENDING" ? "WAITING" : "OFFLINE"} label={{ VERIFIED: "Tasdiqlangan", PENDING: "Kutilmoqda", DISABLED: "O‘chirilgan" }[domain.status]} /></div>) : "Domen ulanmagan"}<button type="button" className="button subtle tenant-domain-open" onClick={() => { const nextTenantId = domainTenantId === tenant.id ? "" : tenant.id; setDomainTenantId(nextTenantId); setDomainChallenge(current => current?.tenantId === nextTenantId ? current : null); setDomainError(""); setDomainHostname(""); }}>{domainTenantId === tenant.id ? "Yopish" : "Domenlarni boshqarish"}</button></td>
-            <td>{dateLabel(tenant.createdAt)}</td><td><button type="button" className="button subtle tenant-domain-open" aria-expanded={setupTenantId === tenant.id} onClick={() => setSetupTenantId(current => current === tenant.id ? "" : tenant.id)}>Bosqichlar</button></td>
-          </tr>) : <tr><td colSpan={8} className="muted">Qidiruvga mos tenant topilmadi.</td></tr>}</tbody></table></div> : <Empty>Tenant yozuvi topilmadi.</Empty>}
+            <td>{dateLabel(tenant.createdAt)}</td><td><button type="button" className="button subtle tenant-domain-open" aria-expanded={setupTenantId === tenant.id} onClick={() => setSetupTenantId(current => current === tenant.id ? "" : tenant.id)}>Bosqichlar</button></td><td><button type="button" className="button subtle tenant-domain-open" onClick={() => void prepareTenantLifecycle(tenant, tenant.status === "ARCHIVED" ? "restore" : "archive")}><>{tenant.status === "ARCHIVED" ? <RotateCcw size={14} /> : <Archive size={14} />}{tenant.status === "ARCHIVED" ? "Tiklash" : "Arxivlash"}</></button></td>
+          </tr>) : <tr><td colSpan={9} className="muted">Qidiruvga mos tenant topilmadi.</td></tr>}</tbody></table></div> : <Empty>Tenant yozuvi topilmadi.</Empty>}
           {setupTenant && <section className="section tenant-onboarding-panel">
             <div className="section-head"><div><h2>{setupTenant.name} · onboarding</h2><p className="muted">Har bir qadam haqiqiy reyestr holatidan hisoblanadi. Tayyor bo'lmagan integratsiya yashirilmaydi.</p></div><button className="icon-button" type="button" aria-label="Onboardingni yopish" onClick={() => setSetupTenantId("")}><X size={18} /></button></div>
             <div className="tenant-setup-steps">
@@ -859,6 +967,33 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
       </div>
     </main>
         {branchCreateTenantId && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !branchCreateBusy) setBranchCreateTenantId(""); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="branch-create-title"><div className="modal-head"><div><p className="eyebrow">RESTORAN ONBOARDING</p><h2 id="branch-create-title">Birinchi filial</h2></div><button type="button" className="icon-button" aria-label="Yopish" onClick={() => setBranchCreateTenantId("")} disabled={branchCreateBusy}><X size={20} /></button></div>{branchCreateError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{branchCreateError}</div>}<form className="modal-body form-stack" onSubmit={submitTenantBranchCreation}><label>Filial nomi<input autoFocus value={branchCreateName} onChange={event => setBranchCreateName(event.target.value)} required minLength={2} maxLength={120} /></label><label>Filial kodi<input value={branchCreateCode} onChange={event => setBranchCreateCode(event.target.value)} required minLength={2} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]" placeholder="NORTH_MAIN" autoCapitalize="characters" autoCorrect="off" /></label><label>Manzil<input value={branchCreateAddress} onChange={event => setBranchCreateAddress(event.target.value)} maxLength={240} /></label><label>Telefon<input type="tel" value={branchCreatePhone} onChange={event => setBranchCreatePhone(event.target.value)} maxLength={40} /></label><p className="muted">Filial hozircha faolsiz yaratiladi. Tenant, domen, printer va integratsiyalar tekshirilmaguncha buyurtmalar qabul qilinmaydi.</p><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setBranchCreateTenantId("")} disabled={branchCreateBusy}>Bekor qilish</button><button className="button primary" type="submit" disabled={branchCreateBusy || !branchCreateCode.trim() || !branchCreateName.trim()}><Plus size={16} />{branchCreateBusy ? "Yaratilmoqda..." : "Filial yaratish"}</button></div></form></div></div>}
+        {tenantLifecycleTarget && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !tenantLifecycleBusy) closeTenantLifecycle(); }}>
+          <div className="modal" role="dialog" aria-modal="true" aria-labelledby="tenant-lifecycle-title">
+            <div className="modal-head"><div><p className="eyebrow">TENANT HAYOT SIKLI</p><h2 id="tenant-lifecycle-title">{tenantLifecycleTarget.action === "archive" ? "Restoranni arxivlash" : "Restoranni tiklash"}</h2></div><button type="button" className="icon-button" aria-label="Yopish" onClick={closeTenantLifecycle} disabled={tenantLifecycleBusy}><X size={20} /></button></div>
+            {tenantLifecycleError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{tenantLifecycleError}</div>}
+            {tenantLifecycleLoading && <div className="modal-body"><Skeleton /></div>}
+            {!tenantLifecycleLoading && tenantLifecyclePreview && <form className="modal-body form-stack" onSubmit={submitTenantLifecycle}>
+              <div><strong>{tenantLifecyclePreview.tenant.name}</strong><p className="muted">{tenantLifecyclePreview.tenant.code} · {tenantLifecyclePreview.tenant.status}</p></div>
+              {tenantLifecycleTarget.action === "archive" ? <>
+                <div className="alert" role="status">Domen routingi va restoran a'zolarining kirishi to'xtaydi. Filiallar, buyurtmalar, to'lovlar, mijozlar, foydalanuvchi a'zoliklari va audit yozuvlari saqlanadi. Keyin tiklash mumkin.</div>
+                <div className="tenant-setup-steps" aria-label="Saqlanadigan bog'liq ma'lumotlar">
+                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.branches} ta filial</strong><p>Filial sozlamalari o'chirilmaydi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.domains} ta domen ({tenantLifecyclePreview.records.verifiedDomains} tasi tasdiqlangan)</strong><p>Domen yozuvlari saqlanadi, arxiv davrida routing bloklanadi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.memberships} ta foydalanuvchi a'zoligi</strong><p>Hisoblar va rollar o'chirilmaydi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.customers} ta mijoz</strong><p>Mijoz profillari saqlanadi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.orders} ta buyurtma · {tenantLifecyclePreview.records.payments} ta to'lov</strong><p>Moliyaviy va buyurtma tarixi saqlanadi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.openOrders} ta ochiq buyurtma · {tenantLifecyclePreview.records.platformSites} ta kuzatuv yozuvi</strong><p>Ochiq buyurtma bo'lsa arxivlash bloklanadi.</p></div></div>
+                </div>
+                {!tenantLifecyclePreview.canArchive && <div className="alert" role="alert"><AlertTriangle size={17} />{tenantLifecyclePreview.blockReason || "Bu tenantni arxivlab bo'lmaydi."}</div>}
+              </> : <div className="alert" role="status">{tenantLifecyclePreview.restoreStatus
+                ? `Tenant ${tenantLifecyclePreview.restoreStatus} holatiga qaytariladi. Oldingi domenlar va a'zoliklar tiklanadi.`
+                : "Tiklash uchun ishonchli arxiv auditi topilmadi; bu amal bloklangan."}</div>}
+              <label>Amal sababi<input value={tenantLifecycleReason} onChange={event => setTenantLifecycleReason(event.target.value)} required minLength={10} maxLength={500} placeholder="Masalan: restoran egasi faoliyatni yopishni so'radi" /></label>
+              <label>Restoran kodini aynan kiriting: {tenantLifecyclePreview.tenant.code}<input value={tenantLifecycleConfirmation} onChange={event => setTenantLifecycleConfirmation(event.target.value.toUpperCase())} required maxLength={32} autoCapitalize="characters" autoComplete="off" spellCheck={false} /></label>
+              <div className="modal-actions"><button type="button" className="button subtle" onClick={closeTenantLifecycle} disabled={tenantLifecycleBusy}>Bekor qilish</button><button className="button primary" type="submit" disabled={tenantLifecycleBusy || tenantLifecycleLoading || tenantLifecycleConfirmation.trim() !== tenantLifecyclePreview.tenant.code || tenantLifecycleReason.trim().length < 10 || (tenantLifecycleTarget.action === "archive" ? !tenantLifecyclePreview.canArchive : !tenantLifecyclePreview.restoreStatus)}>{tenantLifecycleBusy ? "Saqlanmoqda..." : tenantLifecycleTarget.action === "archive" ? "Arxivlash" : "Tiklash"}</button></div>
+            </form>}
+          </div>
+        </div>}
         {tenantCreateOpen && <TenantOnboardingModal onClose={() => setTenantCreateOpen(false)} onCreated={() => { setNotice("Restoran va owner tayyorlandi; DNS va routing sozlangach kirish ochiladi."); void loadTenants(); }} />}
     {modal && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !busy) { setModal(null); setProvisioned(null); } }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div className="modal-head"><div><p className="eyebrow">BESTTEAM CONTROL</p><h2 id="modal-title">{modal === "create" ? "Monitoring obyektini qo'shish" : modal === "edit" ? "Monitoring obyektini tahrirlash" : modal === "rotate" ? "Agent tokenini yangilash" : "Kuzatuv holati"}</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => { setModal(null); setProvisioned(null); }}><X size={20} /></button></div>{modalError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{modalError}</div>}{provisioned ? <div className="modal-body"><p className="muted">Token faqat shu oynada ko'rinadi. Uni loyiha serveridagi agent sozlamasiga kiriting.</p><label className="token-field">Agent tokeni<code>{provisioned.agentToken}</code></label><button className="button primary full" onClick={async () => { await navigator.clipboard.writeText(provisioned.agentToken); setNotice("Token nusxalandi."); }}><Clipboard size={16} />Nusxalash</button><button className="button subtle full" onClick={() => { setModal(null); setProvisioned(null); }}>Tayyor</button></div> : modal === "create" || modal === "edit" ? <form className="modal-body form-stack" onSubmit={submitSite}><label>Loyiha nomi<input value={name} onChange={event => setName(event.target.value)} required minLength={2} /></label><label>Loyiha kodi<input value={productCode} onChange={event => setProductCode(event.target.value)} required placeholder="MAZETTO_FOOD" /></label><label>Restoran tenanti<select value={tenantId} onChange={event => setTenantId(event.target.value)} disabled={tenantsLoading}><option value="">Tenantga bog‘lanmagan</option>{tenants.map(tenant => <option key={tenant.id} value={tenant.id}>{tenant.name} ({tenant.code})</option>)}</select><small className="report-product">Faqat mavjud tenantga bog‘lanadi; restoran statusi va ilovalari o‘zgarmaydi.</small></label><label>Sayt manzili<input type="url" value={websiteUrl} onChange={event => setWebsiteUrl(event.target.value)} required placeholder="https://restaurant.uz" /></label><label>API holat manzili<input type="url" value={apiHealthUrl} onChange={event => setApiHealthUrl(event.target.value)} required placeholder="https://api.restaurant.uz/health" /></label><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" type="submit" disabled={busy}><Check size={16} />{busy ? "Saqlanmoqda..." : "Saqlash"}</button></div></form> : <div className="modal-body"><p>{modal === "rotate" ? "Eski agent tokeni darhol ishlamay qoladi. Davom etasizmi?" : selected?.isActive ? "Bu monitoring obyekti uchun kuzatuvni to'xtatasizmi?" : "Bu monitoring obyekti uchun kuzatuvni yoqasizmi?"}</p><div className="modal-actions"><button className="button subtle" onClick={() => setModal(null)}>Bekor qilish</button><button className="button primary" onClick={() => void confirmAction()} disabled={busy}>{busy ? "Bajarilmoqda..." : "Tasdiqlash"}</button></div></div>}</div></div>}
     {passwordModalOpen && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !passwordBusy) setPasswordModalOpen(false); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="password-modal-title"><div className="modal-head"><div><p className="eyebrow">HISOB XAVFSIZLIGI</p><h2 id="password-modal-title">Parolni almashtirish</h2></div><button className="icon-button" aria-label="Yopish" onClick={() => setPasswordModalOpen(false)}><X size={20} /></button></div><form className="modal-body form-stack" onSubmit={changeOwnPassword}><label>Joriy parol<input type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} required /></label><label>Yangi parol<input type="password" autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)} required minLength={12} /></label><label>Yangi parolni takrorlang<input type="password" autoComplete="new-password" value={passwordConfirmation} onChange={event => setPasswordConfirmation(event.target.value)} required minLength={12} /></label>{passwordError && <p className="form-error" role="alert">{passwordError}</p>}<p className="muted">Kamida 12 ta belgi ishlating. Saqlangandan so'ng sessiyalar tugaydi.</p><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setPasswordModalOpen(false)}>Bekor qilish</button><button className="button primary" type="submit" disabled={passwordBusy}><KeyRound size={16} />{passwordBusy ? "Saqlanmoqda..." : "Parolni saqlash"}</button></div></form></div></div>}

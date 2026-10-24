@@ -109,7 +109,14 @@ test("platform audit is owner-only and queries only bounded control-plane action
   assert.deepEqual(query, {
     where: {
       action: { startsWith: "PLATFORM_" },
-      entity: { in: ["PLATFORM_SITE", "PLATFORM_SITE_EVENT", "TENANT_DOMAIN"] },
+      entity: {
+        in: [
+          "PLATFORM_SITE",
+          "PLATFORM_SITE_EVENT",
+          "RESTAURANT_TENANT",
+          "TENANT_DOMAIN",
+        ],
+      },
     },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     skip: 0,

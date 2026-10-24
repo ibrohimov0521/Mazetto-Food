@@ -4,6 +4,7 @@ import { CurrentUser } from "../../common/decorators/current-user.decorator";
 import { Permissions } from "../../common/decorators/permissions.decorator";
 import { Roles } from "../../common/decorators/roles.decorator";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
+import { TenantLifecycleConfirmationDto } from "./dto/tenant-lifecycle-confirmation.dto";
 import { CreateRestaurantTenantDto } from "./dto/create-platform-tenant.dto";
 import { CreatePlatformTenantOnboardingDto } from "./dto/create-platform-tenant-onboarding.dto";
 import { CreatePlatformTenantBranchDto } from "./dto/create-platform-tenant-branch.dto";
@@ -37,6 +38,29 @@ export class PlatformTenantLifecycleController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.tenants.create(dto, user);
+  }
+
+  @Get(":tenantId/archive-preview")
+  archivePreview(@Param("tenantId") tenantId: string) {
+    return this.tenants.archivePreview(tenantId);
+  }
+
+  @Post(":tenantId/archive")
+  archive(
+    @Param("tenantId") tenantId: string,
+    @Body() dto: TenantLifecycleConfirmationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tenants.archive(tenantId, dto, user);
+  }
+
+  @Post(":tenantId/restore")
+  restore(
+    @Param("tenantId") tenantId: string,
+    @Body() dto: TenantLifecycleConfirmationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tenants.restore(tenantId, dto, user);
   }
 
   @Post("onboard")
