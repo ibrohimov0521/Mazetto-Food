@@ -7,7 +7,7 @@ Production bazasi: `e8ae781356fdab6878c28694bad93c556eb11a33` (`main` va masofad
 | Talab | Kod | Avtomatik test | Staging | Real qabul | Production |
 |---|---|---|---|---|---|
 | Yangi restoran ochish va filial kodini normallashtirish | Bajarilgan: forma `BEST FOODS`ni `BEST_FOODS` qiladi; tenant PROVISIONING yaratiladi | Bajarilgan: filial kodi, provisioning va owner oqimi sinovlari | Kutilmoqda: platform panelida yangi sinov tenant yaratish | Kutilmoqda: admin operator va owner bilan tasdiqlash | Audit branch’i chiqarilmagan |
-| Tenantni xavfsiz faollashtirish | Bajarilgan: faqat branch/domain/owner/kerakli Telegram sozlamalaridan keyin; order qabul qilish o‘zi yoqilmaydi | Bajarilgan: blockers, aniq tenant tasdig‘i, audit va asosiy tenant himoyasi | Kutilmoqda: DNS/TLS/routing bilan | Kutilmoqda: owner login va kanal holati | Audit branch’i chiqarilmagan |
+| Tenantni xavfsiz faollashtirish | Bajarilgan: branch/domain/owner/Telegram shartlari va serverdagi alohida xavfsizlik bayrog‘i; default yopiq, TXT sayt marshruti deb olinmaydi | Bajarilgan: yopiq darvoza, readiness blocker, tranzaksiyada qayta tekshiruv, aniq tasdiq va audit | Kutilmoqda: A/B izolatsiyasi, DNS/TLS va POS marshruti | Kutilmoqda: owner login va kanal holati | Audit branch’i chiqarilmagan |
 | Arxivlash va tiklash | Bajarilgan: hard delete yo‘q; ma’lumot saqlanadi, ochiq order/smena va hal qilinmagan pul o‘tkazmasi bloklaydi, audit bilan tiklanadi | Bajarilgan: preview, protection, order blocker, audit va restore sinovlari | Kutilmoqda: faqat alohida sinov tenantida | Kutilmoqda: operatorning warning/restore oqimi | Audit branch’i chiqarilmagan |
 | Sayt domeni → backend tenant → POS order | Bajarilgan: custom host same-origin API proxy; tenant backend’da tekshiriladi | Bajarilgan: host resolver va customer API URL testlari | Kutilmoqda: DNS/TLS va tenantlararo end-to-end order | Kutilmoqda: mijoz mobil brauzeri va POS operatori | Audit branch’i chiqarilmagan |
 | Telegram tenant routing va xodimlar guruhi | Bajarilgan: deep link mapping, tenant chat config, audit va callback tekshiruvi | Bajarilgan: routing, stale mapping fail-closed, feature/config testlari | Kutilmoqda: webhook, guruh va POS oqimi | Kutilmoqda: real Telegram account/group | Audit branch’i chiqarilmagan |
@@ -16,6 +16,7 @@ Production bazasi: `e8ae781356fdab6878c28694bad93c556eb11a33` (`main` va masofad
 ## Release qabulidagi ochiq ishlar
 
 - `pnpm telegram:smoke` bilan bot username, Telegram’dagi webhook manzili, pending update, oxirgi xato va backend health’ni maxfiy token chiqarmasdan tekshirish.
+- Tenant activation darvozasini yopiq qoldirish; uni faqat staging A/B izolatsiyasi va DNS/TLS/POS trusted-host marshruti alohida tekshirilib qabul qilingandan so‘ng platforma operatori ochadi.
 - Staging domain’ida DNS, TLS, routing va forwarded host preservation’ni tasdiqlash. TXT ownership tasdig‘ini live website tekshiruvi deb qabul qilmaslik.
 - Alohida staging tenant orqali customer-web menyu → backend quote → naqd buyurtma → POS → Telegram notification/status oqimini tekshirish.
 - Platform owner panelida activation, arxivlash ogohlantirishi va qayta tiklashni operator bilan qabul qilish.

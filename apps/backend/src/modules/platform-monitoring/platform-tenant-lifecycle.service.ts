@@ -72,11 +72,13 @@ export class PlatformTenantLifecycleService {
       this.prisma.tenantFeature.findUnique({ where: { tenantId_code: { tenantId, code: "TELEGRAM_ORDERS" } }, select: { isEnabled: true } }),
       this.prisma.tenantTelegramConfiguration.findUnique({ where: { tenantId }, select: { staffChatId: true } }),
     ]);
+    const platformActivationEnabled = process.env.PLATFORM_TENANT_ACTIVATION_ENABLED === "true";
     const telegramReady = !telegramFeature?.isEnabled || Boolean(
       (telegramConfiguration?.staffChatId || (tenant.code === "MAZETTO_FOOD" && process.env.TELEGRAM_STAFF_CHAT_ID)) && process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_WEBHOOK_SECRET,
     );
     const blockers = [
       ...(tenant.status !== "PROVISIONING" ? ["Faqat tayyorlanayotgan tenantni faollashtirish mumkin."] : []),
+      ...(!platformActivationEnabled ? ["Platforma xavfsizlik darvozasi yopiq: tenantlararo izolyatsiya va domenning sayt/POS marshruti tekshirilmaguncha faollashtirish mumkin emas."] : []),
       ...(this.isProtectedTenant(tenant) ? ["Mazetto Food asosiy restorani bu amal bilan o'zgartirilmaydi."] : []),
       ...(branches < 1 ? ["Kamida bitta filial yarating."] : []),
       ...(verifiedDomains < 1 ? ["Kamida bitta domenni DNS orqali tasdiqlang."] : []),
@@ -85,7 +87,7 @@ export class PlatformTenantLifecycleService {
     ];
     return {
       tenant: { id: tenant.id, code: tenant.code, name: tenant.name, status: tenant.status },
-      readiness: { branches, verifiedDomains, activeOwners, telegramReady },
+      readiness: { branches, verifiedDomains, activeOwners, telegramReady, platformActivationEnabled },
       blockers,
       canActivate: blockers.length === 0,
     };
@@ -107,6 +109,9 @@ export class PlatformTenantLifecycleService {
       }
       if (this.isProtectedTenant(tenant)) {
         throw new ConflictException("Mazetto Food asosiy restoranini bu amal bilan o'zgartirib bo'lmaydi.");
+      }
+      if (process.env.PLATFORM_TENANT_ACTIVATION_ENABLED !== "true") {
+        throw new ConflictException("Platforma xavfsizlik darvozasi yopiq: tenantlararo izolyatsiya va domenning sayt/POS marshruti tekshirilmaguncha faollashtirish mumkin emas.");
       }
       this.assertConfirmation(tenant.code, dto);
 

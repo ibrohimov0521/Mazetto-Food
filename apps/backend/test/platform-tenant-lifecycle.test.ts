@@ -132,45 +132,75 @@ const confirmation = {
   reason: "Restaurant owner requested closure",
 };
 
+async function withPlatformActivationFlag<T>(enabled: boolean, callback: () => Promise<T>): Promise<T> {
+  const previous = process.env.PLATFORM_TENANT_ACTIVATION_ENABLED;
+  process.env.PLATFORM_TENANT_ACTIVATION_ENABLED = enabled ? "true" : "false";
+  try {
+    return await callback();
+  } finally {
+    if (previous === undefined) delete process.env.PLATFORM_TENANT_ACTIVATION_ENABLED;
+    else process.env.PLATFORM_TENANT_ACTIVATION_ENABLED = previous;
+  }
+}
+
 test("tenant lifecycle routes remain restricted to platform owners", () => {
   assert.deepEqual(Reflect.getMetadata(ROLES_KEY, PlatformTenantLifecycleController), ["PLATFORM_OWNER"]);
   assert.deepEqual(Reflect.getMetadata(PERMISSIONS_KEY, PlatformTenantLifecycleController), [PERMISSIONS.SYSTEM_HEALTH_VIEW]);
 });
 
 test("activation preview lists all prerequisites and stays read-only", async () => {
-  const fixture = lifecycleFixture({ status: "PROVISIONING", branches: 0, verifiedDomains: 0, activeOwners: 0 });
-  const service = new PlatformTenantLifecycleService(fixture.prisma);
-  const preview = await service.activationPreview("tenant-1");
+  await withPlatformActivationFlag(false, async () => {
+    const fixture = lifecycleFixture({ status: "PROVISIONING", branches: 0, verifiedDomains: 0, activeOwners: 0 });
+    const service = new PlatformTenantLifecycleService(fixture.prisma);
+    const preview = await service.activationPreview("tenant-1");
 
-  assert.equal(preview.canActivate, false);
-  assert.deepEqual(preview.readiness, { branches: 0, verifiedDomains: 0, activeOwners: 0, telegramReady: true });
-  assert.equal(preview.blockers.length, 3);
-  assert.equal(fixture.tenant.status, "PROVISIONING");
-  assert.equal(fixture.auditRows.length, 0);
+    assert.equal(preview.canActivate, false);
+    assert.deepEqual(preview.readiness, { branches: 0, verifiedDomains: 0, activeOwners: 0, telegramReady: true, platformActivationEnabled: false });
+    assert.equal(preview.blockers.length, 4);
+    assert.match(preview.blockers.join(" "), /domenning sayt\/POS marshruti/);
+    assert.equal(fixture.tenant.status, "PROVISIONING");
+    assert.equal(fixture.auditRows.length, 0);
+  });
+});
+
+test("activation transaction refuses while the platform security gate is closed", async () => {
+  await withPlatformActivationFlag(false, async () => {
+    const fixture = lifecycleFixture({ status: "PROVISIONING" });
+    const service = new PlatformTenantLifecycleService(fixture.prisma);
+    await assert.rejects(
+      () => service.activate("tenant-1", confirmation, { id: "owner-1" } as never),
+      ConflictException,
+    );
+    assert.equal(fixture.updates.length, 0);
+    assert.equal(fixture.auditRows.length, 0);
+    assert.equal(fixture.tenant.status, "PROVISIONING");
+  });
 });
 
 test("activation requires readiness and exact confirmation, then atomically audits without enabling orders", async () => {
   const fixture = lifecycleFixture({ status: "PROVISIONING" });
   const service = new PlatformTenantLifecycleService(fixture.prisma);
 
-  await assert.rejects(
-    () => service.activate("tenant-1", { ...confirmation, confirmationCode: "OTHER_CAFE" }, { id: "owner-1" } as never),
-    BadRequestException,
-  );
-  assert.equal(fixture.updates.length, 0);
-  assert.equal(fixture.auditRows.length, 0);
+  await withPlatformActivationFlag(true, async () => {
+    await assert.rejects(
+      () => service.activate("tenant-1", { ...confirmation, confirmationCode: "OTHER_CAFE" }, { id: "owner-1" } as never),
+      BadRequestException,
+    );
+    assert.equal(fixture.updates.length, 0);
+    assert.equal(fixture.auditRows.length, 0);
 
-  const result = await service.activate("tenant-1", confirmation, { id: "owner-1" } as never);
-  assert.equal(result.status, "ACTIVE");
-  assert.equal(fixture.tenant.status, "ACTIVE");
-  assert.deepEqual(fixture.transactionOptions, { isolationLevel: "Serializable" });
-  assert.deepEqual(fixture.updates, [{
-    where: { id: "tenant-1", status: "PROVISIONING" },
-    data: { status: "ACTIVE" },
-  }]);
-  assert.equal(fixture.auditRows[0]?.action, "PLATFORM_TENANT_ACTIVATED");
-  assert.equal(fixture.auditRows[0]?.userId, "owner-1");
-  assert.equal((fixture.auditRows[0]?.metadata as Record<string, unknown>)?.branchesRemainOrderDisabled, true);
+    const result = await service.activate("tenant-1", confirmation, { id: "owner-1" } as never);
+    assert.equal(result.status, "ACTIVE");
+    assert.equal(fixture.tenant.status, "ACTIVE");
+    assert.deepEqual(fixture.transactionOptions, { isolationLevel: "Serializable" });
+    assert.deepEqual(fixture.updates, [{
+      where: { id: "tenant-1", status: "PROVISIONING" },
+      data: { status: "ACTIVE" },
+    }]);
+    assert.equal(fixture.auditRows[0]?.action, "PLATFORM_TENANT_ACTIVATED");
+    assert.equal(fixture.auditRows[0]?.userId, "owner-1");
+    assert.equal((fixture.auditRows[0]?.metadata as Record<string, unknown>)?.branchesRemainOrderDisabled, true);
+  });
 });
 
 test("activation refuses to make the protected Mazetto Food tenant mutable", async () => {
