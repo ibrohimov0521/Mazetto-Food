@@ -129,6 +129,10 @@ const envSchema = z.object({
   TELEGRAM_STAFF_CHAT_ID: optionalText,
   TELEGRAM_BOT_URL: optionalText,
   TELEGRAM_CUSTOMER_BOT_URL: optionalText,
+  TELEGRAM_BOT_USERNAME: optionalText,
+
+  // Tenant activation is a manual platform gate; keep it closed by default.
+  PLATFORM_TENANT_ACTIVATION_ENABLED: z.enum(["true", "false"]).default("false").transform((value) => value === "true"),
 
   /*
    * Redis. Ikkalasi ham berilmasa kesh xotiraga tushadi va ilova ishlayveradi

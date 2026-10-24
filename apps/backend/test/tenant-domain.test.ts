@@ -84,7 +84,12 @@ test("matching TXT challenge verifies once, clears its secret hash, and audits",
   let updateData: Record<string, unknown> | undefined;
   let audit: { action: string; entity: string; metadata?: Record<string, unknown> } | undefined;
   const tx = {
-    tenantDomain: { updateMany: async (input: { where: unknown; data: Record<string, unknown> }) => { updateQuery = input.where; updateData = input.data; return { count: 1 }; } },
+    restaurantTenant: { findUnique: async () => ({ status: "PROVISIONING" }) },
+    tenantDomain: {
+      findFirst: async () => ({ id: "domain-1", hostname: "restaurant.uz", status: "VERIFIED" }),
+      count: async () => 1,
+      updateMany: async (input: { where: unknown; data: Record<string, unknown> }) => { updateQuery = input.where; updateData = input.data; return { count: 1 }; },
+    },
     auditLog: { create: async ({ data }: { data: typeof audit }) => { audit = data; return {}; } },
   };
   const prisma = {
@@ -117,7 +122,12 @@ test("rotating a tenant domain challenge is scoped, status-guarded, and returns 
   let updateData: Record<string, unknown> | undefined;
   let audit: { action: string } | undefined;
   const tx = {
-    tenantDomain: { updateMany: async (input: { where: unknown; data: Record<string, unknown> }) => { updateQuery = input.where; updateData = input.data; return { count: 1 }; } },
+    restaurantTenant: { findUnique: async () => ({ status: "PROVISIONING" }) },
+    tenantDomain: {
+      findFirst: async () => ({ id: "domain-1", hostname: "restaurant.uz", status: "VERIFIED" }),
+      count: async () => 2,
+      updateMany: async (input: { where: unknown; data: Record<string, unknown> }) => { updateQuery = input.where; updateData = input.data; return { count: 1 }; },
+    },
     auditLog: { create: async ({ data }: { data: typeof audit }) => { audit = data; return {}; } },
   };
   const prisma = {
@@ -139,7 +149,12 @@ test("domain disable clears the challenge and refuses stale state without writin
   let updateData: Record<string, unknown> | undefined;
   let audits = 0;
   const tx = {
-    tenantDomain: { updateMany: async ({ data }: { where: unknown; data: Record<string, unknown> }) => { updateData = data; return { count: 0 }; } },
+    restaurantTenant: { findUnique: async () => ({ status: "PROVISIONING" }) },
+    tenantDomain: {
+      findFirst: async () => ({ id: "domain-1", hostname: "restaurant.uz", status: "PENDING" }),
+      count: async () => 0,
+      updateMany: async ({ data }: { where: unknown; data: Record<string, unknown> }) => { updateData = data; return { count: 0 }; },
+    },
     auditLog: { create: async () => { audits += 1; return {}; } },
   };
   const prisma = {
@@ -154,12 +169,36 @@ test("domain disable clears the challenge and refuses stale state without writin
 });
 
 
+test("active tenant cannot rotate or disable its last verified domain", async () => {
+  let writes = 0;
+  const tx = {
+    restaurantTenant: { findUnique: async () => ({ status: "ACTIVE" }) },
+    tenantDomain: {
+      findFirst: async () => ({ id: "domain-1", hostname: "restaurant.uz", status: "VERIFIED" }),
+      count: async () => 1,
+      updateMany: async () => { writes += 1; return { count: 1 }; },
+    },
+    auditLog: { create: async () => { writes += 1; return {}; } },
+  };
+  const prisma = { $transaction: async (callback: (client: typeof tx) => Promise<unknown>) => callback(tx) } as unknown as PrismaService;
+  const service = new TenantDomainService(prisma, { resolve: async () => [] } as never);
+
+  await assert.rejects(service.rotateChallenge("tenant-1", "domain-1", owner), ConflictException);
+  await assert.rejects(service.disable("tenant-1", "domain-1", owner), ConflictException);
+  assert.equal(writes, 0);
+});
+
 test("domain disable is tenant-scoped, clears verification material, and audits success", async () => {
   let updateQuery: unknown;
   let updateData: Record<string, unknown> | undefined;
   let audit: { action: string; entity: string } | undefined;
   const tx = {
-    tenantDomain: { updateMany: async (input: { where: unknown; data: Record<string, unknown> }) => { updateQuery = input.where; updateData = input.data; return { count: 1 }; } },
+    restaurantTenant: { findUnique: async () => ({ status: "PROVISIONING" }) },
+    tenantDomain: {
+      findFirst: async () => ({ id: "domain-1", hostname: "restaurant.uz", status: "VERIFIED" }),
+      count: async () => 1,
+      updateMany: async (input: { where: unknown; data: Record<string, unknown> }) => { updateQuery = input.where; updateData = input.data; return { count: 1 }; },
+    },
     auditLog: { create: async ({ data }: { data: typeof audit }) => { audit = data; return {}; } },
   };
   const prisma = {

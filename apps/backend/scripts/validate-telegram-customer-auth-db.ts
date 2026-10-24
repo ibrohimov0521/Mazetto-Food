@@ -428,9 +428,8 @@ async function testWebhookSecurityAndStaffRegression(
   const controller = new TelegramController(
     telegramCustomerAuthService,
     staffService as never,
-    {
-      restaurantTenant: { findMany: async () => [{ id: "tenant-mazetto" }] },
-    } as never,
+    undefined,
+    { resolveCustomerTenantId: async () => "tenant-mazetto", resolveStaffTenantId: async () => "tenant-mazetto" } as never,
   );
 
   await assert.rejects(

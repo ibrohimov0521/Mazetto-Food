@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import type { MetadataRoute } from "next";
 import { getPublicProducts } from "../lib/public-catalog";
 import { displayProducts } from "../lib/customer-display";

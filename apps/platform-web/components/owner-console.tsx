@@ -6,14 +6,14 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { apiRequest, logout, restoreSession, saveSession } from "../lib/api";
 import type { AuthSession, GlobalSiteEvent, PlatformAuditEntry, PlatformAuditPage, PlatformDiagnostic, PlatformHealth, PlatformReports, Probe, ProvisionedAgent, Site, SiteEvent, TenantMembership, TenantRegistryEntry, TenantRoleOption } from "../lib/types";
-import { TenantFeatureEditor, TenantOnboardingModal } from "./tenant-management";
+import { TenantFeatureEditor, TenantOnboardingModal, TenantTelegramEditor } from "./tenant-management";
 
 type View = "overview" | "restaurants" | "tenants" | "activity" | "diagnostics" | "audit" | "reports" | "detail";
 type Modal = "create" | "edit" | "rotate" | "toggle" | null;
-type TenantLifecycleAction = "archive" | "restore";
+type TenantLifecycleAction = "activate" | "archive" | "restore";
 type TenantLifecyclePreview = {
   tenant: Pick<TenantRegistryEntry, "id" | "code" | "name" | "status">;
-  records: {
+  records?: {
     branches: number;
     domains: number;
     verifiedDomains: number;
@@ -22,11 +22,16 @@ type TenantLifecyclePreview = {
     orders: number;
     payments: number;
     openOrders: number;
+    openShifts: number;
+    pendingCashTransfers: number;
     platformSites: number;
   };
-  canArchive: boolean;
-  blockReason: string | null;
-  restoreStatus: Exclude<TenantRegistryEntry["status"], "ARCHIVED"> | null;
+  canArchive?: boolean;
+  blockReason?: string | null;
+  restoreStatus?: Exclude<TenantRegistryEntry["status"], "ARCHIVED"> | null;
+  readiness?: { branches: number; verifiedDomains: number; activeOwners: number; telegramReady?: boolean; platformActivationEnabled?: boolean };
+  blockers?: string[];
+  canActivate?: boolean;
 };
 
 const eventLabels: Record<string, string> = {
@@ -646,8 +651,9 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
     setTenantLifecycleError("");
     setTenantLifecycleLoading(true);
     try {
+      const previewPath = action === "activate" ? "activation-preview" : "archive-preview";
       const preview = await apiRequest<TenantLifecyclePreview>(
-        `/platform/tenants/${encodeURIComponent(tenant.id)}/archive-preview`,
+        `/platform/tenants/${encodeURIComponent(tenant.id)}/${previewPath}`,
       );
       setTenantLifecyclePreview(preview);
     } catch (caught) {
@@ -687,8 +693,10 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
           setTenantMemberships([]);
           setTenantRoleOptions([]);
         }
-      } else {
+      } else if (target.action === "restore") {
         setNotice(`${target.tenant.name} ${response.status} holatida tiklandi.`);
+      } else {
+        setNotice(`${target.tenant.name} faollashtirildi. Filial buyurtma qabul qilish uchun alohida yoqilmaguncha savdo boshlanmaydi.`);
       }
       setTenantLifecycleTarget(null);
       setTenantLifecyclePreview(null);
@@ -868,7 +876,7 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
         </>}
         {view === "tenants" && <>
           <div className="page-heading"><div><p className="eyebrow">ASOSIY MA’LUMOTLAR BAZASI</p><h1>Restoran tenantlari</h1><p className="muted">Haqiqiy tenantlar, filiallar, domenlar va kuzatuvga ulangan saytlar.</p></div><div className="heading-actions"><button className="button primary" onClick={() => setTenantCreateOpen(true)}><Plus size={16} />Yangi restoran</button><button className="button subtle" onClick={() => void loadTenants()} disabled={tenantsLoading}><RefreshCw size={16} />Yangilash</button></div></div>
-          <div className="alert" role="status"><ShieldCheck size={18} />Yangi restoran faqat tayyorlash holatida ochiladi. Ikkinchi restoran ishga tushirilmaydi, tenant izolyatsiyasi va ulanishlari tekshiruvdan o‘tmaguncha.</div>
+          <div className="alert" role="status"><ShieldCheck size={18} />Yangi restoran tayyorlanmoqda holatida ochiladi. Faollashtirish uchun owner hisobi, kamida bitta filial va tasdiqlangan domen kerak; filial buyurtma qabul qilish alohida yoqiladi.</div>
           {tenantsError && <div className="alert" role="alert"><AlertTriangle size={18} />{tenantsError}<button className="button subtle" onClick={() => void loadTenants()}>Qayta urinish</button></div>}
           <div className="metrics">
             <Metric icon={<Globe2 size={20} />} label="Reyestrdagi restoranlar" value={visibleTenantCount} caption={`${archivedTenantCount} ta arxivlangan`} href="#tenant-list" />
@@ -885,19 +893,20 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
             <td>{tenant.activity ? <><strong>{tenant.activity.openOrders} ochiq buyurtma</strong><small className="report-product">{tenant.activity.onlineDevices} onlayn / {tenant.activity.offlineDevices} oflayn qurilma</small><small className="report-product">{tenant.activity.acceptingOrdersBranches} filial buyurtma qabul qilmoqda</small></> : <span className="muted">Faollik yuborilmagan</span>}</td>
             <td>{tenant.platformSites.length ? tenant.platformSites.map(site => <div key={site.id} className="tenant-monitor-site"><Link className="text-link" href={`/restaurants/${site.id}`}>{site.name}<ArrowRight size={14} /></Link><small className="report-product">{site.productCode}</small><div className="tenant-monitor-service"><span>Sayt</span><Status status={site.isActive ? site.website.status : "DISABLED"} label={site.isActive ? monitoringProbeText(site.website.status) : "Kuzatuv o‘chiq"} /></div><div className="tenant-monitor-service"><span>API</span><Status status={site.isActive ? site.api.status : "DISABLED"} label={site.isActive ? monitoringProbeText(site.api.status) : "Kuzatuv o‘chiq"} /></div><div className="tenant-monitor-service"><span>Agent</span><Status status={site.agentStatus} label={{ ONLINE: "Ulangan", DEGRADED: "Muammo bor", OFFLINE: "Ulanmagan", WAITING: "Kutilmoqda", DISABLED: "Kuzatuv o‘chiq" }[site.agentStatus]} /></div></div>) : <span className="muted">Monitoring ulanmagan</span>}</td>
             <td>{tenant.domains.length ? tenant.domains.map(domain => <div key={domain.id} className="service-line"><span>{domain.hostname}</span><Status status={domain.status === "VERIFIED" ? "ONLINE" : domain.status === "PENDING" ? "WAITING" : "OFFLINE"} label={{ VERIFIED: "Tasdiqlangan", PENDING: "Kutilmoqda", DISABLED: "O‘chirilgan" }[domain.status]} /></div>) : "Domen ulanmagan"}<button type="button" className="button subtle tenant-domain-open" onClick={() => { const nextTenantId = domainTenantId === tenant.id ? "" : tenant.id; setDomainTenantId(nextTenantId); setDomainChallenge(current => current?.tenantId === nextTenantId ? current : null); setDomainError(""); setDomainHostname(""); }}>{domainTenantId === tenant.id ? "Yopish" : "Domenlarni boshqarish"}</button></td>
-            <td>{dateLabel(tenant.createdAt)}</td><td><button type="button" className="button subtle tenant-domain-open" aria-expanded={setupTenantId === tenant.id} onClick={() => setSetupTenantId(current => current === tenant.id ? "" : tenant.id)}>Bosqichlar</button></td><td><button type="button" className="button subtle tenant-domain-open" onClick={() => void prepareTenantLifecycle(tenant, tenant.status === "ARCHIVED" ? "restore" : "archive")}><>{tenant.status === "ARCHIVED" ? <RotateCcw size={14} /> : <Archive size={14} />}{tenant.status === "ARCHIVED" ? "Tiklash" : "Arxivlash"}</></button></td>
+            <td>{dateLabel(tenant.createdAt)}</td><td><button type="button" className="button subtle tenant-domain-open" aria-expanded={setupTenantId === tenant.id} onClick={() => setSetupTenantId(current => current === tenant.id ? "" : tenant.id)}>Bosqichlar</button></td><td>{tenant.status === "PROVISIONING" && <button type="button" className="button subtle tenant-domain-open" onClick={() => void prepareTenantLifecycle(tenant, "archive")}><Archive size={14} />Arxivlash</button>}<button type="button" className="button subtle tenant-domain-open" onClick={() => void prepareTenantLifecycle(tenant, tenant.status === "PROVISIONING" ? "activate" : tenant.status === "ARCHIVED" ? "restore" : "archive")}><>{tenant.status === "PROVISIONING" ? <Check size={14} /> : tenant.status === "ARCHIVED" ? <RotateCcw size={14} /> : <Archive size={14} />}{tenant.status === "PROVISIONING" ? "Faollashtirish" : tenant.status === "ARCHIVED" ? "Tiklash" : "Arxivlash"}</></button></td>
           </tr>) : <tr><td colSpan={9} className="muted">Qidiruvga mos tenant topilmadi.</td></tr>}</tbody></table></div> : <Empty>Tenant yozuvi topilmadi.</Empty>}
           {setupTenant && <section className="section tenant-onboarding-panel">
             <div className="section-head"><div><h2>{setupTenant.name} · onboarding</h2><p className="muted">Har bir qadam haqiqiy reyestr holatidan hisoblanadi. Tayyor bo'lmagan integratsiya yashirilmaydi.</p></div><button className="icon-button" type="button" aria-label="Onboardingni yopish" onClick={() => setSetupTenantId("")}><X size={18} /></button></div>
             <div className="tenant-setup-steps">
               <div className="tenant-setup-row"><span className="tenant-setup-icon"><ShieldCheck size={16} /></span><div><strong>Foydalanuvchi a'zoliklari</strong><p>Restoran xodimlarini biriktiring, rollarini va kirish holatini boshqaring.</p></div><button className="button subtle" type="button" aria-expanded={membershipTenantId === setupTenant.id} onClick={() => toggleTenantMemberships(setupTenant.id)}>{membershipTenantId === setupTenant.id ? "A'zolarni yopish" : "A'zolarni boshqarish"}</button></div>
               <div className="tenant-setup-row"><span className={setupTenant.branches.length ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{setupTenant.branches.length ? <Check size={16} /> : <AlertTriangle size={16} />}</span><div><strong>Birinchi filial</strong><p>{setupTenant.branches.length ? `${setupTenant.branches.length} ta filial ro'yxatda; yangi filial savdo yoqilmagan holatda.` : "Filial hali qo'shilmagan."}</p></div>{setupTenant.status === "PROVISIONING" && <button className="button subtle" type="button" onClick={() => { setBranchCreateTenantId(setupTenant.id); setBranchCreateCode(""); setBranchCreateName(""); setBranchCreateAddress(""); setBranchCreatePhone(""); setBranchCreateError(""); }}>Filial qo'shish</button>}</div>
-              <div className="tenant-setup-row"><span className={setupVerifiedDomains ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{setupVerifiedDomains ? <Check size={16} /> : <AlertTriangle size={16} />}</span><div><strong>Domen egaligi</strong><p>{setupVerifiedDomains ? `${setupVerifiedDomains} ta domen DNS TXT orqali tasdiqlangan.` : "Tasdiqlangan domen topilmadi; TXT tekshiruvi hali o'tmagan."}</p></div><button className="button subtle" type="button" onClick={() => { setDomainTenantId(setupTenant.id); setDomainError(""); setDomainHostname(""); setDomainChallenge(current => current?.tenantId === setupTenant.id ? current : null); }}>Domenlarni boshqarish</button></div>
+              <div className="tenant-setup-row"><span className={setupVerifiedDomains ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{setupVerifiedDomains ? <Check size={16} /> : <AlertTriangle size={16} />}</span><div><strong>Domen egaligi</strong><p>{setupVerifiedDomains ? `${setupVerifiedDomains} ta domen DNS TXT orqali tasdiqlangan.` : "Tasdiqlangan domen topilmadi; TXT tekshiruvi hali o'tmagan. TXT tasdig'i DNS, TLS yoki server routing'ni avtomatik tekshirmaydi."}</p></div><button className="button subtle" type="button" onClick={() => { setDomainTenantId(setupTenant.id); setDomainError(""); setDomainHostname(""); setDomainChallenge(current => current?.tenantId === setupTenant.id ? current : null); }}>Domenlarni boshqarish</button></div>
               <div className="tenant-setup-row"><span className={setupTenant.platformSites.length ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{setupTenant.platformSites.length ? <Check size={16} /> : <AlertTriangle size={16} />}</span><div><strong>Monitoringga ulash</strong><p>{setupTenant.platformSites.length ? `${setupTenant.platformSites.length} ta sayt/API monitoring yozuvi bog'langan.` : "Sayt va API monitoringi hali tenantga ulanmagan."}</p></div><Link className="button subtle" href="/restaurants">Restoran monitoringi</Link></div>
               <div className="tenant-setup-row"><span className={setupMonitoringHealthy ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{setupMonitoringHealthy ? <Check size={16} /> : <AlertTriangle size={16} />}</span><div><strong>Ulanishlar sog'lom</strong><p>{setupMonitoringHealthy ? "Sayt, API va monitoring agenti onlayn." : "Sayt, API va agentning barchasi onlayn ekanligi hali tasdiqlanmagan."}</p></div></div>
-              <div className="tenant-setup-row"><span className="tenant-setup-icon blocked"><ShieldCheck size={16} /></span><div><strong>Tenant xavfsizlik darvozasi</strong><p>{setupTenant.status === "ACTIVE" ? "Mavjud aktiv restoran ishlashda davom etadi; yangi tenantlarni faollashtirish A/B izolyatsiya testi o'tmaguncha yopiq." : "A/B tenant izolyatsiyasi va trusted-domain routing yakunlanmagan. Faollashtirish mavjud emas."}</p></div><Status status="WAITING" label="Faollashtirish yopiq" /></div>
+              <div className="tenant-setup-row"><span className={setupTenant.status === "ACTIVE" ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{setupTenant.status === "ACTIVE" ? <Check size={16} /> : <ShieldCheck size={16} />}</span><div><strong>Restoranni ishga tushirish</strong><p>{setupTenant.status === "ACTIVE" ? "Tenant faol. Filial buyurtma qabul qilish, sayt va integratsiyalar tayyorligi alohida tekshiriladi." : "Owner, filial va tasdiqlangan domen tayyor bo'lgach, reyestrdagi Faollashtirish amalidan foydalaning. Savdo avtomatik yoqilmaydi."}</p></div><Status status={setupTenant.status === "ACTIVE" ? "ONLINE" : "WAITING"} label={setupTenant.status === "ACTIVE" ? "Faol" : "Shartlar kutilmoqda"} /></div>
             </div>
           </section>}
+          {setupTenant && <TenantTelegramEditor tenantId={setupTenant.id} />}
           {setupTenant && <TenantFeatureEditor tenantId={setupTenant.id} />}
           {membershipTenant && <section className="section tenant-membership-panel">
             <div className="section-head"><div><h2>{membershipTenant.name} · xodimlar va a'zoliklar</h2><p className="muted">Restoran bo'yicha alohida kirish, rol va a'zolik holati.</p></div><button type="button" className="icon-button" aria-label="A'zolik boshqaruvini yopish" onClick={() => toggleTenantMemberships(membershipTenant.id)}><X size={18} /></button></div>
@@ -969,28 +978,33 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
         {branchCreateTenantId && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !branchCreateBusy) setBranchCreateTenantId(""); }}><div className="modal" role="dialog" aria-modal="true" aria-labelledby="branch-create-title"><div className="modal-head"><div><p className="eyebrow">RESTORAN ONBOARDING</p><h2 id="branch-create-title">Birinchi filial</h2></div><button type="button" className="icon-button" aria-label="Yopish" onClick={() => setBranchCreateTenantId("")} disabled={branchCreateBusy}><X size={20} /></button></div>{branchCreateError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{branchCreateError}</div>}<form className="modal-body form-stack" onSubmit={submitTenantBranchCreation}><label>Filial nomi<input autoFocus value={branchCreateName} onChange={event => setBranchCreateName(event.target.value)} required minLength={2} maxLength={120} /></label><label>Filial kodi<input value={branchCreateCode} onChange={event => setBranchCreateCode(event.target.value)} required minLength={2} maxLength={32} pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,30}[A-Za-z0-9]" placeholder="NORTH_MAIN" autoCapitalize="characters" autoCorrect="off" /></label><label>Manzil<input value={branchCreateAddress} onChange={event => setBranchCreateAddress(event.target.value)} maxLength={240} /></label><label>Telefon<input type="tel" value={branchCreatePhone} onChange={event => setBranchCreatePhone(event.target.value)} maxLength={40} /></label><p className="muted">Filial hozircha faolsiz yaratiladi. Tenant, domen, printer va integratsiyalar tekshirilmaguncha buyurtmalar qabul qilinmaydi.</p><div className="modal-actions"><button type="button" className="button subtle" onClick={() => setBranchCreateTenantId("")} disabled={branchCreateBusy}>Bekor qilish</button><button className="button primary" type="submit" disabled={branchCreateBusy || !branchCreateCode.trim() || !branchCreateName.trim()}><Plus size={16} />{branchCreateBusy ? "Yaratilmoqda..." : "Filial yaratish"}</button></div></form></div></div>}
         {tenantLifecycleTarget && <div className="modal-backdrop" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget && !tenantLifecycleBusy) closeTenantLifecycle(); }}>
           <div className="modal" role="dialog" aria-modal="true" aria-labelledby="tenant-lifecycle-title">
-            <div className="modal-head"><div><p className="eyebrow">TENANT HAYOT SIKLI</p><h2 id="tenant-lifecycle-title">{tenantLifecycleTarget.action === "archive" ? "Restoranni arxivlash" : "Restoranni tiklash"}</h2></div><button type="button" className="icon-button" aria-label="Yopish" onClick={closeTenantLifecycle} disabled={tenantLifecycleBusy}><X size={20} /></button></div>
+            <div className="modal-head"><div><p className="eyebrow">TENANT HAYOT SIKLI</p><h2 id="tenant-lifecycle-title">{tenantLifecycleTarget.action === "activate" ? "Restoranni faollashtirish" : tenantLifecycleTarget.action === "archive" ? "Restoranni arxivlash" : "Restoranni tiklash"}</h2></div><button type="button" className="icon-button" aria-label="Yopish" onClick={closeTenantLifecycle} disabled={tenantLifecycleBusy}><X size={20} /></button></div>
             {tenantLifecycleError && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{tenantLifecycleError}</div>}
             {tenantLifecycleLoading && <div className="modal-body"><Skeleton /></div>}
             {!tenantLifecycleLoading && tenantLifecyclePreview && <form className="modal-body form-stack" onSubmit={submitTenantLifecycle}>
               <div><strong>{tenantLifecyclePreview.tenant.name}</strong><p className="muted">{tenantLifecyclePreview.tenant.code} · {tenantLifecyclePreview.tenant.status}</p></div>
-              {tenantLifecycleTarget.action === "archive" ? <>
+              {tenantLifecycleTarget.action === "activate" ? <>
+                <div className="alert" role="status">Faollashtirish tenant holatini ACTIVE qiladi. Owner kirishi uchun DNS, TLS va server routing ham sozlangan bo‘lishi kerak. Filial buyurtma qabul qilishga avtomatik o'tmaydi.</div>
+                {tenantLifecyclePreview.readiness && <div className="tenant-setup-steps"><div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.readiness.branches} ta filial</strong><p>Kamida bittasi kerak; savdo alohida yoqiladi.</p></div></div><div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.readiness.verifiedDomains} ta tasdiqlangan domen</strong><p>DNS TXT tasdig'i talab qilinadi.</p></div></div><div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.readiness.activeOwners} ta faol owner</strong><p>Faol hisob va SUPER_ADMIN roli talab qilinadi.</p></div></div>{tenantLifecyclePreview.readiness.telegramReady === false && <div className="tenant-setup-row"><div><strong>Telegram tayyor emas</strong><p>Telegram yoqilgan bo‘lsa, bot webhook va xodimlar guruhi sozlamalarini yakunlang.</p></div></div>}{tenantLifecyclePreview.readiness.platformActivationEnabled === false && <div className="tenant-setup-row"><div><strong>Faollashtirish xavfsizlik tekshiruvi yopiq</strong><p>Tenantlararo himoya hamda domenning sayt/POS serveriga yo‘nalishi tekshirilmaguncha owner kirishi ochilmaydi.</p></div></div>}</div>}
+                {tenantLifecyclePreview.blockers?.length ? <div className="alert" role="alert"><AlertTriangle size={17} />{tenantLifecyclePreview.blockers.join(" ")}</div> : null}
+              </> : tenantLifecycleTarget.action === "archive" ? <>
                 <div className="alert" role="status">Domen routingi va restoran a'zolarining kirishi to'xtaydi. Filiallar, buyurtmalar, to'lovlar, mijozlar, foydalanuvchi a'zoliklari va audit yozuvlari saqlanadi. Keyin tiklash mumkin.</div>
                 <div className="tenant-setup-steps" aria-label="Saqlanadigan bog'liq ma'lumotlar">
-                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.branches} ta filial</strong><p>Filial sozlamalari o'chirilmaydi.</p></div></div>
-                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.domains} ta domen ({tenantLifecyclePreview.records.verifiedDomains} tasi tasdiqlangan)</strong><p>Domen yozuvlari saqlanadi, arxiv davrida routing bloklanadi.</p></div></div>
-                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.memberships} ta foydalanuvchi a'zoligi</strong><p>Hisoblar va rollar o'chirilmaydi.</p></div></div>
-                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.customers} ta mijoz</strong><p>Mijoz profillari saqlanadi.</p></div></div>
-                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.orders} ta buyurtma · {tenantLifecyclePreview.records.payments} ta to'lov</strong><p>Moliyaviy va buyurtma tarixi saqlanadi.</p></div></div>
-                  <div className="tenant-setup-row"><div><strong>{tenantLifecyclePreview.records.openOrders} ta ochiq buyurtma · {tenantLifecyclePreview.records.platformSites} ta kuzatuv yozuvi</strong><p>Ochiq buyurtma bo'lsa arxivlash bloklanadi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{(tenantLifecyclePreview.records?.branches ?? 0)} ta filial</strong><p>Filial sozlamalari o'chirilmaydi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{(tenantLifecyclePreview.records?.domains ?? 0)} ta domen ({(tenantLifecyclePreview.records?.verifiedDomains ?? 0)} tasi tasdiqlangan)</strong><p>Domen yozuvlari saqlanadi, arxiv davrida routing bloklanadi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{(tenantLifecyclePreview.records?.memberships ?? 0)} ta foydalanuvchi a'zoligi</strong><p>Hisoblar va rollar o'chirilmaydi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{(tenantLifecyclePreview.records?.customers ?? 0)} ta mijoz</strong><p>Mijoz profillari saqlanadi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{(tenantLifecyclePreview.records?.orders ?? 0)} ta buyurtma · {(tenantLifecyclePreview.records?.payments ?? 0)} ta to'lov</strong><p>Moliyaviy va buyurtma tarixi saqlanadi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{(tenantLifecyclePreview.records?.openOrders ?? 0)} ta ochiq buyurtma · {(tenantLifecyclePreview.records?.openShifts ?? 0)} ta ochiq smena · {(tenantLifecyclePreview.records?.pendingCashTransfers ?? 0)} ta hal qilinmagan pul o'tkazmasi</strong><p>Ochiq buyurtma/smena yoki kutilayotgan/nizoli o'tkazma bo'lsa arxivlash bloklanadi.</p></div></div>
+                  <div className="tenant-setup-row"><div><strong>{(tenantLifecyclePreview.records?.platformSites ?? 0)} ta kuzatuv yozuvi</strong><p>Monitoring tarixi saqlanadi.</p></div></div>
                 </div>
                 {!tenantLifecyclePreview.canArchive && <div className="alert" role="alert"><AlertTriangle size={17} />{tenantLifecyclePreview.blockReason || "Bu tenantni arxivlab bo'lmaydi."}</div>}
               </> : <div className="alert" role="status">{tenantLifecyclePreview.restoreStatus
-                ? `Tenant ${tenantLifecyclePreview.restoreStatus} holatiga qaytariladi. Oldingi domenlar va a'zoliklar tiklanadi.`
+                ? `Tenant ${tenantLifecyclePreview.restoreStatus} holatiga qaytariladi. Oldingi domenlar va a'zoliklar tiklanadi. ACTIVE holat uchun tasdiqlangan domen, faol owner va filial saqlangan bo'lishi kerak.`
                 : "Tiklash uchun ishonchli arxiv auditi topilmadi; bu amal bloklangan."}</div>}
               <label>Amal sababi<input value={tenantLifecycleReason} onChange={event => setTenantLifecycleReason(event.target.value)} required minLength={10} maxLength={500} placeholder="Masalan: restoran egasi faoliyatni yopishni so'radi" /></label>
               <label>Restoran kodini aynan kiriting: {tenantLifecyclePreview.tenant.code}<input value={tenantLifecycleConfirmation} onChange={event => setTenantLifecycleConfirmation(event.target.value.toUpperCase())} required maxLength={32} autoCapitalize="characters" autoComplete="off" spellCheck={false} /></label>
-              <div className="modal-actions"><button type="button" className="button subtle" onClick={closeTenantLifecycle} disabled={tenantLifecycleBusy}>Bekor qilish</button><button className="button primary" type="submit" disabled={tenantLifecycleBusy || tenantLifecycleLoading || tenantLifecycleConfirmation.trim() !== tenantLifecyclePreview.tenant.code || tenantLifecycleReason.trim().length < 10 || (tenantLifecycleTarget.action === "archive" ? !tenantLifecyclePreview.canArchive : !tenantLifecyclePreview.restoreStatus)}>{tenantLifecycleBusy ? "Saqlanmoqda..." : tenantLifecycleTarget.action === "archive" ? "Arxivlash" : "Tiklash"}</button></div>
+              <div className="modal-actions"><button type="button" className="button subtle" onClick={closeTenantLifecycle} disabled={tenantLifecycleBusy}>Bekor qilish</button><button className="button primary" type="submit" disabled={tenantLifecycleBusy || tenantLifecycleLoading || tenantLifecycleConfirmation.trim() !== tenantLifecyclePreview.tenant.code || tenantLifecycleReason.trim().length < 10 || (tenantLifecycleTarget.action === "archive" ? !tenantLifecyclePreview.canArchive : tenantLifecycleTarget.action === "restore" ? !tenantLifecyclePreview.restoreStatus : !tenantLifecyclePreview.canActivate)}>{tenantLifecycleBusy ? "Saqlanmoqda..." : tenantLifecycleTarget.action === "activate" ? "Faollashtirish" : tenantLifecycleTarget.action === "archive" ? "Arxivlash" : "Tiklash"}</button></div>
             </form>}
           </div>
         </div>}

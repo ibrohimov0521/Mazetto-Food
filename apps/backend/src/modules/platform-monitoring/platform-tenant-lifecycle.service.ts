@@ -51,6 +51,124 @@ function isUniqueViolation(error: unknown): boolean {
 export class PlatformTenantLifecycleService {
   constructor(private readonly prisma: PrismaService) {}
 
+  async activationPreview(tenantId: string) {
+    const tenant = await this.prisma.restaurantTenant.findUnique({
+      where: { id: tenantId },
+      select: { id: true, code: true, name: true, status: true, domains: { select: { hostname: true } } },
+    });
+    if (!tenant) throw new NotFoundException("Restoran tenanti topilmadi.");
+
+    const [branches, verifiedDomains, activeOwners, telegramFeature, telegramConfiguration] = await Promise.all([
+      this.prisma.branch.count({ where: { tenantId } }),
+      this.prisma.tenantDomain.count({ where: { tenantId, status: "VERIFIED" } }),
+      this.prisma.tenantMembership.count({
+        where: {
+          tenantId,
+          status: "ACTIVE",
+          user: { isActive: true },
+          roles: { some: { role: { code: "SUPER_ADMIN", isActive: true } } },
+        },
+      }),
+      this.prisma.tenantFeature.findUnique({ where: { tenantId_code: { tenantId, code: "TELEGRAM_ORDERS" } }, select: { isEnabled: true } }),
+      this.prisma.tenantTelegramConfiguration.findUnique({ where: { tenantId }, select: { staffChatId: true } }),
+    ]);
+    const platformActivationEnabled = process.env.PLATFORM_TENANT_ACTIVATION_ENABLED === "true";
+    const telegramReady = !telegramFeature?.isEnabled || Boolean(
+      (telegramConfiguration?.staffChatId || (tenant.code === "MAZETTO_FOOD" && process.env.TELEGRAM_STAFF_CHAT_ID)) && process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_WEBHOOK_SECRET,
+    );
+    const blockers = [
+      ...(tenant.status !== "PROVISIONING" ? ["Faqat tayyorlanayotgan tenantni faollashtirish mumkin."] : []),
+      ...(!platformActivationEnabled ? ["Platforma xavfsizlik darvozasi yopiq: tenantlararo izolyatsiya va domenning sayt/POS marshruti tekshirilmaguncha faollashtirish mumkin emas."] : []),
+      ...(this.isProtectedTenant(tenant) ? ["Mazetto Food asosiy restorani bu amal bilan o'zgartirilmaydi."] : []),
+      ...(branches < 1 ? ["Kamida bitta filial yarating."] : []),
+      ...(verifiedDomains < 1 ? ["Kamida bitta domenni DNS orqali tasdiqlang."] : []),
+      ...(activeOwners < 1 ? ["Faol SUPER_ADMIN a'zoligi va foydalanuvchi hisobini tekshiring."] : []),
+      ...(!telegramReady ? ["Telegram yoqilgan: xodimlar guruhi va server bot webhook sozlamalarini tekshiring."] : []),
+    ];
+    return {
+      tenant: { id: tenant.id, code: tenant.code, name: tenant.name, status: tenant.status },
+      readiness: { branches, verifiedDomains, activeOwners, telegramReady, platformActivationEnabled },
+      blockers,
+      canActivate: blockers.length === 0,
+    };
+  }
+
+  async activate(
+    tenantId: string,
+    dto: TenantLifecycleConfirmationDto,
+    actor: AuthenticatedUser,
+  ) {
+    return this.prisma.$transaction(async (tx) => {
+      const tenant = await tx.restaurantTenant.findUnique({
+        where: { id: tenantId },
+        select: { id: true, code: true, name: true, status: true, domains: { select: { hostname: true } } },
+      });
+      if (!tenant) throw new NotFoundException("Restoran tenanti topilmadi.");
+      if (tenant.status !== "PROVISIONING") {
+        throw new ConflictException("Faqat tayyorlanayotgan tenantni faollashtirish mumkin.");
+      }
+      if (this.isProtectedTenant(tenant)) {
+        throw new ConflictException("Mazetto Food asosiy restoranini bu amal bilan o'zgartirib bo'lmaydi.");
+      }
+      if (process.env.PLATFORM_TENANT_ACTIVATION_ENABLED !== "true") {
+        throw new ConflictException("Platforma xavfsizlik darvozasi yopiq: tenantlararo izolyatsiya va domenning sayt/POS marshruti tekshirilmaguncha faollashtirish mumkin emas.");
+      }
+      this.assertConfirmation(tenant.code, dto);
+
+      const [branches, verifiedDomains, activeOwners] = await Promise.all([
+        tx.branch.count({ where: { tenantId } }),
+        tx.tenantDomain.count({ where: { tenantId, status: "VERIFIED" } }),
+        tx.tenantMembership.count({
+          where: {
+            tenantId,
+            status: "ACTIVE",
+            user: { isActive: true },
+            roles: { some: { role: { code: "SUPER_ADMIN", isActive: true } } },
+          },
+        }),
+      ]);
+      if (branches < 1) throw new ConflictException("Faollashtirishdan oldin kamida bitta filial yarating.");
+      if (verifiedDomains < 1) throw new ConflictException("Faollashtirishdan oldin kamida bitta domenni DNS orqali tasdiqlang.");
+      if (activeOwners < 1) throw new ConflictException("Faollashtirishdan oldin faol SUPER_ADMIN egasini tekshiring.");
+      const [telegramFeature, telegramConfiguration] = await Promise.all([
+        tx.tenantFeature.findUnique({ where: { tenantId_code: { tenantId, code: "TELEGRAM_ORDERS" } }, select: { isEnabled: true } }),
+        tx.tenantTelegramConfiguration.findUnique({ where: { tenantId }, select: { staffChatId: true } }),
+      ]);
+      if (telegramFeature?.isEnabled && (!(telegramConfiguration?.staffChatId || (tenant.code === "MAZETTO_FOOD" && process.env.TELEGRAM_STAFF_CHAT_ID)) || !process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_WEBHOOK_SECRET)) {
+        throw new ConflictException("Telegram yoqilgan: xodimlar guruhi va server bot webhook sozlamalarini tekshiring.");
+      }
+
+      const updated = await tx.restaurantTenant.updateMany({
+        where: { id: tenantId, status: "PROVISIONING" },
+        data: { status: "ACTIVE" },
+      });
+      if (updated.count !== 1) {
+        throw new ConflictException("Restoran holati o'zgargan; reyestrni yangilab qayta urinib ko'ring.");
+      }
+      await writeAuditLog(tx, {
+        tenantId,
+        userId: actor.id,
+        action: "PLATFORM_TENANT_ACTIVATED",
+        entity: "RESTAURANT_TENANT",
+        entityId: tenantId,
+        metadata: {
+          tenantId,
+          code: tenant.code,
+          name: tenant.name,
+          reason: dto.reason.trim(),
+          readiness: { branches, verifiedDomains, activeOwners },
+          branchesRemainOrderDisabled: true,
+        },
+      });
+      return { id: tenant.id, code: tenant.code, name: tenant.name, status: "ACTIVE" as const };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch((error: unknown) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+        throw new ConflictException("Restoran sozlamalari o'zgargan; reyestrni yangilab qayta tekshiring.");
+      }
+      throw error;
+    });
+  }
+
   async archivePreview(tenantId: string) {
     return this.prisma.$transaction(async (tx) => {
       const tenant = await tx.restaurantTenant.findUnique({
@@ -83,9 +201,7 @@ export class PlatformTenantLifecycleService {
         ? "Mazetto Food asosiy restorani arxivlanmaydi."
         : tenant.status === "ARCHIVED"
           ? null
-          : records.openOrders > 0
-            ? "Avval ochiq buyurtmalarni yakunlang yoki bekor qiling."
-            : null;
+          : this.archiveBlockReason(records);
 
       return {
         tenant: {
@@ -129,11 +245,8 @@ export class PlatformTenantLifecycleService {
       const previousStatus = tenant.status;
 
       const records = await this.lifecycleRecordCounts(tx, tenantId);
-      if (records.openOrders > 0) {
-        throw new ConflictException(
-          "Arxivlashdan oldin ochiq buyurtmalarni yakunlang yoki bekor qiling.",
-        );
-      }
+      const blockReason = this.archiveBlockReason(records);
+      if (blockReason) throw new ConflictException(blockReason);
 
       const updated = await tx.restaurantTenant.updateMany({
         where: { id: tenantId, status: previousStatus },
@@ -215,6 +328,25 @@ export class PlatformTenantLifecycleService {
           "Tiklash uchun arxiv amali tarixi topilmadi; platform yordamiga murojaat qiling.",
         );
       }
+      if (restoredStatus === "ACTIVE") {
+        const [verifiedDomains, activeOwners, branches] = await Promise.all([
+          tx.tenantDomain.count({ where: { tenantId, status: "VERIFIED" } }),
+          tx.tenantMembership.count({
+            where: {
+              tenantId,
+              status: "ACTIVE",
+              user: { isActive: true },
+              roles: { some: { role: { code: "SUPER_ADMIN", isActive: true } } },
+            },
+          }),
+          tx.branch.count({ where: { tenantId } }),
+        ]);
+        if (verifiedDomains < 1 || activeOwners < 1 || branches < 1) {
+          throw new ConflictException(
+            "Faol holatga tiklash uchun tasdiqlangan domen, faol egasi va kamida bitta filial kerak.",
+          );
+        }
+      }
 
       const updated = await tx.restaurantTenant.updateMany({
         where: { id: tenantId, status: "ARCHIVED" },
@@ -264,6 +396,8 @@ export class PlatformTenantLifecycleService {
       orders,
       payments,
       openOrders,
+      openShifts,
+      pendingCashTransfers,
       platformSites,
     ] = await Promise.all([
       tx.branch.count({ where: { tenantId } }),
@@ -276,6 +410,10 @@ export class PlatformTenantLifecycleService {
       tx.order.count({
         where: { tenantId, status: { in: activeOrderStatuses } },
       }),
+      tx.shift.count({ where: { status: "OPEN", branch: { tenantId } } }),
+      tx.cashTransfer.count({
+        where: { status: { in: ["PENDING", "DISPUTED"] }, branch: { tenantId } },
+      }),
       tx.platformSite.count({ where: { tenantId } }),
     ]);
     return {
@@ -287,8 +425,17 @@ export class PlatformTenantLifecycleService {
       orders,
       payments,
       openOrders,
+      openShifts,
+      pendingCashTransfers,
       platformSites,
     };
+  }
+
+  private archiveBlockReason(records: { openOrders: number; openShifts: number; pendingCashTransfers: number }): string | null {
+    if (records.openOrders > 0) return "Arxivlashdan oldin ochiq buyurtmalarni yakunlang yoki bekor qiling.";
+    if (records.openShifts > 0) return "Arxivlashdan oldin barcha ochiq kassa smenalarini yoping.";
+    if (records.pendingCashTransfers > 0) return "Arxivlashdan oldin kutilayotgan yoki nizoli pul o'tkazmalarini hal qiling.";
+    return null;
   }
 
   private isProtectedTenant(tenant: {

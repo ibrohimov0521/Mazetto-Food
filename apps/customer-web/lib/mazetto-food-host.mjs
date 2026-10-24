@@ -18,3 +18,20 @@ export function isMazettoFoodHost(hostname) {
     normalizedHostname.endsWith("." + platformRootDomain)
   );
 }
+
+export function resolveCustomerApiBaseUrl({ hostname, nodeEnv, configuredUrl, isBrowser }) {
+  const normalizedHostname = (hostname || "").trim().toLowerCase().replace(/\.$/, "");
+  const tenantApiBaseUrl = normalizedHostname
+    ? getMazettoFoodCustomerApiBaseUrl(normalizedHostname)
+    : null;
+
+  if (isBrowser && nodeEnv === "production") {
+    // The request host is the tenant identity. Same-origin proxying preserves it
+    // for verified external restaurant domains and Mazetto subdomains alike.
+    return tenantApiBaseUrl || "/api/v1";
+  }
+  if (isMazettoFoodHost(normalizedHostname)) return "/api/v1";
+  if (configuredUrl) return configuredUrl.trim().replace(/\/$/, "");
+  const developmentHost = isBrowser && normalizedHostname ? normalizedHostname : "127.0.0.1";
+  return `http://${developmentHost}:4000/api/v1`;
+}

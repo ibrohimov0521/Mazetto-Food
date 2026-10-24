@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Check, Clipboard, LoaderCircle, Plus, Save, X } from "lucide-react";
+import { Check, Clipboard, ExternalLink, LoaderCircle, Plus, Save, X } from "lucide-react";
 import { apiRequest } from "../lib/api";
 import {
   createTenantBranchCodeFromName,
@@ -218,6 +218,78 @@ export function TenantFeatureEditor({ tenantId }: { tenantId: string }) {
       <div className="tenant-core-feature"><Check size={16} /><span><strong>Kassa, POS, smena va buyurtmalar tarixi</strong><small>Asosiy imkoniyatlar. O‘chirib bo‘lmaydi.</small></span></div>
       <div className="tenant-feature-groups">{groups.map((group) => <fieldset className="tenant-feature-group" key={group}><legend>{group}</legend>{features.filter((feature) => feature.group === group).map((feature) => <label className="tenant-feature-option" key={feature.code}><input type="checkbox" checked={draft.includes(feature.code)} onChange={(event) => toggle(feature.code, event.target.checked)} /><span><strong>{feature.name}</strong><small>{feature.description}</small></span></label>)}</fieldset>)}</div>
       <p className="muted">Saytni yoqish bilan hosting, DNS, server routing va TLS avtomatik yaratilmaydi.</p>
+    </>}
+  </section>;
+}
+
+
+type TenantTelegramSettings = {
+  tenant: { id: string; code: string; status: string };
+  telegramOrdersEnabled: boolean;
+  staffChatId: string;
+  updatedAt: string | null;
+  customerBotUsername: string | null;
+  customerBotLink: string | null;
+  botConfigured: boolean;
+  staffNotificationsReady: boolean;
+  ready: boolean;
+};
+
+export function TenantTelegramEditor({ tenantId }: { tenantId: string }) {
+  const [settings, setSettings] = useState<TenantTelegramSettings | null>(null);
+  const [staffChatId, setStaffChatId] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    void apiRequest<TenantTelegramSettings>(`/platform/tenants/${encodeURIComponent(tenantId)}/telegram`)
+      .then((loaded) => {
+        if (!active) return;
+        setSettings(loaded);
+        setStaffChatId(loaded.staffChatId);
+      })
+      .catch((caught) => {
+        if (active) setError(caught instanceof Error ? caught.message : "Telegram sozlamalari yuklanmadi.");
+      })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [tenantId]);
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    setNotice("");
+    try {
+      const updated = await apiRequest<TenantTelegramSettings>(`/platform/tenants/${encodeURIComponent(tenantId)}/telegram`, {
+        method: "PUT",
+        body: JSON.stringify({ staffChatId: staffChatId.trim() || null }),
+      });
+      setSettings(updated);
+      setStaffChatId(updated.staffChatId);
+      setNotice("Telegram sozlamalari saqlandi va auditga yozildi.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Telegram sozlamalari saqlanmadi.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const status = settings?.ready ? "Konfiguratsiya to‘liq" : settings?.staffChatId ? "Tekshiruv kutilmoqda" : "Sozlanmagan";
+  return <section className="section tenant-feature-panel">
+    <div className="section-head"><div><h2>Telegram buyurtma kanali</h2><p className="muted">Umumiy Telegram bot backend’ga ulanadi; buyurtma va mijoz konteksti restoran domeni/kodi bo‘yicha serverda ajratiladi.</p></div><span className="section-meta">{loading ? "Yuklanmoqda..." : status}</span></div>
+    {error && <div className="alert" role="alert">{error}</div>}
+    {notice && <div className="alert" role="status">{notice}</div>}
+    {loading ? <p className="muted">Telegram sozlamalari yuklanmoqda...</p> : settings && <>
+      <div className="tenant-setup-steps">
+        <div className="tenant-setup-row"><span className={settings.customerBotLink ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{settings.customerBotLink ? <Check size={16} /> : <X size={16} />}</span><div><strong>Mijoz botiga kirish</strong><p>{settings.customerBotLink ? `Bot: @${settings.customerBotUsername}` : "Bot username serverda sozlanmagan."}</p></div>{settings.customerBotLink && <a className="button subtle" href={settings.customerBotLink} target="_blank" rel="noreferrer"><ExternalLink size={15} />Bot havolasi</a>}</div>
+        <div className="tenant-setup-row"><span className={settings.botConfigured ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{settings.botConfigured ? <Check size={16} /> : <X size={16} />}</span><div><strong>Server bot sozlamalari</strong><p>{settings.botConfigured ? "Bot tokeni va webhook siri serverda bor. Webhook manzili Telegram’da alohida read-only smoke bilan tekshiriladi." : "Bot tokeni yoki webhook siri serverda sozlanmagan."}</p></div></div>
+        <div className="tenant-setup-row"><span className={settings.staffNotificationsReady ? "tenant-setup-icon ready" : "tenant-setup-icon pending"}>{settings.staffNotificationsReady ? <Check size={16} /> : <X size={16} />}</span><div><strong>Xodimlar buyurtma guruhi</strong><p>Guruhga mijoz botini qo‘shing, /staffid yuboring va qaytgan Chat ID ni kiriting. Bot guruhda xabar yubora olishi kerak.</p></div></div>
+      </div>
+      <label className="tenant-chat-id-field">Xodimlar guruhi Chat ID<input value={staffChatId} onChange={(event) => setStaffChatId(event.target.value)} inputMode="numeric" placeholder="-1001234567890" maxLength={20} /></label>
+      <div className="section-head"><p className="muted">Telegram buyurtmalari: {settings.telegramOrdersEnabled ? "yoqilgan" : "o‘chiq"}. Yoqishdan oldin xodimlar guruhi sozlanadi; customer bot havolasi t_{settings.tenant.code.toLowerCase()} kodini olib yuradi.</p><button className="button primary" type="button" onClick={() => void save()} disabled={saving || staffChatId.trim() === settings.staffChatId}><Save size={15} />{saving ? "Saqlanmoqda..." : "Telegram sozlamasini saqlash"}</button></div>
     </>}
   </section>;
 }

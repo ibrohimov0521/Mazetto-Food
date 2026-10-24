@@ -1,53 +1,27 @@
-# MAZETTO FOOD Customer Web Specification
+# MAZETTO FOOD mijozlar sayti
 
-This document describes future customer web capabilities at a high level. It does not define screens, UI implementation, database models, or checkout logic.
+Holat: 2026-10-24. Bu hujjat amaldagi arxitekturani va hali staging/real qabul talab qiladigan qismlarni ajratadi.
 
-## Purpose
+## Arxitektura
 
-The Customer Web application will provide a responsive menu browsing and ordering experience for customers. It must work well on mobile, tablet, and desktop.
+- Bitta `customer-web` ilovasi Mazetto Food va keyingi restoran domenlari uchun ishlaydi; har tenantga alohida frontend build talab qilinmaydi.
+- Brauzer so‘rovlari yagona backend va Order Engine’ga boradi. `mazettofood.uz` oilasida sozlangan API manzili ishlatiladi; boshqa production tenant domenlari same-origin `/api/v1` yo‘li orqali Next.js proxy’dan o‘tadi.
+- Backend tenantni frontend yuborgan `tenantId`dan emas, ro‘yxatdan o‘tgan va tasdiqlangan domen hamda ishonchli proxy hostidan aniqlaydi. Proxy sozlamasi noto‘g‘ri bo‘lsa, so‘rov boshqa restoranga tushmasdan yopiq rad etilishi kerak.
+- Menyu va umumiy sahifa ma’lumotlari qisqa muddat kesh qilinadi. Quote, filial mavjudligi, login va checkout keshga olinmaydi.
+- Narx, chegirma, mavjudlik, filial, yetkazish to‘lovi va buyurtma holatini backend belgilaydi. Buyurtmaning yagona raqami va holati POS bilan bir xil.
+- Hozirgi mijoz to‘lovi siyosati naqd pul. Click, Payme, karta va QR faol to‘lov usuli sifatida ko‘rsatilmasin.
 
-Customer Web orders must use the same central backend, central database, canonical order numbers, and central Order Engine as POS and Telegram orders.
+## Tenant domenini ulash
 
-## Future Capabilities
+1. Platform admin tenant va domen yozuvini yaratadi; TXT yozuvi domen egaligini tasdiqlaydi.
+2. DNS, TLS sertifikati, customer-web host routing’i va backend proxy hostni saqlashi alohida sozlanadi. TXT tekshiruvi bularni o‘zi bajarmaydi.
+3. Backend faqat ACTIVE tenant va VERIFIED domen uchun tenant kontekstini beradi. Ko‘proq aniq subdomen o‘chirilgan bo‘lsa, tasdiqlangan ota-domen orqali ruxsatni meros qilib olmasligi kerak.
+4. Restoran ACTIVE bo‘lishi buyurtma qabul qilishni o‘zi yoqmaydi. Filial faolligi, `acceptsOrders`, `CUSTOMER_WEB` va `WEB_ORDERS` alohida shartlardir.
 
-The future customer web experience should support:
+## Buyurtma yo‘li
 
-- browse menu without login
-- categories
-- product detail
-- cart
-- quantity controls
-- modifiers/add-ons
-- recommendations before checkout
-- registration/login
-- Telegram-assisted verification code
-- saved addresses
-- delivery
-- pickup
-- nearest branch suggestion
-- payment selection
-- order history
-- order status
-- profile
-- responsive mobile UI
+Mijoz menyuni ko‘radi, savatni shakllantiradi, backend’dan quote oladi va checkout yuboradi. Checkout narxni qayta hisoblaydi, tenant/filialni tekshiradi, takroriy yuborishni idempotent boshqaradi va bitta order yaratadi. Buyurtma POS/admin ro‘yxatida `WEB` manbasi bilan ko‘rinadi. To‘lov, inventar va order status qoidalarining egasi backend bo‘lib qoladi.
 
-## Order Integration
+## Qabul holati
 
-Customer Web must not contain authoritative business logic for orders, payments, menu availability, discounts, or branch routing.
-
-The frontend may guide the user experience, but final validation and business decisions must happen on the backend.
-
-Every Customer Web order must have:
-
-- source WEB
-- branch
-- canonical order number
-- order status
-- payment status
-- auditable timestamps
-
-## Responsiveness
-
-The customer web interface must support desktop, tablet, and mobile.
-
-Critical customer actions must not be desktop-only. No customer web page should cause horizontal overflow on mobile.
+Kod va avtomatik host/API sinovlari audit branch’ida bajarilmoqda. Staging’da har bir yangi tenant hostidan menyu → quote → order → POS oqimi, tenantlararo ajratish, DNS/TLS va mobil brauzer tekshirilmaguncha biznes oqimi “to‘liq qabul qilindi” hisoblanmaydi. Qolgan bosqichlar [2026-10-24 qabul jadvalida](./audit/ACCEPTANCE_MATRIX_2026-10-24.md) yuritiladi.
