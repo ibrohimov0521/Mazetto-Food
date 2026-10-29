@@ -365,6 +365,7 @@ export function TenantOwnerPasswordResetModal({
         <button className="icon-button" type="button" aria-label="Yopish" onClick={onClose} disabled={busy}><X size={20} /></button>
       </div>
       {error && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{error}</div>}
+      {tenantStatus !== "ACTIVE" && <div className="alert" role="note" style={{ margin: "12px 22px 0" }}><ShieldCheck size={17} /><span>{tenantStatus === "PROVISIONING" ? "Restoran tayyorlanmoqda. Parolni tiklash restoran paneliga kirishni hozircha ochmaydi." : tenantStatus === "SUSPENDED" ? "Restoran vaqtincha to'xtatilgan. Parol yangilangani bilan kirish qayta ochilmaydi." : "Restoran arxivlangan. Parol yangilangani bilan kirish qayta ochilmaydi."}</span></div>}
       {savedPassword ? <div className="modal-body form-stack owner-password-result">
         <div className="notice" role="status"><Check size={17} />{accountName} hisobiga yangi parol o‘rnatildi.</div>
         <p className="muted">Bu parol faqat shu oynada ko‘rsatiladi. Uni egasiga xavfsiz yo‘l bilan yuboring. Shu loginning barcha faol sessiyalari, jumladan boshqa restoranlardagi sessiyalari ham tugatiladi. Restoran holati o‘zgarmaydi.</p>
