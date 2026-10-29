@@ -10,12 +10,14 @@ import { CreatePlatformTenantOnboardingDto } from "./dto/create-platform-tenant-
 import { CreatePlatformTenantBranchDto } from "./dto/create-platform-tenant-branch.dto";
 import { UpdatePlatformTenantFeaturesDto } from "./dto/update-platform-tenant-features.dto";
 import { UpdatePlatformTenantTelegramDto } from "./dto/update-platform-tenant-telegram.dto";
+import { ResetPlatformTenantOwnerPasswordDto } from "./dto/reset-platform-tenant-owner-password.dto";
 import { PlatformTenantBranchService } from "./platform-tenant-branch.service";
 import { PlatformTenantFeatureService } from "./platform-tenant-feature.service";
 import { PlatformTenantLifecycleService } from "./platform-tenant-lifecycle.service";
 import { PlatformTenantMembershipService } from "./platform-tenant-membership.service";
 import { PlatformTenantProvisioningService } from "./platform-tenant-provisioning.service";
 import { PlatformTenantTelegramService } from "./platform-tenant-telegram.service";
+import { PlatformTenantOwnerPasswordService } from "./platform-tenant-owner-password.service";
 import {
   CreatePlatformTenantMembershipDto,
   UpdatePlatformTenantMembershipRolesDto,
@@ -33,6 +35,7 @@ export class PlatformTenantLifecycleController {
     private readonly provisioning: PlatformTenantProvisioningService,
     private readonly features: PlatformTenantFeatureService,
     private readonly telegram: PlatformTenantTelegramService,
+    private readonly ownerPasswords: PlatformTenantOwnerPasswordService,
   ) {}
 
   @Post()
@@ -117,6 +120,16 @@ export class PlatformTenantLifecycleController {
   @Get(":tenantId/memberships")
   listMemberships(@Param("tenantId") tenantId: string) {
     return this.memberships.list(tenantId);
+  }
+
+  @Post(":tenantId/owner-accounts/:userId/password-reset")
+  resetOwnerPassword(
+    @Param("tenantId") tenantId: string,
+    @Param("userId") userId: string,
+    @Body() dto: ResetPlatformTenantOwnerPasswordDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.ownerPasswords.resetPassword(tenantId, userId, dto, user);
   }
 
   @Post(":tenantId/memberships")

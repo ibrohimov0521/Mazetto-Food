@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Check, Clipboard, ExternalLink, LoaderCircle, Plus, Save, X } from "lucide-react";
+import { Check, Clipboard, ExternalLink, LoaderCircle, Plus, Save, ShieldCheck, X } from "lucide-react";
 import { apiRequest } from "../lib/api";
+import type { TenantMembership, TenantRegistryEntry } from "../lib/types";
 import {
   createTenantBranchCodeFromName,
   normalizeTenantBranchCodeInput,
@@ -292,4 +293,92 @@ export function TenantTelegramEditor({ tenantId }: { tenantId: string }) {
       <div className="section-head"><p className="muted">Telegram buyurtmalari: {settings.telegramOrdersEnabled ? "yoqilgan" : "o‘chiq"}. Yoqishdan oldin xodimlar guruhi sozlanadi; customer bot havolasi t_{settings.tenant.code.toLowerCase()} kodini olib yuradi.</p><button className="button primary" type="button" onClick={() => void save()} disabled={saving || staffChatId.trim() === settings.staffChatId}><Save size={15} />{saving ? "Saqlanmoqda..." : "Telegram sozlamasini saqlash"}</button></div>
     </>}
   </section>;
+}
+
+
+export function TenantOwnerPasswordResetModal({
+  tenantId,
+  target,
+  tenantStatus,
+  onClose,
+  onReset,
+}: {
+  tenantId: string;
+  target: TenantMembership;
+  tenantStatus: TenantRegistryEntry["status"];
+  onClose: () => void;
+  onReset: () => void;
+}) {
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [savedPassword, setSavedPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [copied, setCopied] = useState(false);
+  const accountName = target.user.displayName || target.user.email || target.user.phone || "Restoran egasi";
+  const login = target.user.email || target.user.phone || "Login ko‘rsatilmagan";
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    if (newPassword.length < 12) {
+      setError("Yangi parol kamida 12 ta belgidan iborat bo‘lsin.");
+      return;
+    }
+    if (newPassword !== confirmation) {
+      setError("Yangi parollar mos kelmadi.");
+      return;
+    }
+    setBusy(true);
+    try {
+      await apiRequest(`/platform/tenants/${encodeURIComponent(tenantId)}/owner-accounts/${encodeURIComponent(target.userId)}/password-reset`, {
+        method: "POST",
+        body: JSON.stringify({ newPassword, confirmation }),
+      });
+      setSavedPassword(newPassword);
+      setNewPassword("");
+      setConfirmation("");
+      onReset();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Owner parolini yangilab bo‘lmadi.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copyPassword() {
+    try {
+      await navigator.clipboard.writeText(savedPassword);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1600);
+    } catch {
+      setError("Nusxalashga ruxsat berilmadi. Parolni belgilang va qo‘lda nusxalang.");
+    }
+  }
+
+  return <div className="modal-backdrop" role="presentation" onMouseDown={event => {
+    if (event.target === event.currentTarget && !busy) onClose();
+  }}>
+    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="owner-password-reset-title">
+      <div className="modal-head">
+        <div><p className="eyebrow">OWNER HISOBI</p><h2 id="owner-password-reset-title">Parolni tiklash</h2></div>
+        <button className="icon-button" type="button" aria-label="Yopish" onClick={onClose} disabled={busy}><X size={20} /></button>
+      </div>
+      {error && <div className="alert" role="alert" style={{ margin: "12px 22px 0" }}>{error}</div>}
+      {savedPassword ? <div className="modal-body form-stack owner-password-result">
+        <div className="notice" role="status"><Check size={17} />{accountName} hisobiga yangi parol o‘rnatildi.</div>
+        <p className="muted">Bu parol faqat shu oynada ko‘rsatiladi. Uni egasiga xavfsiz yo‘l bilan yuboring. Shu loginning barcha faol sessiyalari, jumladan boshqa restoranlardagi sessiyalari ham tugatiladi. Restoran holati o‘zgarmaydi.</p>
+        <div className="owner-password-once"><code>{savedPassword}</code><button className="button subtle" type="button" onClick={() => void copyPassword()}><Clipboard size={15} />{copied ? "Nusxalandi" : "Parolni nusxalash"}</button></div>
+        <p className="muted">Egasiga tizimga kirgach shaxsiy kabinetidagi “Parolni almashtirish” bo‘limidan o‘zi uchun yangi parol o‘rnatishni ayting.</p>
+        <div className="modal-actions"><button className="button primary" type="button" onClick={onClose}>Tushunarli</button></div>
+      </div> : <form className="modal-body form-stack" onSubmit={submit}>
+        <div className="owner-password-account"><strong>{accountName}</strong><span>{login}</span></div>
+        <div className="alert" role="note"><ShieldCheck size={17} /><span>Eski parol ko‘rsatilmaydi. Bu amal yangi parol o‘rnatadi va hisobga tegishli barcha faol sessiyalarni yakunlaydi.</span></div>
+        <label>Yangi parol<input autoFocus type="password" autoComplete="new-password" value={newPassword} onChange={event => setNewPassword(event.target.value)} required minLength={12} maxLength={128} /></label>
+        <label>Yangi parolni takrorlang<input type="password" autoComplete="new-password" value={confirmation} onChange={event => setConfirmation(event.target.value)} required minLength={12} maxLength={128} /></label>
+        <p className="muted">Kamida 12 ta belgi ishlating. Parol audit jurnaliga yozilmaydi.</p>
+        <div className="modal-actions"><button className="button subtle" type="button" onClick={onClose} disabled={busy}>Bekor qilish</button><button className="button primary" type="submit" disabled={busy}>{busy ? <LoaderCircle size={16} className="spin" /> : <Save size={15} />}{busy ? "Yangilanmoqda..." : "Yangi parol o‘rnatish"}</button></div>
+      </form>}
+    </div>
+  </div>;
 }

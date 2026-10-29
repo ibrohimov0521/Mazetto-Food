@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { apiRequest, logout, restoreSession, saveSession } from "../lib/api";
 import type { AuthSession, GlobalSiteEvent, PlatformAuditEntry, PlatformAuditPage, PlatformDiagnostic, PlatformHealth, PlatformReports, Probe, ProvisionedAgent, Site, SiteEvent, TenantMembership, TenantRegistryEntry, TenantRoleOption } from "../lib/types";
-import { TenantFeatureEditor, TenantOnboardingModal, TenantTelegramEditor } from "./tenant-management";
+import { TenantFeatureEditor, TenantOnboardingModal, TenantOwnerPasswordResetModal, TenantTelegramEditor } from "./tenant-management";
 
 type View = "overview" | "restaurants" | "tenants" | "activity" | "diagnostics" | "audit" | "reports" | "detail";
 type Modal = "create" | "edit" | "rotate" | "toggle" | null;
@@ -51,6 +51,7 @@ const auditLabels: Record<string, string> = {
   PLATFORM_TENANT_DOMAIN_CHALLENGE_ROTATED: "Domen DNS kodi yangilandi",
   PLATFORM_TENANT_DOMAIN_DISABLED: "Restoran domeni o'chirildi",
   PLATFORM_TENANT_ARCHIVED: "Restoran arxivlandi",
+  PLATFORM_TENANT_OWNER_PASSWORD_RESET: "Restoran egasining paroli yangilandi",
   PLATFORM_TENANT_RESTORED: "Restoran tiklandi",
 };
 
@@ -65,6 +66,7 @@ function auditSummary(entry: PlatformAuditEntry) {
   if (entry.action === "PLATFORM_SITE_TOKEN_ROTATED") return `${String(metadata.siteName || "Restoran")} · agent tokeni almashtirildi`;
   if (entry.action === "PLATFORM_EVENT_ACKNOWLEDGED") return `${String(metadata.siteName || "Restoran")} · hodisa kodi: ${String(metadata.code || "—")}`;
   if (entry.entity === "TENANT_DOMAIN") return `${String(metadata.hostname || "Domen")} · tenant: ${String(metadata.tenantId || "—")}`;
+  if (entry.action === "PLATFORM_TENANT_OWNER_PASSWORD_RESET") return `${String(metadata.tenantName || "Restoran")} · ${String(metadata.revokedSessions || 0)} ta sessiya yakunlandi`;
   if (entry.entity === "RESTAURANT_TENANT") {
     const tenant = String(metadata.name || "Restoran");
     const code = String(metadata.code || "");
@@ -165,6 +167,7 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
   const [tenantRoleOptions, setTenantRoleOptions] = useState<TenantRoleOption[]>([]);
   const [membershipsLoading, setMembershipsLoading] = useState(false);
   const [membershipBusy, setMembershipBusy] = useState("");
+  const [ownerPasswordResetTarget, setOwnerPasswordResetTarget] = useState<TenantMembership | null>(null);
   const [membershipError, setMembershipError] = useState("");
   const [membershipIdentifier, setMembershipIdentifier] = useState("");
   const [membershipRoleCodes, setMembershipRoleCodes] = useState<string[]>([]);
@@ -922,7 +925,7 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
               <td className="strong-cell">{membership.user.displayName || membership.user.email || membership.user.phone || membership.user.id}<small className="report-product">{membership.user.email || membership.user.phone || membership.user.id}</small></td>
               <td>{membership.branch?.name || "Restoran bo'yicha"}</td><td>{membership.roles.map(item => item.role.name).join(", ") || "Rol berilmagan"}</td>
               <td><Status status={membership.status === "ACTIVE" && membership.user.isActive ? "ONLINE" : "OFFLINE"} label={!membership.user.isActive ? "Hisob o'chirilgan" : membership.status === "ACTIVE" ? "Faol" : "To'xtatilgan"} /></td>
-              <td><div className="tenant-membership-actions"><button type="button" className="button subtle" onClick={() => { setEditingMembershipId(current => current === membership.id ? "" : membership.id); setEditingRoleCodes(membership.roles.map(item => item.role.code)); setEditingBranchId(membership.branchId || ""); }} aria-expanded={editingMembershipId === membership.id}>Rollar</button><button type="button" className={membership.status === "ACTIVE" ? "button danger" : "button subtle"} disabled={membershipBusy !== ""} onClick={() => void updateTenantMembershipStatus(membership)}>{membershipBusy === membership.id ? "Saqlanmoqda..." : membership.status === "ACTIVE" ? "To'xtatish" : "Faollashtirish"}</button></div></td>
+              <td><div className="tenant-membership-actions"><button type="button" className="button subtle" onClick={() => { setEditingMembershipId(current => current === membership.id ? "" : membership.id); setEditingRoleCodes(membership.roles.map(item => item.role.code)); setEditingBranchId(membership.branchId || ""); }} aria-expanded={editingMembershipId === membership.id}>Rollar</button>{membershipTenant.status !== "ARCHIVED" && membership.roles.some(item => item.role.code === "SUPER_ADMIN") && membership.status === "ACTIVE" && membership.user.isActive && <button type="button" className="button subtle" onClick={() => setOwnerPasswordResetTarget(membership)}>Parolni tiklash</button>}<button type="button" className={membership.status === "ACTIVE" ? "button danger" : "button subtle"} disabled={membershipBusy !== ""} onClick={() => void updateTenantMembershipStatus(membership)}>{membershipBusy === membership.id ? "Saqlanmoqda..." : membership.status === "ACTIVE" ? "To'xtatish" : "Faollashtirish"}</button></div></td>
             </tr>)}</tbody></table></div> : <Empty>Bu restoranga hali a'zo biriktirilmagan.</Empty>}
             {editingMembership && <form className="tenant-membership-edit" onSubmit={event => void submitTenantMembershipRoles(event, editingMembership)}>
               <div><strong>{editingMembership.user.displayName || editingMembership.user.email || editingMembership.user.phone}</strong><p className="muted">Restoran rollarini almashtiring. Yangi ruxsatlar keyingi so'rovdan kuchga kiradi.</p></div>
@@ -932,6 +935,13 @@ export function OwnerConsole({ view, siteId }: { view: View; siteId?: string }) 
             </form>}
           </section>}
           <p className="muted">Monitoring sayt/API holatini mavjud tenant bilan bog‘laydi. Bu agent yuboradigan buyurtma va filial ko‘rsatkichlarini tenantlar kesimida ajratmaydi.</p>
+          {ownerPasswordResetTarget && membershipTenant && <TenantOwnerPasswordResetModal
+            tenantId={membershipTenant.id}
+            target={ownerPasswordResetTarget}
+            tenantStatus={membershipTenant.status}
+            onClose={() => setOwnerPasswordResetTarget(null)}
+            onReset={() => setNotice(`${ownerPasswordResetTarget.user.displayName || ownerPasswordResetTarget.user.email || ownerPasswordResetTarget.user.phone || "Owner"} uchun yangi parol o‘rnatildi.`)}
+          />}
           {domainTenant && <section className="section tenant-domain-panel">
             <div className="section-head"><div><h2>{domainTenant.name} · Domen boshqaruvi</h2><p className="muted">Domenni DNS TXT bilan tasdiqlang. Bu yozuv routing, TLS yoki restoran holatini o‘zgartirmaydi.</p></div></div>
             {domainError && <div className="alert" role="alert"><AlertTriangle size={17} />{domainError}</div>}

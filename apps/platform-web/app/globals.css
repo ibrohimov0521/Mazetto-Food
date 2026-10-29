@@ -202,3 +202,83 @@ body{position:relative;isolation:isolate}
 .modal,.login-panel{border:1px solid rgba(218,234,252,.95);box-shadow:0 24px 80px rgba(2,14,31,.34),inset 0 1px 0 #fff}
 @media(max-width:760px){.topbar{top:0;height:56px;margin:7px 8px 0;padding:0 11px;border-radius:8px}.content{padding-top:18px}.topbar .breadcrumb{font-size:11px}.topbar-actions{gap:6px}.attention-list,.global-events,.audit-list{padding:6px}.attention-row{flex-wrap:wrap}.tenant-setup-row{padding:10px}.setting-row{padding:11px}.tenant-membership-create,.tenant-membership-edit{padding:11px}}
 @media(prefers-reduced-motion:reduce){.attention-row{transition:none}}
+
+/* Tenant settings use distinct, readable cards and allow long labels to wrap. */
+.content>.section.tenant-onboarding-panel,
+.content>.section.tenant-feature-panel,
+.content>.section.tenant-membership-panel,
+.content>.section.tenant-domain-panel{
+  min-width:0;
+  margin:0 0 22px;
+  padding:16px;
+  overflow:hidden;
+  border:1px solid rgba(194,218,244,.9);
+  border-radius:10px;
+  background:rgba(239,247,255,.94);
+  box-shadow:0 10px 26px rgba(4,20,42,.13),inset 0 1px 0 rgba(255,255,255,.94);
+}
+.content>.section.tenant-onboarding-panel>.section-head,
+.content>.section.tenant-feature-panel>.section-head,
+.content>.section.tenant-membership-panel>.section-head,
+.content>.section.tenant-domain-panel>.section-head{
+  align-items:center;
+  margin:-16px -16px 16px;
+  padding:13px 16px;
+  border-radius:9px 9px 0 0;
+}
+.content>.section.tenant-feature-panel>.section-head>div,
+.content>.section.tenant-onboarding-panel>.section-head>div,
+.content>.section.tenant-membership-panel>.section-head>div,
+.content>.section.tenant-domain-panel>.section-head>div{min-width:0;flex:1}
+.content>.section.tenant-feature-panel .section-head .muted,
+.content>.section.tenant-onboarding-panel .section-head .muted,
+.content>.section.tenant-membership-panel .section-head .muted,
+.content>.section.tenant-domain-panel .section-head .muted{max-width:74ch;line-height:1.5;overflow-wrap:anywhere}
+.tenant-feature-panel>.tenant-setup-steps{gap:9px}
+.tenant-feature-panel .tenant-setup-row{display:grid;grid-template-columns:30px minmax(0,1fr) auto;align-items:center;gap:12px}
+.tenant-feature-panel .tenant-setup-row>div{min-width:0}
+.tenant-feature-panel .tenant-setup-row p,
+.tenant-feature-panel .tenant-feature-option small,
+.tenant-feature-panel>.muted,
+.tenant-feature-panel .muted{color:#405c78;line-height:1.55;overflow-wrap:anywhere}
+.tenant-feature-panel .tenant-setup-row strong,
+.tenant-feature-panel .tenant-feature-option strong{color:#173554;line-height:1.45;overflow-wrap:anywhere}
+.tenant-feature-panel .tenant-feature-group{min-width:0;padding:12px;background:rgba(255,255,255,.76)}
+.tenant-feature-panel .tenant-feature-group legend{max-width:100%;color:#355777;font-size:11px;overflow-wrap:anywhere}
+.tenant-feature-panel .tenant-feature-option{min-width:0;padding:9px;border-radius:7px}
+.tenant-feature-panel .tenant-feature-option span{min-width:0}
+.tenant-feature-panel .section-meta{color:#dcecff;white-space:normal;text-align:right}
+.tenant-membership-panel>.muted{max-width:82ch;margin:0 0 14px;color:#405c78;line-height:1.55}
+.tenant-membership-panel .table-wrap{min-width:0}
+.tenant-membership-panel .table-wrap table{min-width:760px}
+.tenant-membership-actions{flex-wrap:wrap;min-width:0}
+.tenant-membership-actions .button{white-space:normal;min-height:32px;height:auto;padding:7px 9px;line-height:1.25}
+.tenant-password-reset-panel{display:flex;align-items:center;gap:10px;padding:13px;border:1px solid rgba(197,218,242,.9);border-radius:8px;background:rgba(255,255,255,.78);color:#294b70}
+.owner-password-account{display:grid;gap:4px;min-width:0;padding:12px;border:1px solid rgba(197,218,242,.9);border-radius:7px;background:#f5f9ff}
+.owner-password-account strong,.owner-password-account span{overflow-wrap:anywhere}
+.owner-password-account span{font-size:12px;color:#405c78}
+.owner-password-result .notice{margin:0}
+.owner-password-once{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:12px;border:1px solid #b9ddcb;border-radius:8px;background:#f0faf4}
+.owner-password-once code{min-width:0;color:#173e35;font:600 13px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere;user-select:all}
+.owner-password-once .button{white-space:normal}
+.owner-password-result .muted{color:#405c78;line-height:1.55;overflow-wrap:anywhere}
+@media(max-width:760px){
+  .content>.section.tenant-onboarding-panel,
+  .content>.section.tenant-feature-panel,
+  .content>.section.tenant-membership-panel,
+  .content>.section.tenant-domain-panel{padding:12px}
+  .content>.section.tenant-onboarding-panel>.section-head,
+  .content>.section.tenant-feature-panel>.section-head,
+  .content>.section.tenant-membership-panel>.section-head,
+  .content>.section.tenant-domain-panel>.section-head{margin:-12px -12px 13px;padding:12px}
+  .tenant-feature-panel .tenant-setup-row{grid-template-columns:30px minmax(0,1fr);align-items:start}
+  .tenant-feature-panel .tenant-setup-row>.button,
+  .tenant-feature-panel .tenant-setup-row>a.button,
+  .tenant-feature-panel .tenant-setup-row>.status{grid-column:2;justify-self:start;white-space:normal}
+  .owner-password-once{grid-template-columns:1fr}
+  .owner-password-once .button{justify-self:start}
+}
+
+.owner-password-warning{display:flex;align-items:flex-start;gap:9px;padding:12px;border:1px solid #f0d59b;border-radius:7px;background:#fff8e8;color:#755416;font-size:12px;line-height:1.55;overflow-wrap:anywhere}.owner-password-warning svg{flex:none;margin-top:1px;color:#a7781b}
+
+.owner-password-status-note{padding:11px 12px;border:1px solid #b9d0ef;border-radius:7px;background:#f0f6ff;color:#294b70;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
