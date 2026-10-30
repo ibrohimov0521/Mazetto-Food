@@ -123,3 +123,22 @@ test("xodimga biriktirilgan maxsus rol arxivlanmaydi", async () => {
     /barcha xodimlardan olib tashlang/,
   );
 });
+
+test("platform rollari restoran xodimi uchun tanlov ro'yxatida ko'rsatilmaydi", async () => {
+  let where: unknown;
+  const roles = service({
+    role: {
+      findMany: async (args: { where?: unknown }) => {
+        where = args.where;
+        return [];
+      },
+    },
+  });
+
+  await roles.listRoles();
+
+  assert.deepEqual(where, {
+    isActive: true,
+    NOT: { code: { startsWith: "PLATFORM_" } },
+  });
+});

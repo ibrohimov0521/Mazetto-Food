@@ -21,7 +21,7 @@ export class RolesService {
 
   async listRoles() {
     return this.prisma.role.findMany({
-      where: { isActive: true },
+      where: { isActive: true, NOT: { code: { startsWith: "PLATFORM_" } } },
       orderBy: { name: "asc" },
       select: {
         id: true,
