@@ -95,7 +95,7 @@ const SETTING_LABELS: Record<
   },
   login_throttle_address_failures: {
     title: "Manzil bo'yicha login chegarasi",
-    hint: "Bitta manzildan nechta muvaffaqiyatsiz urinish",
+    hint: "Bitta manzil va login uchun nechta xato urinishga ruxsat beriladi",
   },
   login_throttle_identifier_failures: {
     title: "Akkaunt bo'yicha login chegarasi",
