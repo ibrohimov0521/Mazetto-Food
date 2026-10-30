@@ -80,6 +80,7 @@ test("employee shift orders stay scoped to the open shift across midnight", () =
     /orderBy: \[\{ createdAt: "desc" \}, \{ id: "desc" \}\]/,
   );
   assert.match(method, /take: this\.parseLimit\(query\.limit\)/);
+  assert.match(method, /query\.deliveryOnly[\s\S]*customerOrder: \{ is: \{ type: "DELIVERY" \} \}/);
 });
 
 test("cash ownership is unified across POS, courier and payment flows", () => {

@@ -7,6 +7,7 @@ import { GeocodingModule } from "../geocoding/geocoding.module";
 import { OrdersModule } from "../orders/orders.module";
 import { PaymentsModule } from "../payments/payments.module";
 import { TablesModule } from "../tables/tables.module";
+import { ReportsModule } from "../reports/reports.module";
 import { CashRegisterModule } from "../cash-register/cash-register.module";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { TelegramController } from "./telegram.controller";
@@ -28,6 +29,7 @@ import { TelegramStaffService } from "./telegram-staff.service";
     BranchesModule,
     KitchenModule,
     TablesModule,
+    ReportsModule,
     CashRegisterModule,
     forwardRef(() => OrdersModule),
     PaymentsModule,
