@@ -25,6 +25,10 @@ Holat: 2026-10-30. Mijoz va xodim Telegram oqimlari umumiy backend hamda Order E
 - `/myid` xodimning Telegram ID’sini ko‘rsatadi va uni tegishli panelda qayerga kiritishni aytadi. `/help` tenant bilan bog‘lanmagan odamga ham umumiy yo‘riq beradi.
 - Xodim buyruqlari uning faol filial tenantidan aniqlanadi. Owner akkaunti uchun faqat bitta faol tenantdagi owner a’zoligi bo‘lsa tenant tanlanadi; bir nechta tenant bo‘lsa bot tasodifiy tanlamaydi va tenantga oid amalni rad etadi.
 - Buyurtma ko‘rish va callback amallari har safar buyurtmaning tenant/filialiga hamda foydalanuvchining faol ruxsatiga tekshiriladi.
+- Owner uchun /admin yoki /stats bugungi boshqaruv ko‘rsatkichlarini ochadi. /sales, /products, /employees, /expenses va /zreport alohida hisobotlarni beradi; tugmalar orqali bugun, kecha, 7 kun, oy yoki yil davri tanlanadi. Ko‘rinadigan bo‘limlar REPORT_* ruxsatlariga qarab belgilanadi.
+- Savdo ko‘rinishida tushum, buyurtmalar soni, o‘rtacha chek, naqd savdo, qaytim, bekor qilingan buyurtmalar, filial/to‘lov/kanal/kassir bo‘yicha ajratma va eng ko‘p sotilgan mahsulotlar chiqadi. Mahsulot, xodim va xarajat hisobotlari hamda Z-hisoboti tegishli hisobot ruxsati bilan beriladi. Z-hisobotdagi “shartli qoldiq” tannarx va to‘liq provider/refund reconciliation’ni qamramasligi xabarda ko‘rsatiladi.
+- Kassir /cashier yoki /shiftorders orqali faqat o‘zining ochiq smenasidagi buyurtmalarni ko‘radi. Har buyurtmadagi naqd summa shu smena/filialga yozilgan SALE tranzaksiyalaridan qaytim REFUND’ni ayirish orqali olinadi; buyurtmaning jami va kassadagi kutilayotgan qoldiq alohida ko‘rsatiladi. Kassa qoldig‘iga boshlang‘ich pul va buyurtmaga bog‘liq bo‘lmagan kirim-chiqimlar ham kirishi mumkin.
+- Kuryer /couriercash orqali faqat o‘zining ochiq smenasiga tushgan yetkazish buyurtmalari va ularga bog‘langan naqd tushumni ko‘radi. Bu ko‘rinish ham SHIFT_VIEW_OWN ruxsati va kuryer roli bilan cheklanadi; filiallararo yoki boshqa xodim smenasi ochilmaydi.
 
 ## Operatsion nazorat va qabul chegaralari
 

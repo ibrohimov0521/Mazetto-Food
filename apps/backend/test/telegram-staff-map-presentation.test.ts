@@ -108,6 +108,7 @@ test("courier map links require non-empty coordinates inside the delivery zone",
     {} as never,
     {} as never,
     {} as never,
+    {} as never,
   );
   const presentation = service as unknown as {
     locationLink: (value: unknown) => string | null;

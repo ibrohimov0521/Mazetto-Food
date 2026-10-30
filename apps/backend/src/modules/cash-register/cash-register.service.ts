@@ -257,6 +257,7 @@ export class CashRegisterService {
       search?: string;
       limit?: string;
       offset?: string;
+      deliveryOnly?: boolean;
     },
     user: AuthenticatedUser,
   ) {
@@ -300,6 +301,9 @@ export class CashRegisterService {
         ],
         branchId: shift.branchId,
         branch: { tenantId },
+        ...(query.deliveryOnly
+          ? { customerOrder: { is: { type: "DELIVERY" } } }
+          : {}),
         ...(status ? { status } : {}),
         ...(search
           ? {

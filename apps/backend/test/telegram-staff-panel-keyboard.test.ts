@@ -20,12 +20,17 @@ test("staff panel sends one valid inline keyboard for a cashier who also runs th
           payloads.push(payload);
         },
       } as never,
+      {} as never,
     );
     await (service as unknown as {
       sendStaffPanel(chatId: string, staff: unknown): Promise<void>;
     }).sendStaffPanel("chat-1", {
       displayName: "Xodim",
-      user: { roles: ["CASHIER", "KITCHEN"] },
+      user: {
+        roles: ["CASHIER", "KITCHEN"],
+        employeeId: "employee-1",
+        permissions: ["SHIFT_VIEW_OWN"],
+      },
     });
 
     const markup = payloads[0]?.reply_markup;
@@ -33,7 +38,7 @@ test("staff panel sends one valid inline keyboard for a cashier who also runs th
     assert.deepEqual(Object.keys(markup), ["inline_keyboard"]);
     assert.deepEqual(
       (markup.inline_keyboard as Array<Array<{ text: string }>>).map((row) => row[0]?.text),
-      ["🍳 Oshxona buyurtmalari", "💵 Kassa", "🔄 Yangilash"],
+      ["🍳 Oshxona buyurtmalari", "💵 Kassa va smena buyurtmalari", "🔄 Yangilash"],
     );
   } finally {
     if (previousToken === undefined) delete process.env.TELEGRAM_STAFF_BOT_TOKEN;
@@ -67,6 +72,7 @@ test("kitchen buttons name the action and bind it to the displayed ticket status
       { renderWithToken: async (_token: string, _target: unknown, payload: typeof payloads[number]) => {
         payloads.push(payload);
       } } as never,
+      {} as never,
     );
     await (service as unknown as {
       sendKitchenOrders(chatId: string, staff: unknown): Promise<void>;
@@ -104,6 +110,7 @@ test("old kitchen buttons refresh the queue without advancing a newer ticket sta
       {} as never,
       {} as never,
       { renderWithToken: async () => { refreshed += 1; } } as never,
+      {} as never,
     );
     const kitchen = service as unknown as {
       changeKitchenTicket(chatId: string, staff: unknown, ticketId: string, action: string): Promise<void>;
@@ -121,26 +128,33 @@ test("old kitchen buttons refresh the queue without advancing a newer ticket sta
     else process.env.TELEGRAM_STAFF_BOT_TOKEN = previousToken;
   }
 });
-test("management panel uses only the tenant's Tashkent-day data", async () => {
+test("management dashboard shows tenant reports and only authorized report controls", async () => {
   const previousToken = process.env.TELEGRAM_STAFF_BOT_TOKEN;
   process.env.TELEGRAM_STAFF_BOT_TOKEN = "test-token";
-  const payloads: Array<{ text?: string }> = [];
-  let orderWhere: Record<string, unknown> | undefined;
+  const payloads: Array<{ text?: string; reply_markup?: { inline_keyboard?: Array<Array<{ text: string; callback_data: string }>> } }> = [];
+  let reportActor: unknown;
   let employeeWhere: Record<string, unknown> | undefined;
+  const user = {
+    id: "owner-a",
+    tenantId: "tenant-a",
+    membershipId: "membership-a",
+    isGlobalScope: true,
+    roles: ["OWNER"],
+    permissions: [
+      "REPORT_SALES_VIEW",
+      "REPORT_PRODUCTS_VIEW",
+      "REPORT_EMPLOYEES_VIEW",
+      "REPORT_EXPENSES_VIEW",
+    ],
+  };
 
   try {
     const service = new TelegramStaffService(
       {
         restaurantTenant: {
-          findFirst: async ({ where }: { where: { id: string } }) => ({
+          findFirst: async ({ where }: { where: { id: string; status: string } }) => ({
             id: where.id,
           }),
-        },
-        order: {
-          count: async ({ where }: { where: Record<string, unknown> }) => {
-            orderWhere = where;
-            return 4;
-          },
         },
         employee: {
           count: async ({ where }: { where: Record<string, unknown> }) => {
@@ -157,42 +171,69 @@ test("management panel uses only the tenant's Tashkent-day data", async () => {
         renderWithToken: async (
           _token: string,
           _target: unknown,
-          payload: { text?: string },
-        ) => {
-          payloads.push(payload);
+          payload: typeof payloads[number],
+        ) => payloads.push(payload),
+      } as never,
+      {
+        getSalesReport: async (_query: unknown, actor: unknown) => {
+          reportActor = actor;
+          return {
+            revenue: 120000,
+            orderCount: 3,
+            averageOrderValue: 40000,
+            cashSales: 80000,
+            refundHandling: { amount: 5000 },
+            cancelledOrders: 1,
+            branchBreakdown: [{ branch: { name: "Markaz" }, amount: 120000, orderCount: 3 }],
+            paymentBreakdown: [{ paymentMethod: { name: "Naqd" }, amount: 80000 }],
+          };
         },
       } as never,
     );
-    await (
-      service as unknown as {
-        sendManagementPanel(chatId: string, staff: unknown): Promise<void>;
-      }
-    ).sendManagementPanel("chat-1", {
-      user: {
-        id: "admin-a",
-        tenantId: "tenant-a",
-        membershipId: "membership-a",
-        isGlobalScope: true,
-        roles: ["ADMIN"],
-      },
-    });
+    await (service as unknown as {
+      sendManagementPanel(chatId: string, staff: unknown): Promise<void>;
+    }).sendManagementPanel("chat-1", { user });
 
-    assert.deepEqual(
-      (orderWhere?.branch as Record<string, unknown>),
-      { tenantId: "tenant-a" },
+    assert.equal(reportActor, user);
+    assert.deepEqual(employeeWhere?.branch, { tenantId: "tenant-a" });
+    assert.match(payloads[0]?.text ?? "", /120/);
+    assert.match(payloads[0]?.text ?? "", /Markaz/);
+    assert.match(payloads[0]?.text ?? "", /Faol xodimlar: <b>2<\/b>/);
+    const buttons = payloads[0]?.reply_markup?.inline_keyboard?.flat() ?? [];
+    for (const section of ["sales", "products", "employees", "expenses", "z"]) {
+      assert.ok(buttons.some((button) => button.callback_data.includes(section)));
+    }
+    assert.ok(buttons.some((button) => button.callback_data.endsWith(":today")));
+    assert.ok(buttons.some((button) => button.callback_data.endsWith(":year")));
+  } finally {
+    if (previousToken === undefined) delete process.env.TELEGRAM_STAFF_BOT_TOKEN;
+    else process.env.TELEGRAM_STAFF_BOT_TOKEN = previousToken;
+  }
+});
+
+test("unauthorized Telegram report requests do not call the report service", async () => {
+  const previousToken = process.env.TELEGRAM_STAFF_BOT_TOKEN;
+  process.env.TELEGRAM_STAFF_BOT_TOKEN = "test-token";
+  const payloads: Array<{ text?: string }> = [];
+  let called = false;
+  try {
+    const service = new TelegramStaffService(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      { renderWithToken: async (_token: string, _target: unknown, payload: { text?: string }) => payloads.push(payload) } as never,
+      { getSalesReport: async () => { called = true; } } as never,
     );
-    assert.deepEqual(
-      (employeeWhere?.branch as Record<string, unknown>),
-      { tenantId: "tenant-a" },
-    );
-    const createdAt = orderWhere?.createdAt as { gte: Date; lte: Date };
-    assert.equal(createdAt.gte.getUTCHours(), 19);
-    assert.equal(createdAt.lte.getUTCHours(), 18);
-    assert.equal(
-      createdAt.lte.getTime() - createdAt.gte.getTime(),
-      24 * 60 * 60 * 1000 - 1,
-    );
-    assert.match(payloads[0]?.text ?? "", /Bugungi buyurtmalar: <b>4<\/b>/);
+    await (service as unknown as {
+      sendManagementReport(chatId: string, staff: unknown, section: string, preset: string): Promise<void>;
+    }).sendManagementReport("chat-1", {
+      user: { roles: ["CASHIER"], permissions: [], employeeId: "cashier-1" },
+    }, "sales", "today");
+
+    assert.equal(called, false);
+    assert.match(payloads[0]?.text ?? "", /ruxsatingiz yo'q/);
   } finally {
     if (previousToken === undefined) delete process.env.TELEGRAM_STAFF_BOT_TOKEN;
     else process.env.TELEGRAM_STAFF_BOT_TOKEN = previousToken;
