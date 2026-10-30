@@ -26,7 +26,7 @@ Production bazasi: `e8ae781356fdab6878c28694bad93c556eb11a33` (`main` va masofad
 ## Tekshiruv dalili
 
 - PR #319 exact head bd75baa0e0356c236fd562ce5f65bbdd6f6558cb passed hosted CI run #955 (40940517495): verify and Windows desktop package succeeded.
-- Owner password-reset focused tests passed 6/6; the complete backend suite passed 808/808. Platform Web ESLint and TypeScript checks passed after the inactive-tenant warning fix.
+- Owner password-reset focused tests passed 6/6; the complete backend suite passed 809/809 in CI run #957. Platform Web ESLint and TypeScript checks passed after the inactive-tenant warning fix.
 - Exact staging image pr319-bd75baa passed health and the guarded A/B harness; Prisma reported 64/64 migrations. The harness verified fixture cleanup. The public platform owner panel is not available in staging, so browser-based password reset and owner login acceptance remain open.
 
 - To'liq `pnpm ci` jarayonida typecheck, lint, barcha testlar va ilovalar build'i tugadi: Turbo 7/7 vazifa muvaffaqiyatli. Konteynerdagi `validate-repo-weight` linked worktree Git metama'lumotini ko'ra olmagani sababli shu konteyner yugurishi 32/33 validator bilan to'xtadi.
