@@ -31,6 +31,9 @@ type TelegramUpdate = {
 };
 type StaffOrderForMessage = {
   id: string;
+  tenantId: string;
+  branchId: string;
+  servedById: string | null;
   orderNumber: string;
   displayOrderNumber: string | null;
   staffTelegramChatId: string | null;
@@ -72,6 +75,11 @@ type StaffTransitionResult = {
   changed: boolean;
   order: StaffOrderForMessage;
 };
+type StaffOrderRecipientRole = "OWNER" | "CASHIER";
+type StaffOrderRecipientPayload = {
+  role: StaffOrderRecipientRole;
+  recipientId: string;
+};
 type TelegramResponse = {
   ok?: boolean;
   description?: string;
@@ -86,6 +94,7 @@ type NewOrderDeliveryResult =
   | "sent"
   | "failed"
   | "skipped"
+  | "ignored"
   | { kind: "retryable"; retryAfterSeconds: number | null };
 type OutboxDeliveryResult =
   | NewOrderDeliveryResult
@@ -160,6 +169,89 @@ export class TelegramOrderNotificationService {
     return this.sendNewOrder(orderId, tenantId, false);
   }
 
+  async deliverOutboxRoleNewOrder(
+    orderId: string,
+    tenantId: string,
+    payload: unknown,
+  ): Promise<OutboxDeliveryResult> {
+    const recipient = this.parseRoleOrderRecipient(payload);
+    if (!recipient) {
+      return { kind: "rejected", reason: "Staff order recipient payload is invalid." };
+    }
+
+    const settingKey =
+      recipient.role === "OWNER"
+        ? "telegram_owner_order_notifications_enabled"
+        : "telegram_cashier_order_notifications_enabled";
+    if (!(await this.isNotificationEnabled(tenantId, settingKey))) return "ignored";
+
+    const order = await this.findOrderForTenant(orderId, tenantId);
+    if (!order || !order.customerOrder) {
+      return { kind: "rejected", reason: "Staff order was not found in its tenant." };
+    }
+
+    const chatId = await this.findStaffRecipientChatId(
+      tenantId,
+      order.branchId,
+      recipient,
+    );
+    if (!chatId) return "ignored";
+
+    return this.sendDirectStaffOrderMessage(chatId, order, recipient.role);
+  }
+
+  async deliverOutboxCourierAssignment(
+    orderId: string,
+    tenantId: string,
+    payload: unknown,
+  ): Promise<OutboxDeliveryResult> {
+    const employeeId = this.parseCourierAssignment(payload);
+    if (!employeeId) {
+      return { kind: "rejected", reason: "Courier assignment payload is invalid." };
+    }
+    if (
+      !(await this.isNotificationEnabled(
+        tenantId,
+        "telegram_courier_order_notifications_enabled",
+      ))
+    ) {
+      return "ignored";
+    }
+
+    const order = await this.findOrderForTenant(orderId, tenantId);
+    if (!order || !order.customerOrder || order.customerOrder.type !== CustomerOrderType.DELIVERY) {
+      return "ignored";
+    }
+    if (order.servedById !== employeeId) return "ignored";
+
+    const courier = await this.prisma.employee.findFirst({
+      where: {
+        id: employeeId,
+        branchId: order.branchId,
+        status: EmployeeStatus.ACTIVE,
+        telegramUserId: { not: null },
+        user: {
+          is: {
+            isActive: true,
+            tenantMemberships: {
+              some: {
+                tenantId,
+                status: "ACTIVE",
+                OR: [{ branchId: null }, { branchId: order.branchId }],
+                roles: { some: { role: { code: "COURIER" } } },
+              },
+            },
+          },
+        },
+      },
+      select: { telegramUserId: true },
+    });
+    const chatId = courier?.telegramUserId;
+    if (!chatId) return "ignored";
+
+    return this.sendDirectStaffOrderMessage(chatId, order, "COURIER");
+  }
+
   async deliverOutboxCustomerStatus(
     orderId: string,
     tenantId: string,
@@ -226,28 +318,37 @@ export class TelegramOrderNotificationService {
     recordFailure = true,
   ): Promise<NewOrderDeliveryResult> {
     let tenantId: string | null = null;
-    if (!process.env.TELEGRAM_BOT_TOKEN) {
-      this.logger.warn("Telegram order notifications are disabled: TELEGRAM_BOT_TOKEN is missing");
-      return "skipped";
-    }
 
     try {
       tenantId = await this.resolveOrderTenantId(orderId);
       if (!tenantId) {
-        this.logger.warn(`Telegram notification skipped: order ${orderId} has no tenant branch`);
+        this.logger.warn("Telegram notification skipped: order " + orderId + " has no tenant branch");
         return "skipped";
       }
       if (expectedTenantId && expectedTenantId !== tenantId) {
         throw new ForbiddenException("Notification order does not belong to the requested tenant");
       }
-      const order = await this.findOrderForMessage(orderId, this.prisma, tenantId);
 
+      const order = await this.findOrderForTenant(orderId, tenantId);
       if (!order) {
-        this.logger.warn(`Telegram notification skipped: order ${orderId} was not found`);
+        this.logger.warn("Telegram notification skipped: order " + orderId + " was not found");
         return "skipped";
       }
+
+      const roleRecipients = order.customerOrder
+        ? await this.queueRoleNewOrderNotifications(order, tenantId)
+        : 0;
       const staffChatId = await this.resolveStaffChatId(tenantId);
-      if (!staffChatId) throw new Error("Telegram staff notification group is not configured for this tenant");
+
+      // Private owner/cashier notices use the staff bot. The tenant staff
+      // group uses the customer bot and its own configured Chat ID.
+      if (!process.env.TELEGRAM_BOT_TOKEN || !staffChatId) {
+        if (roleRecipients > 0) return "sent";
+        this.logger.warn(
+          "Telegram order notification is waiting for a configured tenant staff group and customer bot token",
+        );
+        return "skipped";
+      }
 
       const response = await this.telegramRequest(
         "sendMessage",
@@ -260,6 +361,7 @@ export class TelegramOrderNotificationService {
         },
         { maxAttempts: 1 },
       );
+      if (!response) return roleRecipients > 0 ? "sent" : "skipped";
       await this.rememberStaffMessage(order.id, response);
       return "sent";
     } catch (error) {
@@ -270,21 +372,247 @@ export class TelegramOrderNotificationService {
         };
       }
       this.logger.error(
-        `Telegram order notification failed for order ${orderId}`,
+        "Telegram order notification failed for order " + orderId,
         error instanceof Error ? error.stack : String(error),
       );
-      /*
-       * ENG MUHIM YO'QOTISH: yangi buyurtma xabari yetib bormasa, oshxona
-       * buyurtma haqda umuman bilmaydi. Ilgari bu yerda faqat log qolardi.
-       */
-      if (recordFailure && tenantId) await this.deadLetters.record({
-        tenantId,
-        kind: "staff_new_order",
-        orderId,
-        error,
-        attempts: 1,
-      });
+      if (recordFailure && tenantId) {
+        await this.deadLetters.record({
+          tenantId,
+          kind: "staff_new_order",
+          orderId,
+          error,
+          attempts: 1,
+        });
+      }
       return "failed";
+    }
+  }
+
+  private async queueRoleNewOrderNotifications(
+    order: StaffOrderForMessage,
+    tenantId: string,
+  ): Promise<number> {
+    const enabledRows = await this.prisma.setting.findMany({
+      where: {
+        tenantId,
+        key: {
+          in: [
+            "telegram_owner_order_notifications_enabled",
+            "telegram_cashier_order_notifications_enabled",
+          ],
+        },
+        value: "true",
+      },
+      select: { key: true },
+    });
+    const enabled = new Set(enabledRows.map((row) => row.key));
+    const ownerEnabled = enabled.has("telegram_owner_order_notifications_enabled");
+    const cashierEnabled = enabled.has("telegram_cashier_order_notifications_enabled");
+    if (!ownerEnabled && !cashierEnabled) return 0;
+
+    const branchMembership = {
+      tenantId,
+      status: "ACTIVE" as const,
+      OR: [{ branchId: null }, { branchId: order.branchId }],
+    };
+    const [owners, cashiers] = await Promise.all([
+      ownerEnabled
+        ? this.prisma.user.findMany({
+            where: {
+              isActive: true,
+              telegramUserId: { not: null },
+              tenantMemberships: {
+                some: {
+                  ...branchMembership,
+                  roles: { some: { role: { code: "SUPER_ADMIN" } } },
+                },
+              },
+            },
+            select: { id: true },
+          })
+        : Promise.resolve([]),
+      cashierEnabled
+        ? this.prisma.employee.findMany({
+            where: {
+              branchId: order.branchId,
+              status: EmployeeStatus.ACTIVE,
+              telegramUserId: { not: null },
+              user: {
+                is: {
+                  isActive: true,
+                  tenantMemberships: {
+                    some: {
+                      ...branchMembership,
+                      roles: { some: { role: { code: "CASHIER" } } },
+                    },
+                  },
+                },
+              },
+            },
+            select: { id: true },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const recipients: StaffOrderRecipientPayload[] = [
+      ...owners.map((owner) => ({ role: "OWNER" as const, recipientId: owner.id })),
+      ...cashiers.map((cashier) => ({ role: "CASHIER" as const, recipientId: cashier.id })),
+    ];
+    if (recipients.length === 0) return 0;
+
+    await this.prisma.notificationOutbox.createMany({
+      data: recipients.map((recipient) => ({
+        tenantId,
+        dedupeKey:
+          "telegram_" +
+          recipient.role.toLowerCase() +
+          "_new_order:" +
+          order.id +
+          ":" +
+          recipient.recipientId,
+        kind: "staff_role_new_order",
+        orderId: order.id,
+        payload: recipient,
+      })),
+      skipDuplicates: true,
+    });
+    return recipients.length;
+  }
+
+  private parseRoleOrderRecipient(payload: unknown): StaffOrderRecipientPayload | null {
+    if (!payload || typeof payload !== "object") return null;
+    const record = payload as { role?: unknown; recipientId?: unknown };
+    if (
+      (record.role !== "OWNER" && record.role !== "CASHIER") ||
+      typeof record.recipientId !== "string" ||
+      record.recipientId.length === 0
+    ) {
+      return null;
+    }
+    return { role: record.role, recipientId: record.recipientId };
+  }
+
+  private parseCourierAssignment(payload: unknown): string | null {
+    if (!payload || typeof payload !== "object") return null;
+    const employeeId = (payload as { employeeId?: unknown }).employeeId;
+    return typeof employeeId === "string" && employeeId.length > 0
+      ? employeeId
+      : null;
+  }
+
+  private async isNotificationEnabled(
+    tenantId: string,
+    key:
+      | "telegram_owner_order_notifications_enabled"
+      | "telegram_cashier_order_notifications_enabled"
+      | "telegram_courier_order_notifications_enabled",
+  ): Promise<boolean> {
+    const setting = await this.prisma.setting.findUnique({
+      where: { tenantId_key: { tenantId, key } },
+      select: { value: true },
+    });
+    return setting?.value === "true";
+  }
+
+  private async findStaffRecipientChatId(
+    tenantId: string,
+    branchId: string,
+    recipient: StaffOrderRecipientPayload,
+  ): Promise<string | null> {
+    const branchMembership = {
+      tenantId,
+      status: "ACTIVE" as const,
+      OR: [{ branchId: null }, { branchId }],
+    };
+
+    if (recipient.role === "OWNER") {
+      const owner = await this.prisma.user.findFirst({
+        where: {
+          id: recipient.recipientId,
+          isActive: true,
+          telegramUserId: { not: null },
+          tenantMemberships: {
+            some: {
+              ...branchMembership,
+              roles: { some: { role: { code: "SUPER_ADMIN" } } },
+            },
+          },
+        },
+        select: { telegramUserId: true },
+      });
+      return owner?.telegramUserId ?? null;
+    }
+
+    const cashier = await this.prisma.employee.findFirst({
+      where: {
+        id: recipient.recipientId,
+        branchId,
+        status: EmployeeStatus.ACTIVE,
+        telegramUserId: { not: null },
+        user: {
+          is: {
+            isActive: true,
+            tenantMemberships: {
+              some: {
+                ...branchMembership,
+                roles: { some: { role: { code: "CASHIER" } } },
+              },
+            },
+          },
+        },
+      },
+      select: { telegramUserId: true },
+    });
+    return cashier?.telegramUserId ?? null;
+  }
+
+  private async sendDirectStaffOrderMessage(
+    chatId: string,
+    order: StaffOrderForMessage,
+    role: StaffOrderRecipientRole | "COURIER",
+  ): Promise<OutboxDeliveryResult> {
+    const token = process.env.TELEGRAM_STAFF_BOT_TOKEN;
+    if (!token) return "skipped";
+    const nextStep =
+      role === "COURIER"
+        ? "Kuryer paneli: /courier"
+        : role === "CASHIER"
+          ? "Kassa paneli: /cashier"
+          : "Buyurtmani restoran POS boshqaruv panelida ko'ring.";
+
+    try {
+      const response = await this.telegramRequest(
+        "sendMessage",
+        {
+          chat_id: chatId,
+          text: this.formatStaffOrderMessage(order) + "\n\n" + nextStep,
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
+        },
+        { maxAttempts: 1 },
+        token,
+      );
+      return response ? "sent" : "skipped";
+    } catch (error) {
+      if (error instanceof TelegramRequestError) {
+        if (error.status === 429) {
+          return {
+            kind: "retryable",
+            retryAfterSeconds: error.retryAfterSeconds,
+          };
+        }
+        if (error.status && error.status >= 500) {
+          return { kind: "retryable", retryAfterSeconds: null };
+        }
+        return {
+          kind: "rejected",
+          reason: "Telegram could not deliver the staff message. The recipient may need to start the staff bot.",
+        };
+      }
+      return {
+        kind: "retryable",
+        retryAfterSeconds: null,
+      };
     }
   }
 
@@ -310,7 +638,18 @@ export class TelegramOrderNotificationService {
      * Status-refresh job'lari hodisaning eski payload'ini takrorlamaydi:
      * xodim xabari buyurtmaning joriy holatidan qayta chiziladi.
      */
-    if (!["staff_new_order", "staff_status_refresh", "customer_status"].includes(entry.kind)) {
+    const recipientNotification =
+      entry.kind === "staff_role_new_order" ||
+      entry.kind === "staff_courier_assignment";
+    if (
+      ![
+        "staff_new_order",
+        "staff_status_refresh",
+        "customer_status",
+        "staff_role_new_order",
+        "staff_courier_assignment",
+      ].includes(entry.kind)
+    ) {
       return "not-retryable";
     }
 
@@ -318,15 +657,38 @@ export class TelegramOrderNotificationService {
       where: { id: tenantId, status: "ACTIVE" },
       select: { id: true },
     });
-    if (!activeTenant) throw new ForbiddenException("Telegram qayta yuborish tenanti faol emas");
-    const deliveryResult =
-      entry.kind === "staff_status_refresh"
-        ? await this.deliverOutboxStaffStatusRefresh(entry.orderId, tenantId)
-        : await this.enqueueMessage(entry.orderId, () =>
-            entry.kind === "staff_new_order"
-              ? this.sendNewOrder(entry.orderId, tenantId, false)
-              : this.resendCurrentCustomerStatus(entry.orderId, tenantId),
-          );
+    if (!activeTenant) {
+      throw new ForbiddenException("Telegram qayta yuborish tenanti faol emas");
+    }
+
+    let deliveryResult: OutboxDeliveryResult | DeadLetterRetryResult;
+    if (recipientNotification) {
+      const outboxId = Number(messageId.slice("outbox-".length));
+      if (!Number.isSafeInteger(outboxId) || outboxId <= 0) return "not-found";
+      const job = await this.prisma.notificationOutbox.findFirst({
+        where: {
+          id: outboxId,
+          tenantId,
+          orderId: entry.orderId,
+          kind: entry.kind,
+        },
+        select: { payload: true },
+      });
+      if (!job) return "not-found";
+      deliveryResult =
+        entry.kind === "staff_role_new_order"
+          ? await this.deliverOutboxRoleNewOrder(entry.orderId, tenantId, job.payload)
+          : await this.deliverOutboxCourierAssignment(entry.orderId, tenantId, job.payload);
+    } else {
+      deliveryResult =
+        entry.kind === "staff_status_refresh"
+          ? await this.deliverOutboxStaffStatusRefresh(entry.orderId, tenantId)
+          : await this.enqueueMessage(entry.orderId, () =>
+              entry.kind === "staff_new_order"
+                ? this.sendNewOrder(entry.orderId, tenantId, false)
+                : this.resendCurrentCustomerStatus(entry.orderId, tenantId),
+            );
+    }
 
     if (deliveryResult === "failed") {
       return "failed";
@@ -486,6 +848,37 @@ export class TelegramOrderNotificationService {
     return order?.branch.tenantId ?? null;
   }
 
+  private async findOrderForTenant(
+    orderId: string,
+    tenantId: string,
+    client: PrismaService | Prisma.TransactionClient = this.prisma,
+  ): Promise<StaffOrderForMessage | null> {
+    const order = await client.order.findFirst({
+      where: { id: orderId, tenantId, branch: { tenantId } },
+      include: {
+        items: { orderBy: { createdAt: "asc" } },
+        customerOrder: {
+          include: {
+            customer: { select: { telegramChatId: true } },
+          },
+        },
+        kitchenTickets: { orderBy: { createdAt: "desc" }, take: 1 },
+      },
+    });
+    if (!order) return null;
+    return {
+      ...order,
+      kitchenTickets: order.kitchenTickets.map((ticket) => ({
+        ...ticket,
+        status:
+          ticket.status === KitchenTicketStatus.COMPLETED ||
+          ticket.status === KitchenTicketStatus.CANCELLED
+            ? ticket.status
+            : kitchenStatusForOrder(order.status) ?? ticket.status,
+      })),
+    };
+  }
+
   private async findOrderForMessage(
     orderId: string,
     client: PrismaService | Prisma.TransactionClient = this.prisma,
@@ -577,7 +970,9 @@ export class TelegramOrderNotificationService {
     const mapUrl = this.deliveryMapUrl(order.deliveryLocation);
 
     if (mapUrl) {
-      lines.push("<b>Lokatsiya:</b> xaritada ochish");
+      lines.push(
+        `<b>Lokatsiya:</b> <a href="${this.escapeHtml(mapUrl)}">xaritada ochish</a>`,
+      );
     }
 
     return lines;
@@ -867,8 +1262,9 @@ export class TelegramOrderNotificationService {
     method: string,
     payload: unknown,
     options: { maxAttempts?: number } = {},
+    requestToken = process.env.TELEGRAM_BOT_TOKEN,
   ): Promise<TelegramResponse | undefined> {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
+    const token = requestToken;
 
     if (!token) {
       return undefined;

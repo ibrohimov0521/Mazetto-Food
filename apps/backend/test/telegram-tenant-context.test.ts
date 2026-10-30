@@ -11,6 +11,11 @@ function tenantContextFixture() {
     { id: "tenant-off", code: "NO_TELEGRAM", status: "ACTIVE", feature: false, domain: true },
   ];
   const contexts = new Map<string, string>();
+  const staffUsers = new Map<string, {
+    isActive: boolean;
+    employee: null;
+    tenantMemberships: Array<{ tenantId: string }>;
+  }>();
   const prisma = {
     restaurantTenant: {
       findFirst: async ({ where }: { where: { id?: string; code?: string; status?: string } }) => {
@@ -35,11 +40,17 @@ function tenantContextFixture() {
       findUnique: async ({ where }: { where: { tenantId: string } }) => ({ staffChatId: where.tenantId === "tenant-off" ? null : "-1001234567890" }),
     },
     employee: {
-      findUnique: async () => ({ status: "ACTIVE", branch: { tenantId: "tenant-b", tenant: { status: "ACTIVE" } } }),
+      findUnique: async ({ where }: { where: { telegramUserId: string } }) =>
+        where.telegramUserId === "88"
+          ? { status: "ACTIVE", branch: { tenantId: "tenant-b", tenant: { status: "ACTIVE" } } }
+          : null,
     },
-    user: { findUnique: async () => null },
+    user: {
+      findUnique: async ({ where }: { where: { telegramUserId: string } }) =>
+        staffUsers.get(where.telegramUserId) ?? null,
+    },
   };
-  return { contexts, prisma };
+  return { contexts, prisma, staffUsers };
 }
 
 test("Telegram start deep link selects and persists the verified enabled tenant", async () => {
@@ -88,6 +99,32 @@ test("staff Telegram updates resolve from the employee's active branch tenant", 
   const fixture = tenantContextFixture();
   const service = new TelegramTenantContextService(fixture.prisma as never);
   assert.equal(await service.resolveStaffTenantId({ message: { chat: { id: 99 }, from: { id: 88 }, text: "/staff" } }), "tenant-b");
+});
+
+
+
+test("owner staff commands resolve only a unique active tenant membership", async () => {
+  const fixture = tenantContextFixture();
+  fixture.staffUsers.set("77", {
+    isActive: true,
+    employee: null,
+    tenantMemberships: [{ tenantId: "tenant-a" }],
+  });
+  fixture.staffUsers.set("78", {
+    isActive: true,
+    employee: null,
+    tenantMemberships: [{ tenantId: "tenant-a" }, { tenantId: "tenant-b" }],
+  });
+  fixture.staffUsers.set("79", {
+    isActive: false,
+    employee: null,
+    tenantMemberships: [{ tenantId: "tenant-a" }],
+  });
+  const service = new TelegramTenantContextService(fixture.prisma as never);
+
+  assert.equal(await service.resolveStaffTenantId({ message: { from: { id: 77 } } }), "tenant-a");
+  assert.equal(await service.resolveStaffTenantId({ message: { from: { id: 78 } } }), null);
+  assert.equal(await service.resolveStaffTenantId({ message: { from: { id: 79 } } }), null);
 });
 
 test("webhooks run tenant services inside the selected tenant scope", async () => {

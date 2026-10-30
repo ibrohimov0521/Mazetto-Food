@@ -84,14 +84,36 @@ export class TelegramTenantContextService {
     if (employee?.status === "ACTIVE" && employee.branch.tenant.status === "ACTIVE") {
       return employee.branch.tenantId;
     }
+
     const user = await this.prisma.user.findUnique({
       where: { telegramUserId: key },
-      select: { employee: { select: { status: true, branch: { select: { tenantId: true, tenant: { select: { status: true } } } } } } },
+      select: {
+        isActive: true,
+        employee: {
+          select: {
+            status: true,
+            branch: { select: { tenantId: true, tenant: { select: { status: true } } } },
+          },
+        },
+        tenantMemberships: {
+          where: {
+            status: "ACTIVE",
+            branchId: null,
+            tenant: { status: "ACTIVE" },
+            roles: { some: { role: { code: "SUPER_ADMIN", isActive: true } } },
+          },
+          select: { tenantId: true },
+        },
+      },
     });
     const linkedEmployee = user?.employee;
-    return linkedEmployee?.status === "ACTIVE" && linkedEmployee.branch.tenant.status === "ACTIVE"
-      ? linkedEmployee.branch.tenantId
-      : null;
+    if (linkedEmployee?.status === "ACTIVE" && linkedEmployee.branch.tenant.status === "ACTIVE") {
+      return linkedEmployee.branch.tenantId;
+    }
+    if (!user?.isActive) return null;
+
+    const ownerTenantIds = [...new Set(user.tenantMemberships.map((membership) => membership.tenantId))];
+    return ownerTenantIds.length === 1 ? ownerTenantIds[0] ?? null : null;
   }
 
   private async findEnabledTelegramTenant(where: { code: string }): Promise<string | null> {

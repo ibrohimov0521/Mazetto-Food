@@ -65,8 +65,16 @@ export class TelegramController {
     })) {
       return { ok: true, handled: true };
     }
+
     const tenantId = await this.tenantContext.resolveStaffTenantId(update);
-    if (!tenantId) return { ok: true, handled: false };
+    if (!tenantId) {
+      if (!this.isStaffHelpCommand(update)) return { ok: true, handled: false };
+      return (
+        (await this.telegramStaffService?.handleWebhookUpdate(update)) ??
+        { ok: true, handled: false }
+      );
+    }
+
     return runWithTenantScope(tenantId, async () => (
       (await this.telegramStaffService?.handleWebhookUpdate(update)) ??
       { ok: true, handled: false }
@@ -80,6 +88,13 @@ export class TelegramController {
     }
   }
 
+  private isStaffHelpCommand(update: unknown): boolean {
+    const message = this.toTelegramDiagnosticUpdate(update).message;
+    return Boolean(
+      message?.chat?.id &&
+        /^\/help(?:@[A-Za-z0-9_]+)?$/.test(message.text?.trim() ?? ""),
+    );
+  }
 
   private async handleStaffChatIdDiagnostic(
     update: unknown,
@@ -99,7 +114,7 @@ export class TelegramController {
         text:
           telegramUserId === undefined || telegramUserId === null
             ? "Telegram foydalanuvchi ID topilmadi. Botga shaxsiy chatdan /myid yuboring."
-            : `Sizning Telegram ID: ${telegramUserId}\n\nBu raqamni Admin boshqaruv → Xodimlar → Telegram foydalanuvchi ID maydoniga kiriting.`,
+            : `Sizning Telegram ID: ${telegramUserId}\n\nOwner: POS → Sozlamalar → Telegram buyurtma xabarlari → Owner Telegram ID. Kassir/kuryer/xodim: Admin → Xodimlar → Telegram foydalanuvchi ID.`,
       }, token);
       return true;
     }

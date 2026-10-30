@@ -39,8 +39,14 @@ test("staff order notification uses an explicit map button without a link previe
   };
   const service = new TelegramOrderNotificationService(
     {
-      restaurantTenant: { findFirst: async () => ({ id: "tenant-a" }), findMany: async () => [{ id: "tenant-a" }] },
-      tenantTelegramConfiguration: { findUnique: async () => ({ staffChatId: "staff-chat" }) },
+      setting: { findMany: async () => [] },
+      restaurantTenant: {
+        findFirst: async () => ({ id: "tenant-a" }),
+        findMany: async () => [{ id: "tenant-a" }],
+      },
+      tenantTelegramConfiguration: {
+        findUnique: async () => ({ staffChatId: "staff-chat" }),
+      },
       order: {
         findUnique: async () => ({ branch: { tenantId: "tenant-a" } }),
         findFirst: async () => order,
@@ -75,8 +81,10 @@ test("staff order notification uses an explicit map button without a link previe
           url: "https://www.google.com/maps/search/?api=1&query=41.2154,69.1548",
         }]],
       });
-      assert.match(String(payload.text), /Lokatsiya:<\/b> xaritada ochish/);
-      assert.doesNotMatch(String(payload.text), /<a href=/);
+      assert.match(
+        String(payload.text),
+        /Lokatsiya:<\/b> <a href="https:\/\/www\.google\.com\/maps\/search\/\?api=1&amp;query=41\.2154,69\.1548">xaritada ochish<\/a>/,
+      );
     }
 
     order.deliveryLocation = { latitude: null, longitude: null };

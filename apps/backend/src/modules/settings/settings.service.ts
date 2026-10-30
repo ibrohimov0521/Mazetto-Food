@@ -42,6 +42,10 @@ const IMMEDIATE_SETTING_KEYS = new Set<SettingKey>([
   "cashier_payment_methods",
   "kitchen_pos_orders_enabled",
   "order_display_number_start",
+  "telegram_owner_telegram_user_id",
+  "telegram_owner_order_notifications_enabled",
+  "telegram_cashier_order_notifications_enabled",
+  "telegram_courier_order_notifications_enabled",
 ]);
 type SettingReadClient = Pick<Prisma.TransactionClient, "setting">;
 
@@ -93,15 +97,22 @@ export class SettingsService {
    */
   async listSettings(user: AuthenticatedUser) {
     const tenantId = await resolveRestaurantTenantId(this.prisma, user);
-    const [stored, immediate] = await Promise.all([
+    const [stored, immediate, currentUser] = await Promise.all([
       this.readAll(tenantId),
       this.readImmediateSettings(tenantId),
+      this.prisma.user.findUnique({
+        where: { id: user.id },
+        select: { telegramUserId: true },
+      }),
     ]);
 
     return settingKeys.map((key) => {
-      const rawValue = IMMEDIATE_SETTING_KEYS.has(key)
-        ? immediate[key]
-        : stored[key];
+      const rawValue =
+        key === "telegram_owner_telegram_user_id"
+          ? currentUser?.telegramUserId ?? undefined
+          : IMMEDIATE_SETTING_KEYS.has(key)
+            ? immediate[key]
+            : stored[key];
 
       return {
         key,
@@ -109,7 +120,10 @@ export class SettingsService {
           describeSettingRule(key).kind === "csv-enum"
             ? parseCsvSetting(key, rawValue).join(",")
             : (rawValue ?? settingFallback(key)),
-        isStored: rawValue !== undefined,
+        isStored:
+          key === "telegram_owner_telegram_user_id"
+            ? Boolean(currentUser?.telegramUserId)
+            : rawValue !== undefined,
         isPublic: isPublicSettingKey(key),
         affectsCustomer: affectsCustomerCheckout(key),
         rule: describeSettingRule(key),
@@ -149,6 +163,39 @@ export class SettingsService {
         where: { tenantId_key: { tenantId, key } },
         select: { value: true },
       });
+      let beforeValue = previous?.value ?? settingFallback(key);
+      if (key === "telegram_owner_telegram_user_id") {
+        const currentUser = await tx.user.findUnique({
+          where: { id: user.id },
+          select: { telegramUserId: true },
+        });
+        beforeValue = currentUser?.telegramUserId ?? "";
+
+        if (value) {
+          const [existingUser, existingEmployee] = await Promise.all([
+            tx.user.findUnique({
+              where: { telegramUserId: value },
+              select: { id: true },
+            }),
+            tx.employee.findFirst({
+              where: { telegramUserId: value, userId: { not: user.id } },
+              select: { id: true },
+            }),
+          ]);
+          if (existingUser && existingUser.id !== user.id) {
+            throw new BadRequestException("Bu Telegram ID boshqa foydalanuvchiga bog'langan.");
+          }
+          if (existingEmployee) {
+            throw new BadRequestException("Bu Telegram ID boshqa xodimga bog'langan.");
+          }
+        }
+
+        await tx.user.update({
+          where: { id: user.id },
+          data: { telegramUserId: value || null },
+        });
+      }
+
       const updated = await tx.setting.upsert({
         where: { tenantId_key: { tenantId, key } },
         update: { value, updatedById: user.id },
@@ -168,7 +215,7 @@ export class SettingsService {
         entity: "Setting",
         entityId: key,
         metadata: {
-          before: previous?.value ?? settingFallback(key),
+          before: beforeValue,
           after: value,
           wasStored: previous !== null,
         },
