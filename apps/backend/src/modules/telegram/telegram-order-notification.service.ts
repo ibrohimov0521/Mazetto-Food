@@ -80,7 +80,6 @@ type StaffOrderRecipientPayload = {
   role: StaffOrderRecipientRole;
   recipientId: string;
 };
-type CourierAssignmentPayload = { employeeId: string };
 type TelegramResponse = {
   ok?: boolean;
   description?: string;
