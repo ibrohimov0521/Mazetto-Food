@@ -250,3 +250,15 @@ Barcha darvozalar o'tmaguncha production migration/deploy, DNS/public route va i
 - Candidate health returned HTTP 200, PostgreSQL `ok`, Redis `connected`; Prisma reported 64/64 migrations. The platform activation flag was unset and therefore remained closed by default.
 - The guarded A/B harness passed on the exact candidate: tenant membership/cache separation, order mutation/cancellation, WEB cash replay/settlement, POS cash sale/refund, shift totals, kitchen visibility, live order delivery/reconnect, customer logout revocation, host/domain, reports/audit, OTP and media isolation. Harness cleanup restored the staging baseline: 1 tenant, 0 branches/users/memberships/domains/customers, 6 audit rows and 20 notification outbox rows.
 - Staging has no public POS/customer-web route, domain, or Telegram credentials. This backend-only candidate proof does not claim browser owner login, public DNS/TLS routing, live Telegram, or full customer-web-to-POS acceptance. Production database, services, DNS, and tenant status were unchanged.
+
+
+## PR #319 owner password reset follow-up staging rollout (2026-10-30)
+
+- Exact PR head bd75baa0e0356c236fd562ce5f65bbdd6f6558cb passed CI run #955 (40940517495): verify and the Windows desktop package both succeeded.
+- The candidate image mazetto-staging-api-crmkze:pr319-bd75baa was built from that exact commit; image ID sha256:94d4f883ac04ee7bb2c2a8fe7036527a212f9bff04e79a266b37594aa5ba43f5. Its OCI revision label matches the commit.
+- Before rollout, database mazetto_staging was backed up to /home/javohir/backups/mazetto-staging/pr319-bd75baa/mazetto-20261030-014705062.dump (329,119 bytes, mode 600, SHA-256 45ce8641d44d899e22cd5ebd013c2bf7855bc8ef79cee1eed2494afd2313d5c4). The archive passed pg_restore --list with 722 entries.
+- The prior staging image was retained as mazetto-staging-api-crmkze:rollback-pr319-bd75baa (image ID sha256:4316f75ec6311841e646101c30555fad4d5395735f7eb7357bb272b7fb0fba9c). The staging service used stop-first update, rollback-on-failure, and a 60-second stability monitor; Swarm converged.
+- No migration was run. Prisma reported 64 migrations and Database schema is up to date. Candidate health returned HTTP 200 with PostgreSQL ok and Redis connected.
+- The guarded qa-tenant-ab-staging.mjs harness passed on the exact candidate: tenant membership/cache isolation, order mutation/cancellation, WEB cash replay/settlement, POS cash sale/refund, shift-close totals, kitchen visibility, live order delivery/reconnect, logout revocation, host/domain, reports/audit, OTP sessions, and tenant media isolation. Its fixture cleanup assertions passed.
+- Staging has no public platform owner-panel route. The owner-password-reset endpoint/UI was not exercised through a staging browser or owner login; no staging or production owner password was changed. Real owner acceptance remains open.
+- Production main and production tag remain e8ae781356fdab6878c28694bad93c556eb11a33; no production database, service, DNS, tenant status, or password was changed.
