@@ -11,6 +11,7 @@ import { StaffService } from "../src/modules/staff/staff.service";
 import { UserAuthCacheService } from "../src/common/auth/user-auth-cache.service";
 import { TenantMembershipAuthService } from "../src/modules/auth/tenant-membership-auth.service";
 import { TenantRequestContextService } from "../src/common/tenant/tenant-request-context.service";
+import { SettingsService } from "../src/modules/settings/settings.service";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { PrismaService } from "../src/prisma/prisma.service";
 import { loadEnvironmentFile } from "../src/config/env";
@@ -32,10 +33,12 @@ async function main(): Promise<void> {
       prisma,
       new UserAuthCacheService(new RedisCacheService()),
     );
+    const redis = new RedisService();
+    const settings = new SettingsService(prisma, redis);
     const authService = new AuthService(
       prisma,
       new JwtService(),
-      new LoginThrottleService(new RedisService()),
+      new LoginThrottleService(redis, settings),
       new TenantMembershipAuthService(prisma),
       new TenantRequestContextService(prisma),
     );

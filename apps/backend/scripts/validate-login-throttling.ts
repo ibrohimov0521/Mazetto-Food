@@ -42,19 +42,23 @@ assert.match(clientAddress, /chain\.length - hops/);
 // aynan o'sha kalit qayta so'ralganda ishlardi (PHASE 6 H2).
 assert.doesNotMatch(authService, /new Map<string, LoginThrottleRecord>/);
 assert.doesNotMatch(authService, /LOGIN_THROTTLE_/);
-assert.match(authService, /this\.loginThrottle\.assertAllowed\(identifier, clientAddress\)/);
-assert.match(authService, /this\.loginThrottle\.registerFailure\(identifier, clientAddress\)/);
+assert.match(authService, /this\.loginThrottle\.assertAllowed\(/);
+assert.match(authService, /this\.loginThrottle\.registerFailure\(/);
 assert.match(authService, /this\.loginThrottle\.clear\(identifier, clientAddress\)/);
 
-// Ikki kalit ikki xil hujumga qarshi: manzil bo'yicha parol sepish,
-// akkaunt bo'yicha brute-force.
-assert.match(loginThrottle, /:address:\$\{clientAddress\}/);
+// Juft kalit va akkaunt kaliti turli tarmoq manzillaridagi urinishlarni sanaydi.
+assert.match(loginThrottle, /":address:"/);
+assert.match(loginThrottle, /clientAddress/);
 assert.match(loginThrottle, /:account/);
-assert.match(loginThrottle, /const MAX_ADDRESS_FAILURES = 5/);
-assert.match(loginThrottle, /const MAX_IDENTIFIER_FAILURES = 20/);
+assert.match(loginThrottle, /settings\.getInt\(ADDRESS_LIMIT_KEY, tenantId\)/);
+assert.match(loginThrottle, /settings\.getInt\(IDENTIFIER_LIMIT_KEY, tenantId\)/);
+assert.match(loginThrottle, /settings\.getInt\(WINDOW_MINUTES_KEY, tenantId\)/);
 assert.match(loginThrottle, /HttpStatus\.TOO_MANY_REQUESTS/);
-// TTL tozalashni Redis bajaradi; oyna oxirgi urinishdan hisoblanadi.
-assert.match(loginThrottle, /expire\(key, WINDOW_SECONDS\)/);
+assert.match(loginThrottle, /Kirish vaqtincha cheklangan/);
+assert.match(settingRules, /login_throttle_address_failures: INT\(1, 100, 10\)/);
+assert.match(settingRules, /login_throttle_window_minutes: INT\(1, 1440, 5\)/);
+// TTL tozalashni Redis bajaradi; amal qilish muddati tenant sozlamasidan olinadi.
+assert.match(loginThrottle, /expire\(key, windowSeconds\)/);
 // Redis tushganda cheklov butunlay yo'qolmaydi, lekin zaxira jadval ham
 // chegaralangan bo'lishi shart — kalitni hujumchi tanlaydi.
 assert.match(loginThrottle, /FALLBACK_MAX_ENTRIES/);

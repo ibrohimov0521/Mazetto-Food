@@ -32,12 +32,12 @@ const settings = [
   },
   {
     key: "login_throttle_window_minutes",
-    value: "15",
+    value: "5",
     isStored: false,
     isPublic: false,
     affectsCustomer: false,
-    rule: { kind: "int", min: 1, max: 1440, fallback: 15 },
-    fallback: "15",
+    rule: { kind: "int", min: 1, max: 1440, fallback: 5 },
+    fallback: "5",
   },
   {
     key: "cashier_payment_methods",

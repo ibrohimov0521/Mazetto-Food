@@ -73,8 +73,14 @@ export class AuthService {
       );
     }
     const identifier = this.normalizeIdentifier(dto.identifier);
+    const throttleTenantId =
+      tenantContext.kind === "TRUSTED" ? tenantContext.tenantId : undefined;
 
-    await this.loginThrottle.assertAllowed(identifier, clientAddress);
+    await this.loginThrottle.assertAllowed(
+      identifier,
+      clientAddress,
+      throttleTenantId,
+    );
 
     const userRecord = await this.prisma.user.findFirst({
       where: {
@@ -85,7 +91,11 @@ export class AuthService {
     });
 
     if (!userRecord?.passwordHash) {
-      await this.loginThrottle.registerFailure(identifier, clientAddress);
+      await this.loginThrottle.registerFailure(
+        identifier,
+        clientAddress,
+        throttleTenantId,
+      );
       throw new UnauthorizedException("Invalid credentials");
     }
 
@@ -95,7 +105,11 @@ export class AuthService {
     );
 
     if (!passwordMatches) {
-      await this.loginThrottle.registerFailure(identifier, clientAddress);
+      await this.loginThrottle.registerFailure(
+        identifier,
+        clientAddress,
+        throttleTenantId,
+      );
       throw new UnauthorizedException("Invalid credentials");
     }
 
@@ -107,7 +121,11 @@ export class AuthService {
           )
         : this.toAuthenticatedUser(userRecord);
     if (!user) {
-      await this.loginThrottle.registerFailure(identifier, clientAddress);
+      await this.loginThrottle.registerFailure(
+        identifier,
+        clientAddress,
+        throttleTenantId,
+      );
       throw new UnauthorizedException("Invalid credentials");
     }
 

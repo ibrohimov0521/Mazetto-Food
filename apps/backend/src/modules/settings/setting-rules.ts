@@ -70,9 +70,9 @@ const SETTING_RULES = {
   customer_code_request_window_seconds: INT(10, 3600, 60),
 
   // --- Login cheklovi --------------------------------------------------
-  login_throttle_address_failures: INT(1, 100, 5),
+  login_throttle_address_failures: INT(1, 100, 10),
   login_throttle_identifier_failures: INT(1, 200, 20),
-  login_throttle_window_minutes: INT(1, 1440, 15),
+  login_throttle_window_minutes: INT(1, 1440, 5),
 
   // --- Mijoz buyurtmasi ------------------------------------------------
   customer_order_attempt_ttl_hours: INT(1, 168, 24),
