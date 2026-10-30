@@ -980,7 +980,7 @@ export class StaffService {
     roleCodes: string[],
   ): Promise<void> {
     if (roleCodes.some(isPlatformRoleCode)) {
-      throw new ForbiddenException("Platform roles are managed through the BestTeam owner console");
+      throw new ForbiddenException("Platform xodimlari BestTeam egasi panelida boshqariladi");
     }
     if (
       roleCodes.includes("SUPER_ADMIN") &&
@@ -1103,7 +1103,7 @@ export class StaffService {
     staff: StaffRecord,
   ): Promise<void> {
     if (staff.roles.some(({ role }) => isPlatformRoleCode(role.code))) {
-      throw new ForbiddenException("Platform accounts are managed through the BestTeam owner console");
+      throw new ForbiddenException("Platform akkauntlari BestTeam egasi panelida boshqariladi");
     }
 
     if (

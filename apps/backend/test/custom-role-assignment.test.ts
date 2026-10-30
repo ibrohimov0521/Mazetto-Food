@@ -139,7 +139,7 @@ test("PLATFORM roles cannot be assigned through restaurant staff management", as
       { id: "restaurant-owner", roles: ["SUPER_ADMIN"], permissions: ["STAFF_ROLE_ASSIGN"] },
       ["PLATFORM_OWNER"],
     ),
-    /BestTeam owner console/,
+    /BestTeam egasi panelida/,
   );
   assert.equal(roleLookups, 0);
 });
@@ -183,7 +183,7 @@ test("restaurant super admins cannot manage BestTeam platform accounts", async (
       { roles: ["SUPER_ADMIN"] },
       { roles: [{ role: { code: "PLATFORM_OWNER" } }] },
     ),
-    /BestTeam owner console/,
+    /BestTeam egasi panelida/,
   );
 });
 
