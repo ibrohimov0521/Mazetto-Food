@@ -10,6 +10,7 @@ import { TablesModule } from "../tables/tables.module";
 import { CashRegisterModule } from "../cash-register/cash-register.module";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { TelegramController } from "./telegram.controller";
+import { TelegramTenantContextService } from "./telegram-tenant-context.service";
 import { TelegramCustomerAuthService } from "./telegram-customer-auth.service";
 import { TelegramCustomerOrderingService } from "./telegram-customer-ordering.service";
 import { TelegramCustomerProductConfiguratorService } from "./telegram-customer-product-configurator.service";
@@ -45,6 +46,7 @@ import { TelegramStaffService } from "./telegram-staff.service";
     TelegramCustomerOrderHistoryService,
     TelegramCustomerOrderingService,
     TelegramCustomerProductConfiguratorService,
+    TelegramTenantContextService,
     TelegramStaffService,
   ],
   exports: [TelegramOrderNotificationService, TelegramCustomerAuthService],

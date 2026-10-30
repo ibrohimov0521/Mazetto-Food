@@ -62,6 +62,10 @@ class InMemoryPrisma {
   sessions: SessionRecord[] = [];
   restaurantTenant = {
     findMany: async () => [{ id: "tenant-mazetto", status: "ACTIVE" }],
+    findFirst: async ({ where }: { where: { id?: string; status?: string } }) =>
+      where.id === "tenant-mazetto" && where.status === "ACTIVE"
+        ? { id: "tenant-mazetto", status: "ACTIVE" }
+        : null,
   };
   private sequence = 0;
 
@@ -448,9 +452,8 @@ async function testOrderingCallbackErrorsDoNotSendAuthError(): Promise<void> {
   const controller = new TelegramController(
     telegramCustomerAuthService,
     { handleWebhook: async () => ({ ok: true, handled: true }) } as never,
-    {
-      restaurantTenant: { findMany: async () => [{ id: "tenant-mazetto" }] },
-    } as never,
+    undefined,
+    { resolveCustomerTenantId: async () => "tenant-mazetto", resolveStaffTenantId: async () => "tenant-mazetto" } as never,
   );
 
   const result = await controller.handleWebhook("test-secret", {
@@ -653,9 +656,8 @@ async function testWebhookSecretAndStaffRegression(): Promise<void> {
   const controller = new TelegramController(
     telegramCustomerAuthService,
     staffService as never,
-    {
-      restaurantTenant: { findMany: async () => [{ id: "tenant-mazetto" }] },
-    } as never,
+    undefined,
+    { resolveCustomerTenantId: async () => "tenant-mazetto", resolveStaffTenantId: async () => "tenant-mazetto" } as never,
   );
 
   await assert.rejects(
@@ -710,9 +712,8 @@ async function testTemporaryStaffChatIdDiagnostic(): Promise<void> {
   const controller = new TelegramController(
     telegramCustomerAuthService,
     staffService as never,
-    {
-      restaurantTenant: { findMany: async () => [{ id: "tenant-mazetto" }] },
-    } as never,
+    undefined,
+    { resolveCustomerTenantId: async () => "tenant-mazetto", resolveStaffTenantId: async () => "tenant-mazetto" } as never,
   );
   const result = await controller.handleWebhook("test-secret", {
     message: {

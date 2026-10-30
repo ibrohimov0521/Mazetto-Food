@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   getMazettoFoodCustomerApiBaseUrl,
   isMazettoFoodHost,
+  resolveCustomerApiBaseUrl,
 } from "../lib/mazetto-food-host.mjs";
 
 test("production customer domains use the verified restaurant API host", () => {
@@ -36,4 +37,38 @@ test("Mazetto restaurant subdomains use same-origin tenant API proxy", () => {
     getMazettoFoodCustomerApiBaseUrl("www.oqtepa.mazetto.uz"),
     null,
   );
+});
+
+
+test("production customer requests preserve external custom-domain tenant host", () => {
+  assert.equal(resolveCustomerApiBaseUrl({
+    hostname: "cafe.example.uz",
+    nodeEnv: "production",
+    configuredUrl: "https://api.mazettofood.uz/api/v1",
+    isBrowser: true,
+  }), "/api/v1");
+});
+
+test("production Mazetto root uses its configured customer API host", () => {
+  assert.equal(resolveCustomerApiBaseUrl({
+    hostname: "mazettofood.uz",
+    nodeEnv: "production",
+    configuredUrl: "https://api.mazettofood.uz/api/v1",
+    isBrowser: true,
+  }), "https://api.mazettofood.uz/api/v1");
+});
+
+test("server rendering uses configured API base and development uses local API", () => {
+  assert.equal(resolveCustomerApiBaseUrl({
+    hostname: "",
+    nodeEnv: "production",
+    configuredUrl: "https://api.mazettofood.uz/api/v1/",
+    isBrowser: false,
+  }), "https://api.mazettofood.uz/api/v1");
+  assert.equal(resolveCustomerApiBaseUrl({
+    hostname: "localhost",
+    nodeEnv: "development",
+    configuredUrl: "",
+    isBrowser: true,
+  }), "http://localhost:4000/api/v1");
 });

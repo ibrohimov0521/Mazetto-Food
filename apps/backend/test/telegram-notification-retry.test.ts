@@ -38,6 +38,11 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
   const prisma = {
     restaurantTenant: {
       findMany: async () => activeTenantIds.map((id) => ({ id })),
+      findFirst: async ({ where }: { where: { id: string } }) => activeTenantIds.includes(where.id) ? { id: where.id } : null,
+      findUnique: async ({ where }: { where: { id: string } }) => ({ code: where.id === "tenant-a" ? "NORTH_CAFE" : "OTHER_CAFE" }),
+    },
+    tenantTelegramConfiguration: {
+      findUnique: async ({ where }: { where: { tenantId: string } }) => ({ staffChatId: where.tenantId === "tenant-a" ? "-1001111111111" : "-1002222222222" }),
     },
     order: {
       findUnique: async () => ({ branch: { tenantId: "tenant-a" } }),
@@ -140,14 +145,13 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
     assert.deepEqual(await deadLetters.list("tenant-b"), []);
 
     activeTenantIds.push("tenant-b");
-    await assert.rejects(
-      service.retryDeadLetter("tenant-a", failedDelivery.messageId),
-    );
+    const beforeMultiTenantRetry = fetchCalls;
     assert.equal(
-      fetchCalls,
-      1,
-      "ambiguous tenant context must not call Telegram",
+      await service.retryDeadLetter("tenant-a", failedDelivery.messageId),
+      "failed",
+      "explicit tenant-scoped retry still works while another tenant is active",
     );
+    assert.equal(fetchCalls, beforeMultiTenantRetry + 1);
     assert.equal((await deadLetters.list("tenant-a")).length, 1);
 
     activeTenantIds.splice(0, activeTenantIds.length, "tenant-a");
@@ -169,7 +173,7 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
       { kind: "retryable", retryAfterSeconds: 17 },
       "Telegram's explicit rate-limit rejection is safe to retry after its requested delay",
     );
-    assert.equal(fetchCalls, 2);
+    assert.equal(fetchCalls, 3);
     assert.equal(
       (await deadLetters.list("tenant-a")).length,
       1,

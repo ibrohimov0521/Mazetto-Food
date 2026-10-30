@@ -9,11 +9,15 @@ import { CreateRestaurantTenantDto } from "./dto/create-platform-tenant.dto";
 import { CreatePlatformTenantOnboardingDto } from "./dto/create-platform-tenant-onboarding.dto";
 import { CreatePlatformTenantBranchDto } from "./dto/create-platform-tenant-branch.dto";
 import { UpdatePlatformTenantFeaturesDto } from "./dto/update-platform-tenant-features.dto";
+import { UpdatePlatformTenantTelegramDto } from "./dto/update-platform-tenant-telegram.dto";
+import { ResetPlatformTenantOwnerPasswordDto } from "./dto/reset-platform-tenant-owner-password.dto";
 import { PlatformTenantBranchService } from "./platform-tenant-branch.service";
 import { PlatformTenantFeatureService } from "./platform-tenant-feature.service";
 import { PlatformTenantLifecycleService } from "./platform-tenant-lifecycle.service";
 import { PlatformTenantMembershipService } from "./platform-tenant-membership.service";
 import { PlatformTenantProvisioningService } from "./platform-tenant-provisioning.service";
+import { PlatformTenantTelegramService } from "./platform-tenant-telegram.service";
+import { PlatformTenantOwnerPasswordService } from "./platform-tenant-owner-password.service";
 import {
   CreatePlatformTenantMembershipDto,
   UpdatePlatformTenantMembershipRolesDto,
@@ -30,6 +34,8 @@ export class PlatformTenantLifecycleController {
     private readonly memberships: PlatformTenantMembershipService,
     private readonly provisioning: PlatformTenantProvisioningService,
     private readonly features: PlatformTenantFeatureService,
+    private readonly telegram: PlatformTenantTelegramService,
+    private readonly ownerPasswords: PlatformTenantOwnerPasswordService,
   ) {}
 
   @Post()
@@ -38,6 +44,20 @@ export class PlatformTenantLifecycleController {
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.tenants.create(dto, user);
+  }
+
+  @Get(":tenantId/activation-preview")
+  activationPreview(@Param("tenantId") tenantId: string) {
+    return this.tenants.activationPreview(tenantId);
+  }
+
+  @Post(":tenantId/activate")
+  activate(
+    @Param("tenantId") tenantId: string,
+    @Body() dto: TenantLifecycleConfirmationDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.tenants.activate(tenantId, dto, user);
   }
 
   @Get(":tenantId/archive-preview")
@@ -68,6 +88,20 @@ export class PlatformTenantLifecycleController {
     return this.provisioning.provision(dto, user);
   }
 
+  @Get(":tenantId/telegram")
+  getTelegram(@Param("tenantId") tenantId: string) {
+    return this.telegram.get(tenantId);
+  }
+
+  @Put(":tenantId/telegram")
+  updateTelegram(
+    @Param("tenantId") tenantId: string,
+    @Body() dto: UpdatePlatformTenantTelegramDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.telegram.update(tenantId, dto, user);
+  }
+
   @Get(":tenantId/features")
   listFeatures(@Param("tenantId") tenantId: string) {
     return this.features.list(tenantId);
@@ -86,6 +120,16 @@ export class PlatformTenantLifecycleController {
   @Get(":tenantId/memberships")
   listMemberships(@Param("tenantId") tenantId: string) {
     return this.memberships.list(tenantId);
+  }
+
+  @Post(":tenantId/owner-accounts/:userId/password-reset")
+  resetOwnerPassword(
+    @Param("tenantId") tenantId: string,
+    @Param("userId") userId: string,
+    @Body() dto: ResetPlatformTenantOwnerPasswordDto,
+    @CurrentUser() user: AuthenticatedUser,
+  ) {
+    return this.ownerPasswords.resetPassword(tenantId, userId, dto, user);
   }
 
   @Post(":tenantId/memberships")
