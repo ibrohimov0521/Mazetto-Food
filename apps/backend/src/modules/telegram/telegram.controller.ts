@@ -69,6 +69,12 @@ export class TelegramController {
     })) {
       return { ok: true, handled: true };
     }
+    if (this.isStaffHelpCommand(update)) {
+      return (
+        (await this.telegramStaffService?.handleWebhookUpdate(update)) ??
+        { ok: true, handled: false }
+      );
+    }
     if (!(await this.hasTenantContext())) {
       return { ok: true, handled: false };
     }
@@ -83,6 +89,14 @@ export class TelegramController {
     if (!expectedSecret || secret !== expectedSecret) {
       throw new UnauthorizedException("Invalid Telegram webhook secret");
     }
+  }
+
+  private isStaffHelpCommand(update: unknown): boolean {
+    const message = this.toTelegramDiagnosticUpdate(update).message;
+    return Boolean(
+      message?.chat?.id &&
+        /^\/help(?:@[A-Za-z0-9_]+)?$/.test(message.text?.trim() ?? ""),
+    );
   }
 
   private async hasTenantContext(): Promise<boolean> {

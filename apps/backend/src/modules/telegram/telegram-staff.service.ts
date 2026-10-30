@@ -156,6 +156,11 @@ export class TelegramStaffService implements OnModuleInit {
       }
 
       const text = message.text.trim();
+      if (/^\/help(?:@[A-Za-z0-9_]+)?$/.test(text)) {
+        await this.sendStaffHelp(this.requiredId(message.chat?.id));
+        return { ok: true, handled: true };
+      }
+
       const isStaffCommand = /^\/(?:start|staff|courier|kitchen|waiter|cashier|admin|accountant)(?:@[A-Za-z0-9_]+)?$/.test(
         text,
       );
@@ -301,6 +306,29 @@ export class TelegramStaffService implements OnModuleInit {
 
     await this.screen.answerCallbackWithToken(this.botToken, callback, "Tugma eskirgan.", true);
     await this.sendStaffPanel(chatId, staff, callback.message?.message_id);
+  }
+
+  private async sendStaffHelp(chatId: string): Promise<void> {
+    await this.screen.renderWithToken(this.botToken, { chatId }, {
+      text: [
+        "<b>MAZETTO Staff — yordam</b>",
+        "",
+        "Buyurtma xabarlari shaxsiy chatga kelishi uchun xodim Telegram botini /start orqali ochib, Telegram ID'sini Admin → Xodimlar bo'limida biriktirishi kerak.",
+        "",
+        "/start — xodim paneli",
+        "/courier — kuryerning buyurtmalari",
+        "/cashier — kassa paneli",
+        "/kitchen — oshxona buyurtmalari",
+        "/waiter — ofitsiant buyurtmalari",
+        "/admin — boshqaruv ko'rsatkichlari",
+        "/myid — Telegram foydalanuvchi ID'si",
+        "/help — shu yordam",
+      ].join("\n"),
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [[{ text: "👔 Xodim paneli", callback_data: staffCallbackPrefix + ":h" }]],
+      },
+    });
   }
 
   private async sendStaffPanelFromMessage(

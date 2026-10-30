@@ -36,6 +36,7 @@ test("Telegram notification retries are tenant-guarded and preserve failed deliv
   let fetchCalls = 0;
   const updates: unknown[] = [];
   const prisma = {
+    setting: { findMany: async () => [] },
     restaurantTenant: {
       findMany: async () => activeTenantIds.map((id) => ({ id })),
     },

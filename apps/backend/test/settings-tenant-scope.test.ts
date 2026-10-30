@@ -21,6 +21,7 @@ test("business settings and Redis cache are isolated by restaurant", async () =>
           id: where.id,
         }),
       },
+      user: { findUnique: async () => ({ telegramUserId: null }) },
       setting: {
         findMany: async ({ where }: { where: { tenantId: string } }) => {
           reads.push(where.tenantId);
@@ -130,6 +131,7 @@ test("cashier payment methods ignore a stale Redis cache entry", async () => {
           id: where.id,
         }),
       },
+      user: { findUnique: async () => ({ telegramUserId: null }) },
       setting: {
         findMany: async () => [
           { key: "cashier_payment_methods", value: "CASH,CLICK" },
@@ -245,6 +247,7 @@ test("kitchen visibility and order numbering bypass stale Redis per tenant", asy
           id: where.id,
         }),
       },
+      user: { findUnique: async () => ({ telegramUserId: null }) },
       setting: {
         findMany: async () => [],
         findUnique: async ({

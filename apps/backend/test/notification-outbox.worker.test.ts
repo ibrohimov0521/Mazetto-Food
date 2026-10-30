@@ -5,7 +5,12 @@ import { NotificationOutboxWorker } from "../src/modules/notifications/notificat
 function createHarness(
   delivery: "sent" | "failed" | "skipped" | { kind: "retryable"; retryAfterSeconds: number | null },
   expired: boolean = false,
-  kind: "staff_new_order" | "customer_status" | "staff_status_refresh" = "staff_new_order",
+  kind:
+    | "staff_new_order"
+    | "staff_role_new_order"
+    | "staff_courier_assignment"
+    | "customer_status"
+    | "staff_status_refresh" = "staff_new_order",
 ) {
   const job = {
     id: 7,
@@ -74,6 +79,16 @@ function createHarness(
       telegramCalls += 1;
       deliveryRoutes.push("customer_status");
       customerPayloads.push(payload);
+      return delivery;
+    },
+    deliverOutboxRoleNewOrder: async () => {
+      telegramCalls += 1;
+      deliveryRoutes.push("staff_role_new_order");
+      return delivery;
+    },
+    deliverOutboxCourierAssignment: async () => {
+      telegramCalls += 1;
+      deliveryRoutes.push("staff_courier_assignment");
       return delivery;
     },
     deliverOutboxStaffStatusRefresh: async () => {
@@ -224,4 +239,16 @@ test("expired worker lease is made uncertain without calling Telegram again", as
     (harness.deadLetters[0]!.create as { messageId: string }).messageId,
     "outbox-7",
   );
+});
+
+test("outbox worker routes role-scoped and courier-assignment notifications", async () => {
+  for (const kind of ["staff_role_new_order", "staff_courier_assignment"] as const) {
+    const harness = createHarness("sent", false, kind);
+    await harness.worker.dispatchPending();
+    assert.deepEqual(harness.deliveryRoutes, [kind]);
+    assert.equal(
+      (harness.updates[0]!.data as { status: string }).status,
+      "DELIVERED",
+    );
+  }
 });

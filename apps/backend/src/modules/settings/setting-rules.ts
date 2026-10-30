@@ -78,6 +78,15 @@ const SETTING_RULES = {
   customer_order_attempt_ttl_hours: INT(1, 168, 24),
   telegram_checkout_session_ttl_minutes: INT(5, 1440, 60),
   telegram_menu_page_size: INT(3, 20, 8),
+  // Personal Telegram notifications for order-receiving staff.
+  // Defaults to off until the restaurant enables each recipient group.
+  telegram_owner_telegram_user_id: {
+    kind: "string",
+    fallback: "",
+  },
+  telegram_owner_order_notifications_enabled: BOOL(false),
+  telegram_cashier_order_notifications_enabled: BOOL(false),
+  telegram_courier_order_notifications_enabled: BOOL(false),
 
   // --- Mijozga ochiq ---------------------------------------------------
   //
@@ -241,6 +250,10 @@ export function validateSettingValue(key: SettingKey, raw: string): string {
 
     // Takrorlar olib tashlanadi, tartib saqlanadi.
     return [...new Set(entries)].join(",");
+  }
+
+  if (key === "telegram_owner_telegram_user_id" && value !== "" && !/^[1-9][0-9]{4,19}$/.test(value)) {
+    throw new BadRequestException("Owner Telegram ID /myid orqali olingan musbat raqam bo'lishi kerak");
   }
 
   return value;

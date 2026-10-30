@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   BadRequestException,
   ConflictException,
@@ -786,7 +787,7 @@ export class CustomerCourierService {
 
       const existing = await tx.customerOrder.findFirst({
         where: { id: customerOrderId, branch: { tenantId: scope.tenantId } },
-        include: { order: { select: { id: true, status: true } } },
+        include: { order: { select: { id: true, status: true, servedById: true } } },
       });
 
       if (!existing) {
@@ -836,6 +837,24 @@ export class CustomerCourierService {
         where: { id: existing.order.id },
         data: { servedById: employeeId },
       });
+
+      if (employeeId && existing.order.servedById !== employeeId) {
+        await tx.notificationOutbox.create({
+          data: {
+            tenantId: scope.tenantId,
+            dedupeKey:
+              "telegram_courier_assignment:" +
+              existing.order.id +
+              ":" +
+              employeeId +
+              ":" +
+              randomUUID(),
+            kind: "staff_courier_assignment",
+            orderId: existing.order.id,
+            payload: { employeeId },
+          },
+        });
+      }
 
       return { customerOrderId, employeeId };
     });

@@ -153,8 +153,20 @@ export class NotificationOutboxWorker {
     const result =
       job.kind === "staff_new_order"
         ? await this.telegram.deliverOutboxNewOrder(job.orderId, job.tenantId)
-        : job.kind === "customer_status"
-          ? await this.telegram.deliverOutboxCustomerStatus(
+        : job.kind === "staff_role_new_order"
+          ? await this.telegram.deliverOutboxRoleNewOrder(
+              job.orderId,
+              job.tenantId,
+              job.payload,
+            )
+          : job.kind === "staff_courier_assignment"
+            ? await this.telegram.deliverOutboxCourierAssignment(
+                job.orderId,
+                job.tenantId,
+                job.payload,
+              )
+          : job.kind === "customer_status"
+            ? await this.telegram.deliverOutboxCustomerStatus(
               job.orderId,
               job.tenantId,
               job.payload,

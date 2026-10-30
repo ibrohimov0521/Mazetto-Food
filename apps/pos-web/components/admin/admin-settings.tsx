@@ -74,7 +74,11 @@ const SETTING_LABELS: Record<
     title: string;
     hint: string;
     impact?: string;
-    group?: "cashier-payments" | "kitchen-orders" | "order-numbering";
+    group?:
+      | "cashier-payments"
+      | "kitchen-orders"
+      | "order-numbering"
+      | "telegram-notifications";
   }
 > = {
   customer_code_ttl_minutes: {
@@ -116,6 +120,26 @@ const SETTING_LABELS: Record<
   telegram_menu_page_size: {
     title: "Telegram menyu sahifasi",
     hint: "Bitta ekranda nechta mahsulot ko'rsatiladi",
+  },
+  telegram_owner_telegram_user_id: {
+    title: "Owner Telegram ID",
+    hint: "Botga /myid yuborib oling. Saqlanganda ID hozirgi owner akkauntiga bog'lanadi.",
+    group: "telegram-notifications",
+  },
+  telegram_owner_order_notifications_enabled: {
+    title: "Ownerga yangi buyurtma xabari",
+    hint: "Yoqilsa, restoran owneri barcha filiallardan kelgan yangi onlayn buyurtmalarni oladi.",
+    group: "telegram-notifications",
+  },
+  telegram_cashier_order_notifications_enabled: {
+    title: "Kassirlarga yangi buyurtma xabari",
+    hint: "Yoqilsa, buyurtma filialidagi faol kassirlar yangi onlayn buyurtma haqida xabar oladi.",
+    group: "telegram-notifications",
+  },
+  telegram_courier_order_notifications_enabled: {
+    title: "Kuryerga biriktirilgan buyurtma xabari",
+    hint: "Yoqilsa, kuryer yetkazish buyurtmasi unga biriktirilganda xabar oladi.",
+    group: "telegram-notifications",
   },
   customer_payment_methods: {
     title: "Mijoz checkout to'lovi",
@@ -309,12 +333,18 @@ export function AdminSettings() {
       orderNumbers: rows.filter(
         (row) => SETTING_LABELS[row.key]?.group === "order-numbering",
       ),
+      telegramNotifications: rows.filter(
+        (row) => SETTING_LABELS[row.key]?.group === "telegram-notifications",
+      ),
       internal: rows.filter(
         (row) =>
           !row.affectsCustomer &&
-          !["cashier-payments", "kitchen-orders", "order-numbering"].includes(
-            SETTING_LABELS[row.key]?.group ?? "",
-          ),
+          ![
+            "cashier-payments",
+            "kitchen-orders",
+            "order-numbering",
+            "telegram-notifications",
+          ].includes(SETTING_LABELS[row.key]?.group ?? ""),
       ),
     }),
     [rows],
@@ -387,6 +417,18 @@ export function AdminSettings() {
         rows={groups.orderNumbers}
         savingKey={savingKey}
         title="Buyurtma raqamlari"
+      />
+
+      <SettingsGroup
+        description="Xabarlar xodimning shaxsiy Telegram chatiga boradi. Owner ID'si shu yerda bog'lanadi; xodimlar Admin → Xodimlar bo'limida Telegram ID'sini saqlaydi. Har bir oluvchi staff botini /start bilan avval ochishi kerak. O'chirilgan sozlama yangi xabarlarni to'xtatadi."
+        drafts={drafts}
+        onDraftChange={(key, value) =>
+          setDrafts((previous) => ({ ...previous, [key]: value }))
+        }
+        onSave={requestSave}
+        rows={groups.telegramNotifications}
+        savingKey={savingKey}
+        title="Telegram buyurtma xabarlari"
       />
 
       <SettingsGroup
