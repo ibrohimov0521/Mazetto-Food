@@ -152,7 +152,7 @@ export function AdminNotificationsPage() {
               emptyTitle="Yetkazilmagan xabar yo'q"
               emptyDescription="Yangi xabar xatolari shu yerda ko'rinadi."
               rowActions={(entry) =>
-                ["staff_new_order", "staff_status_refresh", "customer_status"].includes(entry.kind) &&
+                ["staff_new_order", "staff_status_refresh", "customer_status", "staff_role_new_order", "staff_courier_assignment"].includes(entry.kind) &&
                 !retryingId ? (
                   <RowAction
                     icon="send"

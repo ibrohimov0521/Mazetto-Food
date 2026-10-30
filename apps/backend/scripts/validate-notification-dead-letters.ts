@@ -157,7 +157,7 @@ assert.ok(retryBody, "retryDeadLetter topilmadi.");
  */
 assert.match(
   retryBody,
-  /!\["staff_new_order",\s*"staff_status_refresh",\s*"customer_status"\]\.includes\(entry\.kind\)/,
+  /!\[\s*"staff_new_order",\s*"staff_status_refresh",\s*"customer_status",\s*"staff_role_new_order",\s*"staff_courier_assignment",?\s*\]\.includes\(entry\.kind\)/,
   "Qayta yuboriladigan bildirishnoma turlari aniq cheklanmagan.",
 );
 assert.match(
@@ -176,7 +176,7 @@ assert.match(
 );
 assert.match(
   adminUi,
-  /\["staff_new_order",\s*"staff_status_refresh",\s*"customer_status"\]\.includes\(entry\.kind\)/,
+  /\["staff_new_order",\s*"staff_status_refresh",\s*"customer_status",\s*"staff_role_new_order",\s*"staff_courier_assignment"\]\.includes\(entry\.kind\)/,
   "Admin UI mijoz status dead-letter'ini qayta yuborishga ruxsat bermaydi.",
 );
 
