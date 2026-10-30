@@ -38,6 +38,7 @@ function harness(options: {
   employeeChatId?: string | null;
   ownerIds?: Array<{ id: string }>;
   cashierIds?: Array<{ id: string }>;
+  tenantGroupChatIds?: Record<string, string | null>;
 } = {}) {
   const queries: Record<string, unknown>[] = [];
   const queued: Array<Record<string, unknown>> = [];
@@ -87,6 +88,11 @@ function harness(options: {
       },
       findFirst: async () => null,
       updateMany: async () => ({ count: 1 }),
+    },
+    tenantTelegramConfiguration: {
+      findUnique: async ({ where }: { where: { tenantId: string } }) => ({
+        staffChatId: options.tenantGroupChatIds?.[where.tenantId] ?? null,
+      }),
     },
     restaurantTenant: {
       findMany: async () => [{ id: "tenant-a" }, { id: "tenant-b" }],
@@ -148,7 +154,7 @@ test("owner order notification is tenant-scoped and sent without action buttons"
     assert.equal(telegramRequests.length, 1);
     assert.equal(telegramRequests[0]?.body.chat_id, "owner-chat");
     assert.equal(telegramRequests[0]?.body.reply_markup, undefined);
-    assert.match(String(telegramRequests[0]?.body.text), /Boshqaruv paneli: \/admin/);
+    assert.match(String(telegramRequests[0]?.body.text), /Buyurtmani restoran POS boshqaruv panelida ko'ring\./);
   });
 });
 
@@ -216,12 +222,27 @@ test("online-order delivery queues one tenant-scoped outbox job per enabled owne
   });
 });
 
-test("ambiguous shared group delivery is skipped safely when no private role notification is enabled", async () => {
+test("tenant-specific staff group receives only its tenant order with multiple tenants active", async () => {
   await withStaffBot(async ({ service, telegramRequests, queued }) => {
     process.env.TELEGRAM_BOT_TOKEN = "staging-customer-bot-token";
-    process.env.TELEGRAM_STAFF_CHAT_ID = "shared-staff-chat";
     const result = await service.deliverOutboxNewOrder("order-a", "tenant-a");
     assert.equal(result, "sent");
+    assert.equal(queued.length, 0);
+    assert.equal(telegramRequests.length, 1);
+    assert.equal(telegramRequests[0]?.body.chat_id, "tenant-a-staff");
+  }, {
+    setting: "false",
+    tenantGroupChatIds: {
+      "tenant-a": "tenant-a-staff",
+      "tenant-b": "tenant-b-staff",
+    },
+  });
+});
+
+test("missing group route is not reported as sent when no private recipient is enabled", async () => {
+  await withStaffBot(async ({ service, telegramRequests, queued }) => {
+    const result = await service.deliverOutboxNewOrder("order-a", "tenant-a");
+    assert.equal(result, "skipped");
     assert.equal(queued.length, 0);
     assert.equal(telegramRequests.length, 0);
   }, { setting: "false" });

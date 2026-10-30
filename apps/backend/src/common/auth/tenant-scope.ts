@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import type { AuthenticatedUser } from "../types/authenticated-user";
 import { PrismaService } from "../../prisma/prisma.service";
@@ -8,9 +9,24 @@ export type TenantScopeDatabase = Pick<
   "branch" | "restaurantTenant"
 >;
 
+const tenantScopeStorage = new AsyncLocalStorage<string>();
+
+export function runWithTenantScope<T>(tenantId: string, callback: () => T): T {
+  return tenantScopeStorage.run(tenantId, callback);
+}
+
 export async function resolveSoleActiveTenantId(
   database: TenantScopeDatabase,
 ): Promise<string> {
+  const scopedTenantId = tenantScopeStorage.getStore();
+  if (scopedTenantId) {
+    const scopedTenant = await database.restaurantTenant.findFirst({
+      where: { id: scopedTenantId, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!scopedTenant) throw new ForbiddenException("Authenticated tenant context is not active");
+    return scopedTenant.id;
+  }
   const tenants = await database.restaurantTenant.findMany({
     where: { status: "ACTIVE" },
     select: { id: true },

@@ -32,7 +32,6 @@ test("Telegram order notification switches default to off and validate as boolea
 
 test("saving the owner Telegram ID links only the authenticated owner account", async () => {
   const userUpdates: Array<Record<string, unknown>> = [];
-  const employeeUpdates: Array<Record<string, unknown>> = [];
   const tx = {
     setting: {
       findUnique: async () => null,
@@ -48,10 +47,6 @@ test("saving the owner Telegram ID links only the authenticated owner account", 
     },
     employee: {
       findFirst: async () => null,
-      updateMany: async (input: Record<string, unknown>) => {
-        employeeUpdates.push(input);
-        return { count: 0 };
-      },
     },
     auditLog: { create: async () => ({}) },
   };
@@ -80,7 +75,6 @@ test("saving the owner Telegram ID links only the authenticated owner account", 
   );
 
   assert.equal(userUpdates.length, 1);
+  assert.deepEqual(userUpdates[0]?.where, { id: "owner-a" });
   assert.deepEqual(userUpdates[0]?.data, { telegramUserId: "123456789" });
-  assert.deepEqual(employeeUpdates[0]?.where, { userId: "owner-a" });
-  assert.deepEqual(employeeUpdates[0]?.data, { telegramUserId: "123456789" });
 });

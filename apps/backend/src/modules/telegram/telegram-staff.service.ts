@@ -313,7 +313,7 @@ export class TelegramStaffService implements OnModuleInit {
       text: [
         "<b>MAZETTO Staff — yordam</b>",
         "",
-        "Buyurtma xabarlari shaxsiy chatga kelishi uchun xodim Telegram botini /start orqali ochib, Telegram ID'sini Admin → Xodimlar bo'limida biriktirishi kerak.",
+        "Owner Telegram ID'sini POS → Sozlamalar → Telegram buyurtma xabarlari bo'limida bog'laydi. Kassir, kuryer va boshqa xodimlar ID'sini Admin → Xodimlar bo'limida bog'laydi. Har bir oluvchi botni /start bilan avval ochishi kerak.",
         "",
         "/start — xodim paneli",
         "/courier — kuryerning buyurtmalari",

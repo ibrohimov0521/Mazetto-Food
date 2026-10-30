@@ -3,8 +3,8 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, Unauthoriz
 import { CustomerOrderType, EmployeeStatus, KitchenTicketStatus, OrderStatus, Prisma } from "@prisma/client";
 import { KitchenService, type KitchenStaffAction } from "../kitchen/kitchen.service";
 import { kitchenStatusForOrder } from "../kitchen/kitchen-status-sync";
-import { PrismaService } from "../../prisma/prisma.service";
 import { resolveSoleActiveTenantId } from "../../common/auth/tenant-scope";
+import { PrismaService } from "../../prisma/prisma.service";
 import { NotificationDeadLetterService } from "../notifications/notification-dead-letter.service";
 
 type StaffOrderAction = KitchenStaffAction;
@@ -94,6 +94,7 @@ type NewOrderDeliveryResult =
   | "sent"
   | "failed"
   | "skipped"
+  | "ignored"
   | { kind: "retryable"; retryAfterSeconds: number | null };
 type OutboxDeliveryResult =
   | NewOrderDeliveryResult
@@ -317,10 +318,6 @@ export class TelegramOrderNotificationService {
     recordFailure = true,
   ): Promise<NewOrderDeliveryResult> {
     let tenantId: string | null = null;
-    if (!process.env.TELEGRAM_BOT_TOKEN && !process.env.TELEGRAM_STAFF_BOT_TOKEN) {
-      this.logger.warn("Telegram order notifications are disabled: no bot token is configured");
-      return "skipped";
-    }
 
     try {
       tenantId = await this.resolveOrderTenantId(orderId);
@@ -341,37 +338,32 @@ export class TelegramOrderNotificationService {
       const roleRecipients = order.customerOrder
         ? await this.queueRoleNewOrderNotifications(order, tenantId)
         : 0;
+      const staffChatId = await this.resolveStaffChatId(tenantId);
 
-      if (!this.isConfigured()) {
+      // Private owner/cashier notices use the staff bot. The tenant staff
+      // group uses the customer bot and its own configured Chat ID.
+      if (!process.env.TELEGRAM_BOT_TOKEN || !staffChatId) {
         if (roleRecipients > 0) return "sent";
-        this.logger.warn("Telegram order notifications are disabled: TELEGRAM_BOT_TOKEN or TELEGRAM_STAFF_CHAT_ID is missing");
+        this.logger.warn(
+          "Telegram order notification is waiting for a configured tenant staff group and customer bot token",
+        );
         return "skipped";
       }
 
-      try {
-        // Shared group delivery stays fail-closed when multiple tenants are active.
-        const sharedOrder = await this.findOrderForMessage(orderId, this.prisma, tenantId);
-        if (!sharedOrder) return roleRecipients > 0 ? "sent" : "skipped";
-        const response = await this.telegramRequest(
-          "sendMessage",
-          {
-            chat_id: this.staffChatId(),
-            text: this.formatStaffOrderMessage(sharedOrder),
-            parse_mode: "HTML",
-            link_preview_options: { is_disabled: true },
-            reply_markup: this.staffOrderKeyboard(sharedOrder),
-          },
-          { maxAttempts: 1 },
-        );
-        await this.rememberStaffMessage(sharedOrder.id, response);
-        return "sent";
-      } catch (error) {
-        if (error instanceof ForbiddenException && expectedTenantId) {
-          this.logger.warn("Shared Telegram staff chat was skipped because tenant context is ambiguous; tenant-scoped notifications were queued when enabled.");
-          return "sent";
-        }
-        throw error;
-      }
+      const response = await this.telegramRequest(
+        "sendMessage",
+        {
+          chat_id: staffChatId,
+          text: this.formatStaffOrderMessage(order),
+          parse_mode: "HTML",
+          link_preview_options: { is_disabled: true },
+          reply_markup: this.staffOrderKeyboard(order),
+        },
+        { maxAttempts: 1 },
+      );
+      if (!response) return roleRecipients > 0 ? "sent" : "skipped";
+      await this.rememberStaffMessage(order.id, response);
+      return "sent";
     } catch (error) {
       if (error instanceof TelegramRequestError && error.status === 429) {
         return {
@@ -383,13 +375,15 @@ export class TelegramOrderNotificationService {
         "Telegram order notification failed for order " + orderId,
         error instanceof Error ? error.stack : String(error),
       );
-      if (recordFailure && tenantId) await this.deadLetters.record({
-        tenantId,
-        kind: "staff_new_order",
-        orderId,
-        error,
-        attempts: 1,
-      });
+      if (recordFailure && tenantId) {
+        await this.deadLetters.record({
+          tenantId,
+          kind: "staff_new_order",
+          orderId,
+          error,
+          attempts: 1,
+        });
+      }
       return "failed";
     }
   }
@@ -584,7 +578,7 @@ export class TelegramOrderNotificationService {
         ? "Kuryer paneli: /courier"
         : role === "CASHIER"
           ? "Kassa paneli: /cashier"
-          : "Boshqaruv paneli: /admin";
+          : "Buyurtmani restoran POS boshqaruv panelida ko'ring.";
 
     try {
       const response = await this.telegramRequest(
@@ -659,19 +653,12 @@ export class TelegramOrderNotificationService {
       return "not-retryable";
     }
 
-    if (!recipientNotification) {
-      const activeTenantId = await resolveSoleActiveTenantId(this.prisma);
-      if (activeTenantId !== tenantId) {
-        throw new ForbiddenException("Telegram qayta yuborish tenantiga mos kelmadi");
-      }
-    } else {
-      const tenant = await this.prisma.restaurantTenant.findUnique({
-        where: { id: tenantId },
-        select: { status: true },
-      });
-      if (tenant?.status !== "ACTIVE") {
-        throw new ForbiddenException("Telegram qayta yuborish tenantiga mos kelmadi");
-      }
+    const activeTenant = await this.prisma.restaurantTenant.findFirst({
+      where: { id: tenantId, status: "ACTIVE" },
+      select: { id: true },
+    });
+    if (!activeTenant) {
+      throw new ForbiddenException("Telegram qayta yuborish tenanti faol emas");
     }
 
     let deliveryResult: OutboxDeliveryResult | DeadLetterRetryResult;
@@ -757,7 +744,7 @@ export class TelegramOrderNotificationService {
     orderId: string,
     tenantId: string,
   ): Promise<OutboxDeliveryResult> {
-    if (!this.isConfigured()) return "skipped";
+    if (!process.env.TELEGRAM_BOT_TOKEN) return "skipped";
 
     return this.enqueueMessage(orderId, async () => {
       const actualTenantId = await this.resolveOrderTenantId(orderId);
@@ -897,11 +884,14 @@ export class TelegramOrderNotificationService {
     client: PrismaService | Prisma.TransactionClient = this.prisma,
     expectedTenantId?: string,
   ): Promise<StaffOrderForMessage | null> {
-    const activeTenantId = await resolveSoleActiveTenantId(client);
-    if (expectedTenantId && expectedTenantId !== activeTenantId) {
-      throw new ForbiddenException("Telegram notification tenant context is ambiguous");
+    const tenantId = expectedTenantId ?? await resolveSoleActiveTenantId(client);
+    if (expectedTenantId) {
+      const activeTenant = await client.restaurantTenant.findFirst({
+        where: { id: tenantId, status: "ACTIVE" },
+        select: { id: true },
+      });
+      if (!activeTenant) throw new ForbiddenException("Telegram notification tenant is not active");
     }
-    const tenantId = expectedTenantId ?? activeTenantId;
     const order = await client.order.findFirst({
       where: { id: orderId, branch: { tenantId } },
       include: {
@@ -1115,7 +1105,7 @@ export class TelegramOrderNotificationService {
   }
 
   private async renderStaffOrderMessage(callback: TelegramCallbackQuery, order: StaffOrderForMessage): Promise<void> {
-    const chatId = callback.message?.chat?.id ?? this.staffChatId();
+    const chatId = callback.message?.chat?.id ?? await this.resolveStaffChatIdForOrder(order.id);
     const messageId = callback.message?.message_id;
     const payload = {
       chat_id: chatId,
@@ -1149,8 +1139,10 @@ export class TelegramOrderNotificationService {
   }
 
   private async renderStoredStaffOrderMessage(order: StaffOrderForMessage): Promise<void> {
+    const chatId = order.staffTelegramChatId ?? await this.resolveStaffChatIdForOrder(order.id);
+    if (!chatId) return;
     const payload = {
-      chat_id: order.staffTelegramChatId ?? this.staffChatId(),
+      chat_id: chatId,
       text: this.formatStaffOrderMessage(order),
       parse_mode: "HTML",
       link_preview_options: { is_disabled: true },
@@ -1376,13 +1368,6 @@ export class TelegramOrderNotificationService {
     callback: TelegramCallbackQuery,
     orderId: string,
   ): Promise<void> {
-    const expectedChatId = this.staffChatId();
-    const actualChatId = callback.message?.chat?.id;
-
-    if (!expectedChatId || !actualChatId || String(actualChatId) !== expectedChatId) {
-      throw new ForbiddenException("Unauthorized staff Telegram chat");
-    }
-
     const telegramUserId = callback.from?.id;
     if (telegramUserId === undefined || telegramUserId === null) {
       throw new ForbiddenException("Telegram callback does not identify a staff member");
@@ -1390,10 +1375,15 @@ export class TelegramOrderNotificationService {
 
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
-      select: { branchId: true },
+      select: { branchId: true, branch: { select: { tenantId: true } } },
     });
     if (!order) {
       throw new BadRequestException("Buyurtma topilmadi");
+    }
+    const expectedChatId = await this.resolveStaffChatId(order.branch.tenantId);
+    const actualChatId = callback.message?.chat?.id;
+    if (!expectedChatId || !actualChatId || String(actualChatId) !== expectedChatId) {
+      throw new ForbiddenException("Unauthorized staff Telegram chat");
     }
 
     const employee = await this.prisma.employee.findFirst({
@@ -1426,13 +1416,24 @@ export class TelegramOrderNotificationService {
     return update && typeof update === "object" ? (update as TelegramUpdate) : {};
   }
 
-  private isConfigured(): boolean {
-    return Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_STAFF_CHAT_ID);
+  private async resolveStaffChatId(tenantId: string): Promise<string> {
+    const configuration = await this.prisma.tenantTelegramConfiguration.findUnique({
+      where: { tenantId },
+      select: { staffChatId: true },
+    });
+    if (configuration?.staffChatId) return configuration.staffChatId;
+    const tenant = await this.prisma.restaurantTenant.findUnique({
+      where: { id: tenantId },
+      select: { code: true },
+    });
+    return tenant?.code === "MAZETTO_FOOD" ? process.env.TELEGRAM_STAFF_CHAT_ID ?? "" : "";
   }
 
-  private staffChatId(): string {
-    return process.env.TELEGRAM_STAFF_CHAT_ID ?? "";
+  private async resolveStaffChatIdForOrder(orderId: string): Promise<string> {
+    const tenantId = await this.resolveOrderTenantId(orderId);
+    return tenantId ? this.resolveStaffChatId(tenantId) : "";
   }
+
 
   private async rememberStaffMessage(orderId: string, response: TelegramResponse | undefined): Promise<void> {
     const messageId = response?.result?.message_id;

@@ -1,41 +1,27 @@
-# MAZETTO FOOD Telegram Specification
+# MAZETTO FOOD Telegram buyurtma arxitekturasi
 
-This document describes future Telegram responsibilities only. It does not implement Telegram integration, bot commands, authentication, or ordering logic.
+Holat: 2026-10-24. Telegram mijoz buyurtmasi va xodimlarga bildirishnoma yagona backend hamda Order Engine bilan ishlaydi. Ushbu branch’dagi ko‘p tenantli ulash hali staging va real Telegram hisobi bilan qabul qilinishi kerak.
 
-Telegram must use the same central backend, central database, canonical order numbers, and central Order Engine as Customer Web and POS.
+## Mijoz botining oqimi
 
-## Customer Responsibilities
+- Bitta umumiy Mazetto mijoz boti ishlatiladi. Tenant havolasi `/start t_<TENANT_CODE>` parametrini olib yuradi.
+- Backend parametrni ruxsat o‘rnida qabul qilmaydi: tenant ACTIVE, `TELEGRAM_ORDERS` yoqilgan, kamida VERIFIED domeni va xodimlar bildirishnoma guruhi borligini tekshiradi.
+- Muvaffaqiyatli `/start`dan keyin Telegram chat va foydalanuvchi ID’si tenant bilan server bazasida bog‘lanadi. Keyingi xabarlar ham shu mapping orqali tenantga tushadi. Oldingi tenant o‘chirilgan bo‘lsa foydalanuvchi asosiy restoranga jim ko‘chirilmaydi.
+- Deep link bo‘lmagan yangi foydalanuvchilar uchun eski MAZETTO_FOOD `/start` mosligi saqlangan. Yaroqsiz yoki tayyor bo‘lmagan tenant parametri boshqa restoranga fallback qilmaydi.
+- Telegram buyurtmasi backend menyu, quote, filial tekshiruvi va checkout qoidalaridan foydalanadi; tenant, filial va `TELEGRAM` manbasi serverda belgilanadi. POS shu order’ni umumiy status oqimida ko‘radi.
 
-The Telegram Bot will eventually:
+## Xodim guruhi va xabarlar
 
-- receive `/start`
-- request phone contact if required
-- associate Telegram user with customer
-- issue temporary website login verification codes
-- use a verification code lifetime of approximately 10 minutes
-- allow users to browse/order through Telegram
-- show order history/status
+- Xodimlar guruhi Chat ID’si tenant konfiguratsiyasida saqlanadi; global `TELEGRAM_STAFF_CHAT_ID` faqat eski MAZETTO_FOOD tenantiga moslik uchun ishlatiladi.
+- Platform owner panelida guruh ID’si va mijoz bot havolasi sozlanadi. Tokenlar panelga qaytarilmaydi; o‘zgarishlar auditga yoziladi.
+- Buyurtma xabari va callback buyurtmaning tenant/filial guruhiga va faol xodimga tekshiriladi. Xato bildirishnomalar qayta urinish/dead-letter oqimida saqlanadi.
+- `TELEGRAM_ORDERS`ni yoqishdan oldin tenant xodimlar guruhi sozlangan bo‘lishi kerak. Kanaldagi buyurtmalar restoran POS/admin panelida ham kuzatiladi.
 
-## Admin Notifications
+## Operatsion nazorat va chegaralar
 
-Authorized admins may receive new order notifications including:
+- Panel serverda bot tokeni/webhook siri mavjudligini va tenant guruh sozlamasini ko‘rsatadi. Panelning bu ko‘rsatkichi Telegram’dagi webhook haqiqatda ro‘yxatdan o‘tganini isbotlamaydi.
+- Webhook manzili, pending update va Telegram’dagi oxirgi xato release vaqtida maxfiy tokenni chiqarmaydigan `pnpm telegram:smoke` orqali alohida read-only tekshiriladi.
+- Bitta shared customer bot mavjud; har tenantga o‘z tokenini berish ushbu yechimga kirmaydi. `TELEGRAM_BOT_TOKEN` va webhook siri server muhitida qoladi.
+- Staging’da alohida sinov tenanti bilan `/start`, menyu, quote, buyurtma, POS ko‘rinishi, xodim guruhiga xabar va callback ruxsati real Telegram hisobida tekshirilishi lozim.
 
-- order number
-- source
-- branch
-- customer
-- phone
-- products
-- quantities
-- total
-- payment method
-- delivery/pickup
-- address where applicable
-
-Orders must have one canonical order number across all systems.
-
-## Architecture Rules
-
-Telegram must not create a separate order system. Telegram ordering and notifications must communicate through backend APIs and shared domain rules.
-
-Telegram-specific behavior may include chat commands, contact sharing, verification codes, and notification formatting, but order, payment, menu, and audit authority belongs to the backend.
+Qabulning besh bosqichli holati [2026-10-24 qabul jadvalida](./audit/ACCEPTANCE_MATRIX_2026-10-24.md).

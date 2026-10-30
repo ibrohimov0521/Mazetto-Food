@@ -1,9 +1,6 @@
 "use client";
 import { customerServerErrorMessage } from "./api-error-reference.mjs";
-import {
-  getMazettoFoodCustomerApiBaseUrl,
-  isMazettoFoodHost,
-} from "./mazetto-food-host.mjs";
+import { resolveCustomerApiBaseUrl } from "./mazetto-food-host.mjs";
 import {
   fetchPublicDataWithRetry,
   logCatalogUpstreamEvent,
@@ -17,25 +14,12 @@ export type ApiEnvelope<T> = {
 
 export function getApiBaseUrl(): string {
   const hostname = typeof window !== "undefined" ? window.location.hostname : "";
-  const tenantApiBaseUrl = getMazettoFoodCustomerApiBaseUrl(hostname);
-  if (process.env.NODE_ENV === "production" && tenantApiBaseUrl) {
-    return tenantApiBaseUrl;
-  }
-
-  if (isMazettoFoodHost(hostname)) {
-    return "/api/v1";
-  }
-
-  const configuredUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.trim().replace(/\/$/, "");
-
-  if (configuredUrl) {
-    return configuredUrl;
-  }
-
-  const developmentHost =
-    typeof window !== "undefined" ? window.location.hostname : "127.0.0.1";
-
-  return `http://${developmentHost}:4000/api/v1`;
+  return resolveCustomerApiBaseUrl({
+    hostname,
+    nodeEnv: process.env.NODE_ENV,
+    configuredUrl: process.env.NEXT_PUBLIC_API_BASE_URL,
+    isBrowser: typeof window !== "undefined",
+  });
 }
 
 type ApiFetchInit = RequestInit & {

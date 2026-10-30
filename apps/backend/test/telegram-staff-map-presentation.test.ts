@@ -40,7 +40,13 @@ test("staff order notification uses an explicit map button without a link previe
   const service = new TelegramOrderNotificationService(
     {
       setting: { findMany: async () => [] },
-      restaurantTenant: { findMany: async () => [{ id: "tenant-a" }] },
+      restaurantTenant: {
+        findFirst: async () => ({ id: "tenant-a" }),
+        findMany: async () => [{ id: "tenant-a" }],
+      },
+      tenantTelegramConfiguration: {
+        findUnique: async () => ({ staffChatId: "staff-chat" }),
+      },
       order: {
         findUnique: async () => ({ branch: { tenantId: "tenant-a" } }),
         findFirst: async () => order,

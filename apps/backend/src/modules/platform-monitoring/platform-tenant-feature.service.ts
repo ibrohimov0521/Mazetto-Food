@@ -36,8 +36,17 @@ export class PlatformTenantFeatureService {
     }
 
     await this.prisma.$transaction(async (tx) => {
-      const tenant = await tx.restaurantTenant.findUnique({ where: { id: tenantId }, select: { id: true } });
+      const tenant = await tx.restaurantTenant.findUnique({ where: { id: tenantId }, select: { id: true, code: true } });
       if (!tenant) throw new NotFoundException("Restoran tenanti topilmadi.");
+      if (enabled.has("TELEGRAM_ORDERS")) {
+        const telegram = await tx.tenantTelegramConfiguration.findUnique({
+          where: { tenantId },
+          select: { staffChatId: true },
+        });
+        if (!telegram?.staffChatId && !(tenant.code === "MAZETTO_FOOD" && process.env.TELEGRAM_STAFF_CHAT_ID)) {
+          throw new BadRequestException("Telegram buyurtmalarini yoqishdan oldin xodimlar guruhining Chat ID raqamini sozlang.");
+        }
+      }
       for (const feature of TENANT_FEATURES) {
         await tx.tenantFeature.upsert({
           where: { tenantId_code: { tenantId, code: feature.code } },

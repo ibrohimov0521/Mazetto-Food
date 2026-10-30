@@ -22,6 +22,9 @@ import { PlatformTenantBranchService } from "./platform-tenant-branch.service";
 import { PlatformTenantMembershipService } from "./platform-tenant-membership.service";
 import { PlatformTenantFeatureService } from "./platform-tenant-feature.service";
 import { PlatformTenantProvisioningService } from "./platform-tenant-provisioning.service";
+import { PlatformTenantTelegramService } from "./platform-tenant-telegram.service";
+import { PlatformTenantOwnerPasswordService } from "./platform-tenant-owner-password.service";
+import { UserAuthCacheService } from "../../common/auth/user-auth-cache.service";
 
 @Module({
   imports: [PrismaModule, RedisModule, KitchenModule],
@@ -44,6 +47,9 @@ import { PlatformTenantProvisioningService } from "./platform-tenant-provisionin
     PlatformTenantMembershipService,
     PlatformTenantFeatureService,
     PlatformTenantProvisioningService,
+    PlatformTenantTelegramService,
+    PlatformTenantOwnerPasswordService,
+    UserAuthCacheService,
   ],
   exports: [PlatformMonitoringService],
 })

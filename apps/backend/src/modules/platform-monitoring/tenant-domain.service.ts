@@ -134,26 +134,33 @@ export class TenantDomainService {
   }
 
   async rotateChallenge(tenantId: string, domainId: string, actor: AuthenticatedUser) {
-    const domain = await this.prisma.tenantDomain.findFirst({
-      where: { id: domainId, tenantId },
-      select: { id: true, hostname: true, status: true },
-    });
-    if (!domain) throw new NotFoundException("Tenant domeni topilmadi.");
     const token = randomBytes(32).toString("base64url");
-    await this.prisma.$transaction(async (tx) => {
+    const domain = await this.prisma.$transaction(async (tx) => {
+      const existing = await tx.tenantDomain.findFirst({
+        where: { id: domainId, tenantId },
+        select: { id: true, hostname: true, status: true },
+      });
+      if (!existing) throw new NotFoundException("Tenant domeni topilmadi.");
+      await this.assertCanChangeVerifiedDomain(tx, tenantId, existing.status);
       const updated = await tx.tenantDomain.updateMany({
-        where: { id: domain.id, tenantId, status: domain.status },
+        where: { id: existing.id, tenantId, status: existing.status },
         data: { status: "PENDING", verifiedAt: null, verificationTokenHash: hashToken(token) },
       });
       if (updated.count !== 1) throw new ConflictException("Domen holati o'zgargan; sahifani yangilab qayta urinib ko'ring.");
       await writeAuditLog(tx, {
-        tenantId: tenantId,
+        tenantId,
         userId: actor.id,
         action: "PLATFORM_TENANT_DOMAIN_CHALLENGE_ROTATED",
         entity: "TENANT_DOMAIN",
-        entityId: domain.id,
-        metadata: { tenantId, hostname: domain.hostname },
+        entityId: existing.id,
+        metadata: { tenantId, hostname: existing.hostname },
       });
+      return existing;
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch((error: unknown) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+        throw new ConflictException("Domen holati o'zgargan; sahifani yangilab qayta tekshiring.");
+      }
+      throw error;
     });
     return {
       dnsRecord: { type: "TXT" as const, name: challengeName(domain.hostname), value: `${recordPrefix}${token}` },
@@ -161,27 +168,54 @@ export class TenantDomainService {
   }
 
   async disable(tenantId: string, domainId: string, actor: AuthenticatedUser) {
-    const domain = await this.prisma.tenantDomain.findFirst({
-      where: { id: domainId, tenantId },
-      select: { id: true, hostname: true, status: true },
-    });
-    if (!domain) throw new NotFoundException("Tenant domeni topilmadi.");
-    if (domain.status === "DISABLED") return { id: domain.id, status: domain.status };
-    await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
+      const domain = await tx.tenantDomain.findFirst({
+        where: { id: domainId, tenantId },
+        select: { id: true, hostname: true, status: true },
+      });
+      if (!domain) throw new NotFoundException("Tenant domeni topilmadi.");
+      if (domain.status === "DISABLED") return { id: domain.id, status: domain.status };
+      await this.assertCanChangeVerifiedDomain(tx, tenantId, domain.status);
       const updated = await tx.tenantDomain.updateMany({
         where: { id: domain.id, tenantId, status: domain.status },
         data: { status: "DISABLED", verifiedAt: null, verificationTokenHash: null },
       });
       if (updated.count !== 1) throw new ConflictException("Domen holati o'zgargan; sahifani yangilab qayta urinib ko'ring.");
       await writeAuditLog(tx, {
-        tenantId: tenantId,
+        tenantId,
         userId: actor.id,
         action: "PLATFORM_TENANT_DOMAIN_DISABLED",
         entity: "TENANT_DOMAIN",
         entityId: domain.id,
         metadata: { tenantId, hostname: domain.hostname },
       });
+      return { id: domain.id, status: "DISABLED" as const };
+    }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }).catch((error: unknown) => {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+        throw new ConflictException("Domen holati o'zgargan; sahifani yangilab qayta tekshiring.");
+      }
+      throw error;
     });
-    return { id: domain.id, status: "DISABLED" as const };
+    return result;
   }
+
+  private async assertCanChangeVerifiedDomain(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    domainStatus: string,
+  ) {
+    if (domainStatus !== "VERIFIED") return;
+    const tenant = await tx.restaurantTenant.findUnique({
+      where: { id: tenantId },
+      select: { status: true },
+    });
+    if (tenant?.status !== "ACTIVE") return;
+    const verifiedDomains = await tx.tenantDomain.count({ where: { tenantId, status: "VERIFIED" } });
+    if (verifiedDomains <= 1) {
+      throw new ConflictException(
+        "Faol restoranning oxirgi tasdiqlangan domenini o'chirish yoki DNS kodini yangilash mumkin emas. Avval boshqa domenni tasdiqlang.",
+      );
+    }
+  }
+
 }

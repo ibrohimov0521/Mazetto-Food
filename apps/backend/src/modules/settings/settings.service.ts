@@ -194,10 +194,6 @@ export class SettingsService {
           where: { id: user.id },
           data: { telegramUserId: value || null },
         });
-        await tx.employee.updateMany({
-          where: { userId: user.id },
-          data: { telegramUserId: value || null },
-        });
       }
 
       const updated = await tx.setting.upsert({
