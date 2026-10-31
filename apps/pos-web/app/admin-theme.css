@@ -441,3 +441,36 @@
     transition: none;
   }
 }
+
+/* Mobile admin: drawer and touch targets stay usable at phone widths. */
+@media (max-width: 1023px) {
+  #admin-sidebar {
+    width: min(86vw, 288px) !important;
+    min-width: min(86vw, 288px) !important;
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --mz-header-h: 56px;
+  }
+
+  .mz-panel-header {
+    gap: 6px;
+  }
+
+  .mz-panel-header .mz-panel-actions > :is(button, a) {
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+  }
+
+  .mz-panel-header .mz-panel-actions > :is(button, a) > :is(svg, img) {
+    width: 18px;
+    height: 18px;
+  }
+
+  .mz-panel-heading {
+    flex-shrink: 0;
+  }
+}
