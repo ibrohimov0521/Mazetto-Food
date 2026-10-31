@@ -144,7 +144,7 @@ async function setWebhook(botConfig: TelegramBotConfig): Promise<void> {
   const url = webhookUrl(botConfig);
   await telegramRequest<boolean>(botConfig, "setWebhook", {
     url,
-    allowed_updates: ["message", "callback_query"],
+    allowed_updates: ["message", "callback_query", "my_chat_member"],
     drop_pending_updates: false,
   });
   console.log("Telegram webhook configured");

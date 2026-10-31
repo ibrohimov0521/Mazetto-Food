@@ -132,6 +132,14 @@ export const adminNavGroups: AdminNavGroup[] = [
         roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
         featureCode: "CUSTOMER_WEB",
       },
+      {
+        label: "Telegram statistikasi",
+        icon: "chart",
+        href: "/admin/telegram",
+        permission: "CUSTOMER_VIEW",
+        roles: ["SUPER_ADMIN", "ADMIN", "BRANCH_MANAGER", "ACCOUNTANT"],
+        featureCode: "TELEGRAM_ORDERS",
+      },
     ],
   },
   {

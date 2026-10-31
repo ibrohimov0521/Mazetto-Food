@@ -293,6 +293,7 @@ model RestaurantTenant {
   auditLogs                      AuditLog[]
   customers                      Customer[]
   customerVerificationChallenges CustomerVerificationChallenge[]
+  telegramBotUsers               TelegramBotUser[]
   settings                       Setting[]
   orders                         Order[]
 
@@ -408,6 +409,25 @@ model ProductBranchAvailability {
   @@index([branchId, status])
   @@index([productId, status])
   @@map("product_branch_availabilities")
+}
+
+model TelegramBotUser {
+  id             String   @id @default(cuid())
+  tenantId       String
+  telegramUserId String
+  chatId         String
+  firstSeenAt    DateTime @default(now())
+  lastSeenAt     DateTime @default(now())
+  isBlocked      Boolean?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  tenant RestaurantTenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, telegramUserId])
+  @@index([tenantId, isBlocked, lastSeenAt])
+  @@index([tenantId, firstSeenAt])
+  @@map("telegram_bot_users")
 }
 
 model Customer {

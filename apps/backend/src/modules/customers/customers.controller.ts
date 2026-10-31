@@ -281,6 +281,13 @@ export class CustomersAdminController {
     return this.customersService.getCustomerStats(user);
   }
 
+  @Get("customers/telegram-statistics")
+  @RequiresTenantFeature("TELEGRAM_ORDERS")
+  @Permissions(PERMISSIONS.CUSTOMER_VIEW)
+  getTelegramStats(@CurrentUser() user: AuthenticatedUser) {
+    return this.customersService.getTelegramStats(user);
+  }
+
   @Delete("customers/bulk")
   @Permissions(PERMISSIONS.CUSTOMER_DELETE)
   deleteCustomersBulk(

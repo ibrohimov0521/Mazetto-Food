@@ -245,6 +245,7 @@ export class MenuService {
           },
         },
         variants: {
+          where: { isAvailable: true },
           orderBy: [{ sortOrder: "asc" }, { name: "asc" }],
           select: {
             id: true,
