@@ -168,6 +168,11 @@ export const routeAccessRules: RouteAccessRule[] = [
     permission: "CUSTOMER_VIEW",
   },
   {
+    pattern: "/admin/telegram",
+    roles: [SUPER, ADMIN, MANAGER, ACCOUNTANT],
+    permission: "CUSTOMER_VIEW",
+  },
+  {
     pattern: "/admin/roles",
     roles: [SUPER, ADMIN, MANAGER],
     permission: "ROLE_VIEW",

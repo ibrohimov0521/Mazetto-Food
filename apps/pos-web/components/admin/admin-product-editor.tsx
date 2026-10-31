@@ -443,25 +443,28 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
   }
 
   function toggleModifier(modifierId: string): void {
-    setSelectedModifierIds((current) => {
-      if (current.includes(modifierId)) {
-        setModifierRules((rules) => {
-          const next = { ...rules };
-          delete next[modifierId];
-          return next;
-        });
-        return current.filter((id) => id !== modifierId);
+    const isSelected = selectedModifierIds.includes(modifierId);
+
+    setSelectedModifierIds((current) =>
+      isSelected
+        ? current.filter((id) => id !== modifierId)
+        : [...current, modifierId],
+    );
+    setModifierRules((current) => {
+      if (isSelected) {
+        const next = { ...current };
+        delete next[modifierId];
+        return next;
       }
 
-      setModifierRules((rules) => ({
-        ...rules,
+      return {
+        ...current,
         [modifierId]: {
           isRequired: false,
           minSelect: "0",
           maxSelect: "",
         },
-      }));
-      return [...current, modifierId];
+      };
     });
   }
 
@@ -1381,13 +1384,13 @@ export function AdminProductEditor({ productId }: { productId?: string }) {
                                 )}
                               </FormField>
                               <button
-                                aria-label={`${modifier.name} — biriktirishni olib tashlash`}
-                                className="grid h-9 w-9 place-items-center self-start rounded-mz-control border border-mz-border text-mz-text-muted transition hover:border-mz-danger hover:bg-mz-danger-bg hover:text-mz-danger lg:self-center"
+                                aria-label={`${modifier.name} qo'shimchasini mahsulotdan ajratish`}
+                                className="inline-flex min-h-10 items-center justify-center gap-1.5 self-start rounded-mz-control border border-mz-danger/30 px-3 text-[13px] font-semibold text-mz-danger transition hover:border-mz-danger hover:bg-mz-danger-bg lg:self-center"
                                 onClick={() => toggleModifier(modifierId)}
-                                title="Biriktirishni olib tashlash"
                                 type="button"
                               >
                                 <Icon className="h-4 w-4" name="close" />
+                                Ajratish
                               </button>
                             </div>
                           );

@@ -15,7 +15,7 @@ import { TelegramCustomerOrderingService } from "./telegram-customer-ordering.se
 import { customerCallbackPrefix } from "./telegram-customer-presentation";
 
 type TelegramMessage = {
-  chat?: { id?: number | string };
+  chat?: { id?: number | string; type?: string };
   from?: {
     id?: number | string;
     first_name?: string;
@@ -38,15 +38,21 @@ type TelegramCallbackQuery = {
   id?: string;
   data?: string;
   message?: {
-    chat?: { id?: number | string };
+    chat?: { id?: number | string; type?: string };
     message_id?: number;
   };
   from?: { id?: number | string };
+};
+type TelegramChatMemberUpdate = {
+  chat?: { id?: number | string; type?: string };
+  from?: { id?: number | string };
+  new_chat_member?: { status?: string };
 };
 
 type TelegramUpdate = {
   callback_query?: TelegramCallbackQuery;
   message?: TelegramMessage;
+  my_chat_member?: TelegramChatMemberUpdate;
 };
 type TelegramApiResponse = {
   ok?: boolean;
@@ -132,8 +138,15 @@ export class TelegramCustomerAuthService {
   async handleWebhookUpdate(update: unknown) {
     const tenantId = await resolveSoleActiveTenantId(this.prisma);
     const telegramUpdate = this.toTelegramUpdate(update);
+
+    if (telegramUpdate.my_chat_member) {
+      await this.recordBotMembership(tenantId, telegramUpdate.my_chat_member);
+      return { ok: true, handled: true };
+    }
+
     const callback = telegramUpdate.callback_query;
     const message = telegramUpdate.message;
+    await this.recordBotInteraction(tenantId, message, callback);
 
     if (!message) {
       if (!callback?.data?.startsWith(`${customerCallbackPrefix}:`)) {
@@ -226,6 +239,69 @@ export class TelegramCustomerAuthService {
     }
 
     return { ok: true, handled: false };
+  }
+
+  private async recordBotInteraction(
+    tenantId: string,
+    message: TelegramMessage | undefined,
+    callback: TelegramCallbackQuery | undefined,
+  ): Promise<void> {
+    const chat = message?.chat ?? callback?.message?.chat;
+    const userId = message?.from?.id ?? callback?.from?.id;
+    if (chat?.type !== "private" || !chat.id || !userId) return;
+
+    await this.upsertBotUser(
+      tenantId,
+      String(userId),
+      String(chat.id),
+      false,
+    );
+  }
+
+  private async recordBotMembership(
+    tenantId: string,
+    update: TelegramChatMemberUpdate,
+  ): Promise<void> {
+    const chat = update.chat;
+    const userId = update.from?.id;
+    if (chat?.type !== "private" || !chat.id || !userId) return;
+
+    const status = update.new_chat_member?.status;
+    const isBlocked = status === "kicked" || status === "left";
+    await this.upsertBotUser(
+      tenantId,
+      String(userId),
+      String(chat.id),
+      isBlocked,
+    );
+  }
+
+  private async upsertBotUser(
+    tenantId: string,
+    telegramUserId: string,
+    chatId: string,
+    isBlocked: boolean,
+  ): Promise<void> {
+    const now = new Date();
+    try {
+      await this.prisma.telegramBotUser.upsert({
+        where: {
+          tenantId_telegramUserId: { tenantId, telegramUserId },
+        },
+        create: {
+          tenantId,
+          telegramUserId,
+          chatId,
+          firstSeenAt: now,
+          lastSeenAt: now,
+          isBlocked,
+        },
+        update: { chatId, lastSeenAt: now, isBlocked },
+      });
+    } catch {
+      // Statistics must not interrupt customer ordering if telemetry is unavailable.
+      this.logger.warn("Telegram bot user activity could not be recorded.");
+    }
   }
 
   private async handleContactMessage(

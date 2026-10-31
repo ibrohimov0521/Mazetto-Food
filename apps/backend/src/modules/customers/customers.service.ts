@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
-import { OrderStatus, Prisma } from "@prisma/client";
+import { OrderStatus, PaymentStatus, Prisma } from "@prisma/client";
 import { resolveRestaurantScope } from "../../common/auth/tenant-scope";
 import type { AuthenticatedUser } from "../../common/types/authenticated-user";
 import {} from "../../config/auth.config";
@@ -459,6 +459,110 @@ export class CustomersService {
     return customerOrders.map((customerOrder) =>
       withDerivedCustomerOrderStatus(customerOrder),
     );
+  }
+
+  async getTelegramStats(user: AuthenticatedUser) {
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+    );
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const linkedCustomerWhere: Prisma.CustomerWhereInput = {
+      tenantId,
+      telegramUserId: { not: null },
+      telegramChatId: { not: null },
+      ...(branchId ? { customerOrders: { some: { branchId } } } : {}),
+    };
+    const telegramOrderWhere: Prisma.OrderWhereInput = {
+      tenantId,
+      source: "TELEGRAM",
+      ...(branchId ? { branchId } : {}),
+    };
+    const recentOrderWhere: Prisma.OrderWhereInput = {
+      ...telegramOrderWhere,
+      createdAt: { gte: since },
+    };
+    const successfulOrderStatuses = [
+      OrderStatus.CONFIRMED,
+      OrderStatus.PREPARING,
+      OrderStatus.READY,
+      OrderStatus.SERVED,
+      OrderStatus.COMPLETED,
+    ];
+    const successfulPaymentStatuses = [
+      PaymentStatus.PAID,
+      PaymentStatus.SUCCESS,
+      PaymentStatus.PARTIALLY_REFUNDED,
+    ];
+    const botUserMetrics = branchId
+      ? Promise.resolve(null)
+      : Promise.all([
+          this.prisma.telegramBotUser.count({ where: { tenantId } }),
+          this.prisma.telegramBotUser.count({
+            where: { tenantId, isBlocked: false },
+          }),
+          this.prisma.telegramBotUser.count({
+            where: {
+              tenantId,
+              isBlocked: false,
+              lastSeenAt: { gte: since },
+            },
+          }),
+          this.prisma.telegramBotUser.count({
+            where: { tenantId, isBlocked: true },
+          }),
+          this.prisma.telegramBotUser.count({
+            where: { tenantId, isBlocked: null },
+          }),
+        ]);
+
+    const [
+      linkedCustomers,
+      telegramOrders,
+      recentOrders,
+      recentStatuses,
+      recentPayments,
+      botUserCounts,
+    ] = await Promise.all([
+      this.prisma.customer.count({ where: linkedCustomerWhere }),
+      this.prisma.order.count({ where: telegramOrderWhere }),
+      this.prisma.order.count({ where: recentOrderWhere }),
+      this.prisma.order.groupBy({
+        by: ["status"],
+        where: recentOrderWhere,
+        _count: { _all: true },
+      }),
+      this.prisma.payment.aggregate({
+        where: {
+          status: { in: successfulPaymentStatuses },
+          paidAt: { gte: since },
+          order: {
+            ...telegramOrderWhere,
+            status: { in: successfulOrderStatuses },
+          },
+        },
+        _sum: { amount: true },
+      }),
+      botUserMetrics,
+    ]);
+
+    return {
+      linkedCustomers,
+      totalBotUsers: botUserCounts?.[0] ?? null,
+      botUsers: botUserCounts?.[1] ?? null,
+      activeBotUsers30Days: botUserCounts?.[2] ?? null,
+      blockedBotUsers: botUserCounts?.[3] ?? null,
+      unknownBotUserStatus: botUserCounts?.[4] ?? null,
+      telegramOrders,
+      recentOrders,
+      recentPaidAmount: (
+        recentPayments._sum.amount ?? new Prisma.Decimal(0)
+      ).toString(),
+      recentStatuses: recentStatuses.map((entry) => ({
+        status: entry.status,
+        count: entry._count._all,
+      })),
+    };
   }
 
   async getCustomerStats(user: AuthenticatedUser) {
