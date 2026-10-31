@@ -74,7 +74,7 @@ export function AdminLayout({ children }: { children: React.ReactNode }) {
     <ToastProvider>
       <div className="mz-admin min-h-screen w-full max-w-full overflow-x-hidden bg-mz-canvas">
         <AdminSidebar
-          isCollapsed={isCollapsed}
+          isCollapsed={isCollapsed && !isMobileOpen}
           isMobileOpen={isMobileOpen}
           onNavigate={() => setIsMobileOpen(false)}
           user={user}
