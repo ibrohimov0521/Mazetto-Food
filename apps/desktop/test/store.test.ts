@@ -183,7 +183,7 @@ test("desktop store selects an exact cached endpoint before newer nested routes"
       status: 200,
       contentType: "application/json",
       body: '{"success":true,"data":[{"id":"order-1"}]}',
-      cachedAt: "2026-10-01T10:00:00.000Z",
+      cachedAt: new Date(Date.now() - 2000).toISOString(),
     });
     store.putCachedResponse({
       cacheKey: DesktopStore.cacheKey(detailUrl, authScope),
@@ -192,7 +192,7 @@ test("desktop store selects an exact cached endpoint before newer nested routes"
       status: 200,
       contentType: "application/json",
       body: '{"success":true,"data":{"id":"order-1","items":[]}}',
-      cachedAt: "2026-10-01T11:00:00.000Z",
+      cachedAt: new Date(Date.now() - 1000).toISOString(),
     });
 
     assert.equal(
