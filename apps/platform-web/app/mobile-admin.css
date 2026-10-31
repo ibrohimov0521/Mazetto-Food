@@ -157,7 +157,7 @@
     white-space: normal;
   }
 
-  .tenant-registry-table-wrap {
+  .mobile-card-table-wrap {
     overflow: visible;
     border: 0;
     background: transparent;
@@ -166,19 +166,19 @@
     -webkit-backdrop-filter: none;
   }
 
-  .tenant-registry-table,
-  .tenant-registry-table tbody {
+  .mobile-card-table,
+  .mobile-card-table tbody {
     display: grid;
     width: 100%;
     gap: 10px;
     white-space: normal;
   }
 
-  .tenant-registry-table thead {
+  .mobile-card-table thead {
     display: none;
   }
 
-  .tenant-registry-table tr {
+  .mobile-card-table tr {
     display: block;
     overflow: hidden;
     border: 1px solid rgba(208, 226, 246, 0.9);
@@ -187,7 +187,7 @@
     box-shadow: 0 5px 15px rgba(12, 48, 86, 0.12);
   }
 
-  .tenant-registry-table td {
+  .mobile-card-table td {
     display: block;
     min-width: 0;
     padding: 9px 12px;
@@ -197,7 +197,7 @@
     overflow-wrap: anywhere;
   }
 
-  .tenant-registry-table td::before {
+  .mobile-card-table td::before {
     display: block;
     margin-bottom: 3px;
     color: #526d89;
@@ -208,7 +208,7 @@
     text-transform: uppercase;
   }
 
-  .tenant-registry-table td:first-child {
+  .mobile-card-table td:first-child {
     padding-top: 13px;
     background: rgba(225, 238, 252, 0.72);
     color: #173554;
@@ -216,15 +216,15 @@
     font-weight: 800;
   }
 
-  .tenant-registry-table td:first-child::before {
+  .mobile-card-table td:first-child::before {
     display: none;
   }
 
-  .tenant-registry-table td:last-child {
+  .mobile-card-table td:last-child {
     border-bottom: 0;
   }
 
-  .tenant-registry-table .report-product {
+  .mobile-card-table .report-product {
     display: block;
     margin-top: 3px;
     color: #526d89;
@@ -232,8 +232,8 @@
     overflow-wrap: anywhere;
   }
 
-  .tenant-registry-table .tenant-domain-open,
-  .tenant-registry-table .button {
+  .mobile-card-table .tenant-domain-open,
+  .mobile-card-table .button {
     width: 100%;
     min-height: 44px;
     height: auto;
@@ -242,13 +242,79 @@
     white-space: normal;
   }
 
-  .tenant-registry-table .tenant-monitor-site {
+  .mobile-card-table .tenant-monitor-site {
     margin-top: 6px;
   }
 
-  .tenant-registry-table .service-line {
+  .mobile-card-table .icon-button {
+    width: 44px;
+    height: 44px;
+    flex: none;
+  }
+
+  .mobile-card-table .service-line {
     flex-wrap: wrap;
     gap: 5px;
     overflow-wrap: anywhere;
+  }
+
+  .mobile-card-table .tenant-membership-actions,
+  .mobile-card-table .tenant-domain-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+    gap: 8px;
+  }
+
+  .mobile-card-table .tenant-membership-actions .button,
+  .mobile-card-table .tenant-domain-actions .button {
+    width: 100%;
+    min-height: 44px;
+    height: auto;
+    margin: 0;
+    padding: 8px 10px;
+    white-space: normal;
+  }
+}
+
+@media (max-width: 760px) {
+  .section-head {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .section-head > :first-child {
+    flex: 1 1 100%;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .section-head > .button,
+  .section-head > a.button,
+  .section-head > .text-link {
+    flex: 1 1 100%;
+    width: 100%;
+    min-height: 44px;
+    white-space: normal;
+  }
+
+  .section-head > .icon-button {
+    width: 44px;
+    height: 44px;
+    flex: 0 0 44px;
+    align-self: flex-end;
+  }
+
+  .tenant-setup-row > .button,
+  .tenant-membership-create > .button,
+  .tenant-domain-form > .button,
+  .tenant-result-grid .button {
+    min-height: 44px;
+  }
+
+  .tenant-membership-create > .button,
+  .tenant-domain-form > .button,
+  .tenant-result-grid .button {
+    width: 100%;
   }
 }
