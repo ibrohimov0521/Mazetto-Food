@@ -120,7 +120,7 @@ export function PanelNavbar({
           aria-controls={sidebarId}
           aria-expanded={isMobileOpen}
           aria-label={isMobileOpen ? "Menyuni yopish" : "Menyuni ochish"}
-          className={`grid h-8 w-8 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-primary hover:text-mz-primary-fg ${hasSidebar ? "lg:hidden" : ""}`}
+          className={`grid h-10 w-10 shrink-0 place-items-center rounded-mz-control text-mz-shell-fg-muted transition hover:bg-mz-primary hover:text-mz-primary-fg ${hasSidebar ? "lg:hidden" : ""}`}
           title={isMobileOpen ? "Menyuni yopish" : "Menyuni ochish"}
           onClick={onToggleMobile}
           type="button"
@@ -185,7 +185,7 @@ export function PanelNavbar({
           title="Profil menyusi"
           aria-expanded={isMenuOpen}
           aria-haspopup="menu"
-          className="flex h-8 items-center gap-1.5 rounded-mz-pill pl-1 pr-2 transition hover:bg-mz-shell-raised"
+          className="flex h-10 min-w-10 items-center justify-center gap-1.5 rounded-mz-pill pl-1 pr-2 transition hover:bg-mz-shell-raised"
           onClick={() => setIsMenuOpen((previous) => !previous)}
           type="button"
         >

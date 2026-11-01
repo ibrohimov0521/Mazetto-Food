@@ -121,7 +121,7 @@ export function AdminPageHeader({
         </div>
 
         {actions ? (
-          <div className="flex shrink-0 flex-wrap justify-start gap-2 xl:justify-end">
+          <div className="flex w-full shrink-0 flex-wrap justify-start gap-2 xl:w-auto xl:justify-end [&>*]:min-h-10">
             {actions}
           </div>
         ) : null}

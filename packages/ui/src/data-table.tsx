@@ -284,20 +284,20 @@ export function DataTable<T>({
             <dl className="space-y-1">
               {secondaryColumns.map((column) => (
                 <div
-                  className="flex items-start justify-between gap-3"
+                  className="flex min-w-0 items-start justify-between gap-3"
                   key={column.key}
                 >
-                  <dt className="text-[13px] font-medium text-mz-text-muted">
+                  <dt className="max-w-[45%] min-w-0 text-[13px] font-medium text-mz-text-muted">
                     {column.header}
                   </dt>
-                  <dd className="text-right text-sm text-mz-text">
+                  <dd className="min-w-0 flex-1 break-words text-right text-sm text-mz-text">
                     {column.render(row)}
                   </dd>
                 </div>
               ))}
             </dl>
             {rowActions ? (
-              <div className="mt-3 flex justify-end gap-1 border-t border-mz-border pt-2">
+              <div className="mt-3 flex flex-wrap justify-end gap-1 border-t border-mz-border pt-2 [&>button]:min-h-10 [&>button]:min-w-10 [&>a]:min-h-10 [&>a]:min-w-10">
                 {rowActions(row)}
               </div>
             ) : null}
