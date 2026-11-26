@@ -1,27 +1,23 @@
 import { Type } from "class-transformer";
 import {
   IsEnum,
+  IsIn,
   IsInt,
   IsNumber,
   IsOptional,
   IsPositive,
   IsString,
   Max,
+  MaxLength,
   Min,
   ValidateIf,
 } from "class-validator";
 
 /*
- * `GET /customers` va `GET /online-orders` uchun sahifalash.
- *
- * Ikkala endpoint ham hech qanday chegara qo'ymay butun jadvalni qaytarardi
- * va admin panel filtrlashni brauzerda bajarardi. Mijozlar bazasi o'sgani
- * sayin bu javob ham, sahifa ham og'irlashadi.
- *
- * Chegara `ListShiftsDto` bilan bir xil: standart 50, maksimum 100 —
- * so'rov bilan butun jadvalni tortib olishning oldini oladi.
+ * Barcha mijoz va buyurtma ro'yxatlarida ishlatiladigan sahifalash.
+ * Standart 50, maksimum 100 — bitta so'rov butun jadvalni yuklamasligi uchun.
  */
-export class ListCustomersDto {
+export class ListPageDto {
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -37,7 +33,20 @@ export class ListCustomersDto {
   offset = 0;
 }
 
-export class ListOnlineOrdersDto extends ListCustomersDto {
+export class ListCustomersDto extends ListPageDto {}
+
+export class ListCustomerDirectoryDto extends ListCustomersDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  search?: string;
+
+  @IsOptional()
+  @IsIn(["WEB", "TELEGRAM", "BOTH"])
+  channel?: "WEB" | "TELEGRAM" | "BOTH";
+}
+
+export class ListOnlineOrdersDto extends ListPageDto {
   @IsOptional()
   @IsString()
   branchId?: string;
@@ -110,4 +119,4 @@ export class AssignCourierDto {
  * bir xil, chunki bir xil muammoni yechadi: chegarasiz `findMany` biznes
  * hajmi bilan birga o'sadi.
  */
-export class ListCustomerOrdersDto extends ListCustomersDto {}
+export class ListCustomerOrdersDto extends ListPageDto {}

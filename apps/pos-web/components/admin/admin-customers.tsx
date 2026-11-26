@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiFetch } from "../../lib/api";
 import { hasPermission } from "../../lib/auth";
 import { useApiResource } from "../../lib/use-api-resource";
@@ -12,7 +12,11 @@ import {
 import { Badge } from "../admin-ui/badge";
 import { Button } from "../admin-ui/button";
 import { Card, CardBody, CardHeader } from "../admin-ui/card";
-import { DataTable, RowAction, type DataTableColumn } from "../admin-ui/data-table";
+import {
+  DataTable,
+  RowAction,
+  type DataTableColumn,
+} from "../admin-ui/data-table";
 import { ErrorState, Skeleton } from "../admin-ui/feedback";
 import { FilterBar, FormField, Select, TextInput } from "../admin-ui/form";
 import { Modal } from "../admin-ui/modal";
@@ -22,24 +26,16 @@ import { useAuth } from "../auth/auth-provider";
 import { useToast } from "../admin-ui/toast";
 
 /*
- * Mijozlar ro'yxati.
+ * Restoran mijozlari katalogi.
  *
- * BU EKRAN FAQAT O'QISH — va bu backend holati, tanlov emas.
- * `apps/backend/src/modules/customers/customers.controller.ts` da admin
- * tomoni uchun faqat `GET /customers` va `GET /customers/statistics` bor.
- * Mijozni bloklash, ma'lumotini tahrirlash, izoh qo'shish yoki bonusni
- * qo'lda o'zgartirish endpoint'i YO'Q (bonus faqat buyurtma oqimida
- * hisoblanadi). Shuning uchun bu yerda hech qanday "saqlash" tugmasi yo'q —
- * ishlamaydigan tugma qo'yish yomonroq bo'lardi. Kerakli endpointlar
- * hisobotda sanab o'tilgan.
+ * Bir xil, tasdiqlangan telefon raqami tenant ichida bitta Customer profiliga
+ * mos keladi. Shu profil web va Telegramdan ishlatilsa, kanallar bitta qatorda
+ * ko'rsatiladi. Faqat Telegram botiga yozgan, lekin telefonini bog'lamagan
+ * akkauntlar mijoz profili hisoblanmaydi va Telegram statistikasi ichida qoladi.
  *
- * PII. Telefon raqamlari ro'yxatda qisman yashirilgan. To'liq ko'rish uchun
- * qatordagi tugma bosiladi — ochish harakati ONGLI bo'lishi uchun.
- *
- * SAHIFALASH VA QIDIRUV. `/customers` faqat `limit`/`offset` qabul qiladi;
- * server tomonda qidiruv YO'Q. Shuning uchun qidiruv va kanal filtri
- * BRAUZERDA, faqat joriy sahifa ichida ishlaydi va yorliqlar shuni ochiq
- * aytadi — aks holda foydalanuvchi butun bazada qidiryapman deb o'ylardi.
+ * PII. Telefon raqamlari qisman yashiriladi; to'liq ko'rish uchun alohida
+ * tugma bosiladi. Server javobida parol xeshi yoki Telegram ID berilmaydi.
+ * Qidiruv, kanal filtri va sahifalash serverda, butun tenant doirasida ishlaydi.
  */
 
 const pageSize = 50;
@@ -49,15 +45,26 @@ type Customer = {
   name: string;
   phone: string;
   email?: string | null;
-  telegramUserId?: string | null;
   telegramLinkedAt?: string | null;
+  webLastSeenAt?: string | null;
+  channels: Array<"WEB" | "TELEGRAM">;
   bonusBalance: string;
   createdAt: string;
   _count?: { customerOrders: number; favorites: number };
 };
 
+type CustomerPage = {
+  items: Customer[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 type CustomerStats = {
   customers: number;
+  webCustomers: number;
+  telegramCustomers: number;
+  multiChannelCustomers: number;
   onlineOrders: number;
   bonusLiability: string;
 };
@@ -67,11 +74,17 @@ export function AdminCustomersPage() {
   const { showToast } = useToast();
   const canDelete = hasPermission(user, "CUSTOMER_DELETE");
   const [query, setQuery] = useState("");
+  const [search, setSearch] = useState("");
   const [channel, setChannel] = useState("");
   const [revealedIds, setRevealedIds] = useState<Set<string>>(new Set());
   const [offset, setOffset] = useState(0);
   const [detail, setDetail] = useState<Customer | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setSearch(query.trim()), 250);
+    return () => window.clearTimeout(timeout);
+  }, [query]);
 
   const {
     data,
@@ -79,34 +92,25 @@ export function AdminCustomersPage() {
     error,
     reload: load,
   } = useApiResource(
-    () =>
-      Promise.all([
-        apiFetch<Customer[]>(`/customers?limit=${pageSize}&offset=${offset}`),
+    () => {
+      const params = new URLSearchParams({
+        limit: String(pageSize),
+        offset: String(offset),
+      });
+      if (search) params.set("search", search);
+      if (channel) params.set("channel", channel);
+
+      return Promise.all([
+        apiFetch<CustomerPage>(`/customers?${params.toString()}`),
         apiFetch<CustomerStats>("/customers/statistics"),
-      ]),
-    [offset],
+      ]);
+    },
+    [offset, search, channel],
     "Mijozlarni yuklab bo'lmadi.",
   );
-  const customers = data?.[0] ?? [];
+  const page = data?.[0] ?? null;
+  const customers = page?.items ?? [];
   const stats = data?.[1] ?? null;
-
-  const filtered = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-
-    return customers.filter((customer) => {
-      const identity = [customer.name, customer.phone, customer.email]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase();
-      const matchesChannel =
-        !channel ||
-        (channel === "TELEGRAM" && Boolean(customer.telegramUserId)) ||
-        (channel === "WEB" && !customer.telegramUserId);
-
-      return (!needle || identity.includes(needle)) && matchesChannel;
-    });
-  }, [channel, customers, query]);
-
   const hasFilters = Boolean(query.trim() || channel);
 
   function togglePhone(id: string): void {
@@ -125,7 +129,12 @@ export function AdminCustomersPage() {
 
   async function deleteSelected(): Promise<void> {
     if (!selectedIds.length) return;
-    if (!window.confirm(`${selectedIds.length} ta mijozni bazadan butunlay o'chirishni tasdiqlaysizmi? Buyurtma tarixi bor mijozlar o'chirilmaydi.`)) return;
+    if (
+      !window.confirm(
+        `${selectedIds.length} ta mijozni bazadan butunlay o'chirishni tasdiqlaysizmi? Buyurtma tarixi bor mijozlar o'chirilmaydi.`,
+      )
+    )
+      return;
     try {
       await apiFetch("/customers/bulk", {
         method: "DELETE",
@@ -135,7 +144,9 @@ export function AdminCustomersPage() {
       await load();
     } catch (caught) {
       showToast(
-        caught instanceof Error ? caught.message : "Mijozlarni o'chirib bo'lmadi.",
+        caught instanceof Error
+          ? caught.message
+          : "Mijozlarni o'chirib bo'lmadi.",
         "danger",
       );
     }
@@ -165,7 +176,9 @@ export function AdminCustomersPage() {
 
         return (
           <span className="inline-flex items-center gap-2">
-            <span className={isRevealed ? "text-mz-text" : "text-mz-text-muted"}>
+            <span
+              className={isRevealed ? "text-mz-text" : "text-mz-text-muted"}
+            >
               {isRevealed ? customer.phone : maskPhone(customer.phone)}
             </span>
             <Button
@@ -191,12 +204,19 @@ export function AdminCustomersPage() {
     {
       key: "channel",
       header: "Kanal",
-      render: (customer) =>
-        customer.telegramUserId ? (
-          <Badge tone="info">Telegram</Badge>
-        ) : (
-          <Badge tone="neutral">Sayt</Badge>
-        ),
+      render: (customer) => (
+        <div className="flex flex-wrap gap-1.5">
+          {customer.channels.includes("WEB") ? (
+            <Badge tone="neutral">Sayt</Badge>
+          ) : null}
+          {customer.channels.includes("TELEGRAM") ? (
+            <Badge tone="info">Telegram</Badge>
+          ) : null}
+          {!customer.channels.length ? (
+            <Badge tone="neutral">Kanal aniqlanmagan</Badge>
+          ) : null}
+        </div>
+      ),
     },
     {
       key: "orders",
@@ -249,15 +269,34 @@ export function AdminCustomersPage() {
       {stats ? (
         <StatGrid>
           <InfoBox
-            description="Butun baza bo'yicha"
+            description="Takroriy kanal profillari bitta hisobda"
             icon="users"
             label="Jami mijoz"
             tone="brand"
             value={`${stats.customers} ta`}
           />
           <InfoBox
-            description="Butun baza bo'yicha"
+            description="Saytda tasdiqlangan akkauntlar"
             icon="globe"
+            label="Sayt"
+            value={`${stats.webCustomers} ta`}
+          />
+          <InfoBox
+            description="Telegram raqami bog'langan profillar"
+            icon="send"
+            label="Telegram"
+            value={`${stats.telegramCustomers} ta`}
+          />
+          <InfoBox
+            description="Sayt va Telegram bitta mijoz profilida"
+            icon="users"
+            label="Ikkala kanal"
+            tone="success"
+            value={`${stats.multiChannelCustomers} ta`}
+          />
+          <InfoBox
+            description="Butun baza bo'yicha"
+            icon="receipt"
             label="Online buyurtmalar"
             value={`${stats.onlineOrders} ta`}
           />
@@ -268,40 +307,40 @@ export function AdminCustomersPage() {
             tone="warning"
             value={formatMoney(stats.bonusLiability)}
           />
-          <InfoBox
-            /*
-             * Bu son FAQAT joriy sahifadan hisoblanadi — serverda kanal
-             * bo'yicha sanoq yo'q. Tavsif buni ochiq aytadi.
-             */
-            description="Faqat shu sahifadagi yozuvlar"
-            icon="send"
-            label="Telegram orqali"
-            value={`${customers.filter((customer) => customer.telegramUserId).length} ta`}
-          />
         </StatGrid>
       ) : null}
 
       <Card>
         <CardHeader
-          actions={canDelete && selectedIds.length ? (
-            <Button onClick={() => void deleteSelected()} size="sm" variant="danger">
-              {selectedIds.length} ta o&apos;chirish
-            </Button>
-          ) : undefined}
-          description="Mijoz yozuvlari tahrirlanmaydi. Buyurtma tarixi bor mijozlar faqat anonimlashtirish yoki biznes siyosati orqali boshqariladi."
-          title="Mijozlar bazasi"
+          actions={
+            canDelete && selectedIds.length ? (
+              <Button
+                onClick={() => void deleteSelected()}
+                size="sm"
+                variant="danger"
+              >
+                {selectedIds.length} ta o&apos;chirish
+              </Button>
+            ) : undefined
+          }
+          description="Tasdiqlangan telefon bir mijoz profilini belgilaydi. Sayt va Telegramdan foydalangan odam bitta qatorda, ikkala kanal belgisi bilan ko'rinadi."
+          title="Mijozlar ro'yxati"
         />
 
         <FilterBar>
           <div className="min-w-52 flex-1">
             <FormField
-              hint="Qidiruv faqat shu sahifadagi 50 yozuv ichida ishlaydi"
+              hint="Butun restoran mijozlari bo'yicha qidiradi"
               label="Qidirish"
             >
               {(props) => (
                 <TextInput
                   {...props}
-                  onChange={(event) => setQuery(event.target.value)}
+                  onChange={(event) => {
+                    setQuery(event.target.value);
+                    setOffset(0);
+                    setSelectedIds([]);
+                  }}
                   placeholder="Ism, telefon yoki email"
                   value={query}
                 />
@@ -313,12 +352,17 @@ export function AdminCustomersPage() {
               {(props) => (
                 <Select
                   {...props}
-                  onChange={(event) => setChannel(event.target.value)}
+                  onChange={(event) => {
+                    setChannel(event.target.value);
+                    setOffset(0);
+                    setSelectedIds([]);
+                  }}
                   value={channel}
                 >
                   <option value="">Barcha kanallar</option>
                   <option value="TELEGRAM">Telegram</option>
                   <option value="WEB">Sayt</option>
+                  <option value="BOTH">Sayt + Telegram</option>
                 </Select>
               )}
             </FormField>
@@ -327,7 +371,10 @@ export function AdminCustomersPage() {
             <Button
               onClick={() => {
                 setQuery("");
+                setSearch("");
                 setChannel("");
+                setOffset(0);
+                setSelectedIds([]);
               }}
               variant="ghost"
             >
@@ -341,8 +388,8 @@ export function AdminCustomersPage() {
           columns={columns}
           emptyDescription={
             hasFilters
-              ? "Qidiruv faqat shu sahifada ishlaydi — keyingi sahifaga o'tib ko'ring yoki filtrni tozalang."
-              : "Bu sahifada mijoz yozuvi yo'q."
+              ? "Qidiruv yoki kanal filtriga mos mijoz topilmadi."
+              : "Bu restoranda mijoz profili hali yo'q."
           }
           emptyIcon={hasFilters ? "search" : "users"}
           emptyTitle={hasFilters ? "Mijoz topilmadi" : "Mijoz yo'q"}
@@ -361,7 +408,7 @@ export function AdminCustomersPage() {
               onClick={() => setDetail(customer)}
             />
           )}
-          rows={filtered}
+          rows={customers}
         />
 
         <Pagination
@@ -369,14 +416,17 @@ export function AdminCustomersPage() {
           isLoading={isLoading}
           noun="mijoz"
           offset={offset}
-          onOffsetChange={setOffset}
+          onOffsetChange={(nextOffset) => {
+            setOffset(nextOffset);
+            setSelectedIds([]);
+          }}
           pageSize={pageSize}
-          {...(stats ? { total: stats.customers } : {})}
+          total={page?.total ?? 0}
         />
       </Card>
 
       <Modal
-        description="Faqat ko'rish. Bu ma'lumotni admin panelidan o'zgartirib bo'lmaydi."
+        description="Telefon tasdig'i bo'yicha yagona mijoz profili va unga bog'langan kanallar."
         isOpen={detail !== null}
         onClose={() => setDetail(null)}
         title={detail?.name ?? "Mijoz"}
@@ -386,9 +436,15 @@ export function AdminCustomersPage() {
             <DetailRow label="Telefon" value={detail.phone} />
             <DetailRow label="Email" value={detail.email ?? "Kiritilmagan"} />
             <DetailRow
-              label="Kanal"
-              value={detail.telegramUserId ? "Telegram" : "Sayt"}
+              label="Ro'yxatdan o'tgan kanallar"
+              value={registrationChannelLabel(detail.channels)}
             />
+            {detail.webLastSeenAt ? (
+              <DetailRow
+                label="Saytga oxirgi kirish"
+                value={formatDateTime(detail.webLastSeenAt)}
+              />
+            ) : null}
             {detail.telegramLinkedAt ? (
               <DetailRow
                 label="Telegram bog'langan"
@@ -426,6 +482,14 @@ export function AdminCustomersPage() {
       </Card>
     </div>
   );
+}
+
+function registrationChannelLabel(channels: Customer["channels"]): string {
+  const labels = [
+    ...(channels.includes("WEB") ? ["Sayt"] : []),
+    ...(channels.includes("TELEGRAM") ? ["Telegram"] : []),
+  ];
+  return labels.length ? labels.join(" + ") : "Kanal aniqlanmagan";
 }
 
 function DetailRow({ label, value }: { label: string; value: string }) {

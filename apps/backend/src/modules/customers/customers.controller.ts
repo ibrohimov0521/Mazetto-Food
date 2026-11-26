@@ -16,8 +16,8 @@ import {
 import type { Response } from "express";
 import { PERMISSIONS } from "../../common/auth/permissions";
 import {
+  ListCustomerDirectoryDto,
   ListCustomerOrdersDto,
-  ListCustomersDto,
   ListOnlineOrdersDto,
   AssignCourierDto,
   UpdateCourierOrderStatusDto,
@@ -269,7 +269,7 @@ export class CustomersAdminController {
   @Get("customers")
   @Permissions(PERMISSIONS.CUSTOMER_VIEW)
   listCustomers(
-    @Query() query: ListCustomersDto,
+    @Query() query: ListCustomerDirectoryDto,
     @CurrentUser() user: AuthenticatedUser,
   ) {
     return this.customersService.listCustomers(query, user);
