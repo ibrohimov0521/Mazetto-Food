@@ -3,7 +3,10 @@ import test from "node:test";
 import type { AuthenticatedUser } from "../src/common/types/authenticated-user";
 import { CustomerCourierService } from "../src/modules/customers/customer-courier.service";
 import { CustomersService } from "../src/modules/customers/customers.service";
-import { ListCustomersDto, ListOnlineOrdersDto } from "../src/modules/customers/dto/list-customers.dto";
+import {
+  ListCustomerDirectoryDto,
+  ListOnlineOrdersDto,
+} from "../src/modules/customers/dto/list-customers.dto";
 import type { PrismaService } from "../src/prisma/prisma.service";
 
 const owner: AuthenticatedUser = {
@@ -27,7 +30,11 @@ test("customer administration reads and statistics stay in the actor tenant", as
   const prisma = database({
     customer: {
       findMany: async (args: { where: unknown }) => { where.list = args.where; return []; },
-      count: async (args: { where: unknown }) => { where.count = args.where; return 0; },
+      count: async (args: { where: unknown }) => {
+        const counts = (where.counts ??= []) as unknown[];
+        counts.push(args.where);
+        return 0;
+      },
       aggregate: async (args: { where: unknown }) => { where.aggregate = args.where; return { _sum: { bonusBalance: null } }; },
     },
     customerOrder: {
@@ -37,13 +44,23 @@ test("customer administration reads and statistics stay in the actor tenant", as
   });
   const service = Object.assign(Object.create(CustomersService.prototype), { prisma }) as CustomersService;
 
-  await service.listCustomers(new ListCustomersDto(), owner);
+  await service.listCustomers(new ListCustomerDirectoryDto(), owner);
   await service.listOnlineOrders(new ListOnlineOrdersDto(), owner);
   await service.getCustomerStats(owner);
 
   assert.deepEqual(where.list, { tenantId: "tenant-a" });
   assert.deepEqual(where.orders, { branch: { tenantId: "tenant-a" } });
-  assert.deepEqual(where.count, { tenantId: "tenant-a" });
+  assert.deepEqual(where.counts, [
+    { tenantId: "tenant-a" },
+    { tenantId: "tenant-a" },
+    { tenantId: "tenant-a", webLastSeenAt: { not: null } },
+    { tenantId: "tenant-a", telegramUserId: { not: null } },
+    {
+      tenantId: "tenant-a",
+      webLastSeenAt: { not: null },
+      telegramUserId: { not: null },
+    },
+  ]);
   assert.deepEqual(where.aggregate, { tenantId: "tenant-a" });
   assert.deepEqual(where.onlineOrders, { branch: { tenantId: "tenant-a" } });
 });

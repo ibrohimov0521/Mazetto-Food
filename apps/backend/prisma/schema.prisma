@@ -440,6 +440,7 @@ model Customer {
   telegramUserId   String?
   telegramChatId   String?
   telegramLinkedAt DateTime?
+  webLastSeenAt    DateTime?
   bonusBalance     Decimal   @default(0) @db.Decimal(12, 2)
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
@@ -460,6 +461,7 @@ model Customer {
   @@index([telegramChatId])
   @@index([createdAt])
   @@index([tenantId, createdAt])
+  @@index([tenantId, webLastSeenAt])
   @@map("customers")
 }
 

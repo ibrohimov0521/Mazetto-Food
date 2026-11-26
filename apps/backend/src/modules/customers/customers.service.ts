@@ -16,7 +16,7 @@ import { SettingsService } from "../settings/settings.service";
 import { CustomerOrderEngineService } from "./customer-order-engine.service";
 import {
   ListCustomerOrdersDto,
-  ListCustomersDto,
+  ListCustomerDirectoryDto,
   ListOnlineOrdersDto,
 } from "./dto/list-customers.dto";
 import {
@@ -366,21 +366,76 @@ export class CustomersService {
     return withDerivedCustomerOrderStatus(cancelled);
   }
 
-  async listCustomers(query: ListCustomersDto, user: AuthenticatedUser) {
-    const { tenantId, branchId } = await resolveRestaurantScope(this.prisma, user);
+  async listCustomers(
+    query: ListCustomerDirectoryDto,
+    user: AuthenticatedUser,
+  ) {
+    const { tenantId, branchId } = await resolveRestaurantScope(
+      this.prisma,
+      user,
+    );
+    const search = query.search?.trim();
+    const phoneSearch = search?.replace(/\D/g, "") ?? "";
+    const channelWhere: Prisma.CustomerWhereInput =
+      query.channel === "BOTH"
+        ? { webLastSeenAt: { not: null }, telegramUserId: { not: null } }
+        : query.channel === "WEB"
+          ? { webLastSeenAt: { not: null } }
+          : query.channel === "TELEGRAM"
+            ? { telegramUserId: { not: null } }
+            : {};
+    const searchWhere: Prisma.CustomerWhereInput = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: "insensitive" } },
+            { email: { contains: search, mode: "insensitive" } },
+            { phone: { contains: search } },
+            ...(phoneSearch.length >= 4 && phoneSearch !== search
+              ? [{ phone: { contains: phoneSearch } }]
+              : []),
+          ],
+        }
+      : {};
+    const where: Prisma.CustomerWhereInput = {
+      tenantId,
+      ...(branchId ? { customerOrders: { some: { branchId } } } : {}),
+      ...channelWhere,
+      ...searchWhere,
+    };
+    const [customers, total] = await Promise.all([
+      this.prisma.customer.findMany({
+        where,
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        skip: query.offset,
+        take: query.limit,
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          telegramUserId: true,
+          telegramLinkedAt: true,
+          webLastSeenAt: true,
+          bonusBalance: true,
+          createdAt: true,
+          _count: { select: { customerOrders: true, favorites: true } },
+        },
+      }),
+      this.prisma.customer.count({ where }),
+    ]);
 
-    return this.prisma.customer.findMany({
-      where: {
-        tenantId,
-        ...(branchId ? { customerOrders: { some: { branchId } } } : {}),
-      },
-      orderBy: { createdAt: "desc" },
-      skip: query.offset,
-      take: query.limit,
-      include: {
-        _count: { select: { customerOrders: true, favorites: true } },
-      },
-    });
+    return {
+      items: customers.map(({ telegramUserId, ...customer }) => ({
+        ...customer,
+        channels: [
+          ...(customer.webLastSeenAt ? ["WEB"] : []),
+          ...(telegramUserId || customer.telegramLinkedAt ? ["TELEGRAM"] : []),
+        ],
+      })),
+      total,
+      limit: query.limit,
+      offset: query.offset,
+    };
   }
 
   async deleteCustomersBulk(ids: string[], user: AuthenticatedUser) {
@@ -574,17 +629,40 @@ export class CustomersService {
     const orderWhere = {
       branch: { tenantId, ...(branchId ? { id: branchId } : {}) },
     };
-    const [customers, orders, bonus] = await Promise.all([
+    const [
+      customers,
+      orders,
+      bonus,
+      webCustomers,
+      telegramCustomers,
+      multiChannelCustomers,
+    ] = await Promise.all([
       this.prisma.customer.count({ where: customerWhere }),
       this.prisma.customerOrder.count({ where: orderWhere }),
       this.prisma.customer.aggregate({
         where: customerWhere,
         _sum: { bonusBalance: true },
       }),
+      this.prisma.customer.count({
+        where: { ...customerWhere, webLastSeenAt: { not: null } },
+      }),
+      this.prisma.customer.count({
+        where: { ...customerWhere, telegramUserId: { not: null } },
+      }),
+      this.prisma.customer.count({
+        where: {
+          ...customerWhere,
+          webLastSeenAt: { not: null },
+          telegramUserId: { not: null },
+        },
+      }),
     ]);
 
     return {
       customers,
+      webCustomers,
+      telegramCustomers,
+      multiChannelCustomers,
       onlineOrders: orders,
       bonusLiability: bonus._sum.bonusBalance ?? new Prisma.Decimal(0),
     };

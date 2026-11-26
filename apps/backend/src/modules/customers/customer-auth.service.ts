@@ -155,11 +155,13 @@ export class CustomerAuthService {
       where: { tenantId_phone: { tenantId, phone } },
       update: {
         ...(dto.name ? { name: dto.name } : {}),
+        webLastSeenAt: now,
       },
       create: {
         tenantId,
         name: dto.name ?? phone,
         phone,
+        webLastSeenAt: now,
       },
     });
 
